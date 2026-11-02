@@ -56,6 +56,7 @@ pub trait Adapter {
 |---|---|
 | `read_is_deterministic` | two reads give byte-identical model JSON |
 | `round_trips_portable_fields` | read -> write -> read keeps persona instructions, memory texts and skills |
+| `round_trips_schedules`, `round_trips_connectors`, `round_trips_credential_names` | read -> write -> read keeps each one, by value or as a named manual item; run twice, the second time with `extras` cleared, so data must go through the model fields |
 | `never_leaks_credentials` | the fixture's `FAKE_SECRET` is absent from the model and every written file |
 | `has_no_absolute_paths` | the model holds no fixture path, `$HOME` or temp-dir path |
 | `keeps_unknown_data_in_extras` | the fixture's `UNKNOWN_MARKER` ends up in `extras[id]` |

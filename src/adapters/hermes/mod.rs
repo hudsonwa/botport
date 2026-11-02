@@ -153,12 +153,28 @@ impl Adapter for HermesProfile {
                 out.push((format!("skills/{}/{rel}", s.name), body));
             }
         }
-        let (jobs, mcp, manual) = sync::from_described(m, &[], &[], &[]);
+        let kept = m.extras.get(ID).and_then(|x| x.get("config")).cloned();
+        // a server the kept config already has (same key or url) is not merged in again or listed as manual
+        let servers = kept
+            .as_ref()
+            .and_then(|c| c.get("mcp_servers")?.as_object().cloned());
+        let mut m = m.clone();
+        m.connectors.retain(|c| {
+            !servers.iter().flatten().any(|(k, v)| {
+                *k == c.name
+                    || (c.url.is_some()
+                        && v.get("url").and_then(|u| u.as_str()) == c.url.as_deref())
+            })
+        });
+        let (jobs, mcp, manual) = sync::from_described(&m, &[], &[], &[]);
         if !jobs.is_empty() {
+            // names stay as the schedules have them: the `<Bot>: ` prefix is for jobs in a shared live profile
+            let prefix = format!("{}: ", sync::bot_name(&m));
             let jobs: Vec<serde_json::Value> = jobs
                 .iter()
                 .map(|j| {
-                    json!({"name": j.name, "prompt": j.prompt, "deliver": j.deliver, "enabled": false,
+                    let name = j.name.strip_prefix(&prefix).unwrap_or(&j.name);
+                    json!({"name": name, "prompt": j.prompt, "deliver": j.deliver, "enabled": false,
                     "schedule": {"kind": "cron", "expr": j.schedule}, "paused_reason": j.paused_reason})
                 })
                 .collect();
@@ -167,7 +183,6 @@ impl Adapter for HermesProfile {
                 json_sorted(&json!({ "jobs": jobs })).into_bytes(),
             ));
         }
-        let kept = m.extras.get(ID).and_then(|x| x.get("config")).cloned();
         if !mcp.is_empty() || kept.is_some() {
             let mut cfg: Y = match kept {
                 Some(v) => serde_yaml::to_value(v).map_err(|e| e.to_string())?,
@@ -186,7 +201,16 @@ impl Adapter for HermesProfile {
             ));
         }
         if !manual.is_empty() {
-            out.push((sync::MANUAL.into(), sync::manual_text(&manual).into_bytes()));
+            // items a human ticked off stay ticked
+            let mut text = sync::manual_text(&[]);
+            for (n, todo) in &manual {
+                let done = m
+                    .manual
+                    .iter()
+                    .any(|x| x.done && x.item == *n && x.todo == *todo);
+                text += &format!("- [{}] {n}: {todo}\n", if done { "x" } else { " " });
+            }
+            out.push((sync::MANUAL.into(), text.into_bytes()));
         }
         for (rel, b) in &out {
             write_atomic(&dest.join(rel), b, None)?;
@@ -262,7 +286,7 @@ fn read_manual(src: &Path) -> (Vec<CredentialRef>, Vec<ManualItem>) {
         else {
             continue;
         };
-        let Some((item, todo)) = rest.split_once(": ") else {
+        let Some((item, todo)) = split_manual(rest) else {
             continue;
         };
         match item.strip_prefix("credential ") {
@@ -272,12 +296,36 @@ fn read_manual(src: &Path) -> (Vec<CredentialRef>, Vec<ManualItem>) {
                 creds.push(CredentialRef::new(n))
             }
             _ => manual.push(ManualItem {
-                item: item.into(),
-                todo: todo.into(),
+                done: !l.starts_with("- [ ]"),
+                ..ManualItem::new(item, todo)
             }),
         }
     }
     (creds, manual)
+}
+
+/// `<item>: <todo>` split at the `": "` before a todo botport writes (names and todos may hold `": "` too), else
+/// at the first one.
+fn split_manual(rest: &str) -> Option<(&str, &str)> {
+    const TODOS: [&str; 5] = [
+        "not imported: ",
+        "event-triggered on the Grok side",
+        "set it on the Hermes side by hand",
+        "runs on another machine",
+        "app without an MCP url",
+    ];
+    let known = |t: &str| {
+        TODOS.iter().any(|p| t.starts_with(p))
+            || (t.starts_with("no ")
+                && t.contains(" in the description: create the Hermes cron job"))
+            || t.split_once(' ').is_some_and(|(k, r)| {
+                !k.contains(':') && r.starts_with("connector: enable the matching")
+            })
+    };
+    rest.match_indices(": ")
+        .map(|(i, _)| (&rest[..i], &rest[i + 2..]))
+        .find(|(_, t)| known(t))
+        .or_else(|| rest.split_once(": "))
 }
 
 /// Profile data the model has no field for: config.yaml (secret-looking keys dropped) and the cron jobs.

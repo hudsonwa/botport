@@ -9,12 +9,12 @@
 //!   Hermes side's. A legacy SOUL.md without markers that equals the template exactly counts as in sync.
 //! - config.yaml: only the template's leaf paths (minus `preserve`) are owned; lists keep Hermes-side extra items.
 //! - USER.md seed entries are added if missing, never removed. Cron jobs are matched by name.
+use super::spec::Spec;
 use crate::core::adapter::Source;
 pub use crate::core::adapter::{item, Applied, Item, St};
 use crate::core::model::BotModel;
 use crate::core::secrets;
-use crate::spec::Spec;
-use crate::util::*;
+use crate::core::util::*;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_yaml::{Mapping, Value as Y};
@@ -131,7 +131,7 @@ impl<'a> Ctx<'a> {
 }
 
 /// The bot's display name ("Bot" when it has none).
-fn bot_name(m: &BotModel) -> &str {
+pub(crate) fn bot_name(m: &BotModel) -> &str {
     if m.persona.name.is_empty() {
         "Bot"
     } else {
@@ -598,7 +598,7 @@ fn want_config(c: &Ctx) -> Res<Option<ConfigWant>> {
         .take_while(|l| l.starts_with('#'))
         .map(|l| format!("{l}\n"))
         .collect();
-    let mut v: Y = serde_yaml::from_str(&crate::yaml11::read(&text))
+    let mut v: Y = serde_yaml::from_str(&crate::core::yaml11::read(&text))
         .map_err(|e| format!("config template: {e}"))?;
     for (path, file) in &cfg.inherit {
         let segs: Vec<String> = path.split('.').map(String::from).collect();
@@ -972,7 +972,7 @@ fn load_yaml(p: &Path) -> Res<Option<Y>> {
     if !p.is_file() {
         return Ok(None);
     }
-    serde_yaml::from_str(&crate::yaml11::read(&read_str(p)?))
+    serde_yaml::from_str(&crate::core::yaml11::read(&read_str(p)?))
         .map(Some)
         .map_err(|e| format!("{}: {e}", p.display()))
 }
@@ -1307,7 +1307,10 @@ fn plan_config(
     }
     let mut config_text = None;
     if changed || live.is_none() {
-        config_text = Some(format!("{head}\n{}", crate::yaml11::emit_checked(&new)?));
+        config_text = Some(format!(
+            "{head}\n{}",
+            crate::core::yaml11::emit_checked(&new)?
+        ));
     }
     if items.is_empty() {
         items.push(item(
@@ -1910,8 +1913,8 @@ fn apply_config(
                 // Rebuild without the conflicting paths: re-plan semantics, applied path by path.
                 let mut new =
                     load_yaml(&c.dest.join("config.yaml"))?.unwrap_or(Y::Mapping(Mapping::new()));
-                let full: Y =
-                    serde_yaml::from_str(&crate::yaml11::read(text)).map_err(|e| e.to_string())?;
+                let full: Y = serde_yaml::from_str(&crate::core::yaml11::read(text))
+                    .map_err(|e| e.to_string())?;
                 for i in &cfg_todo {
                     let path: Vec<String> = split_dotted(&i.name, &full);
                     if let Some(v) = get_path(&full, &path) {
@@ -1921,7 +1924,7 @@ fn apply_config(
                 let head = &p.want.config.as_ref().unwrap().0;
                 write_atomic(
                     &c.dest.join("config.yaml"),
-                    format!("{head}\n{}", crate::yaml11::emit_checked(&new)?).as_bytes(),
+                    format!("{head}\n{}", crate::core::yaml11::emit_checked(&new)?).as_bytes(),
                     Some(0o600),
                 )?;
             } else {
@@ -1999,7 +2002,7 @@ fn apply_mcp(
                 set_path(&mut new, &path, v);
             }
         }
-        let body = crate::yaml11::emit_checked(&new)?;
+        let body = crate::core::yaml11::emit_checked(&new)?;
         let out_t = if head.is_empty() {
             body
         } else {
@@ -2174,7 +2177,7 @@ fn run_hermes_cron(c: &Ctx, j: &CronJob, create: bool) -> Res<()> {
 /// The lock: source digest and files read, written when it changed; the pre-rename lock removed.
 fn write_lock(c: &Ctx, lock: &mut Lock) -> Res<()> {
     lock.version = 1;
-    lock.tool_version = crate::bundle::VERSION.into();
+    lock.tool_version = crate::adapters::grok_bot::bundle::VERSION.into();
     lock.bundle_digest = c.source.digest();
     lock.grok_excluded.extend(c.source.excluded.iter().cloned());
     lock.files_read = c.source.files_read.clone();
@@ -2346,6 +2349,19 @@ mod tests {
         record_soul(&mut lock, &items, &now, false);
         assert_eq!(lock.soul["__file__"], sha256_hex(now.as_bytes()));
         assert_eq!(lock.soul["a"], sha256_hex(b"A\n"));
+    }
+
+    #[test]
+    fn soul_lock_without_markers_records_only_the_file() {
+        let (_, mut lock) = soul_fixture();
+        let now = "A hand-written SOUL.md with no botport markers\n";
+        record_soul(&mut lock, &[], now, false);
+        assert_eq!(lock.soul["__file__"], sha256_hex(now.as_bytes()));
+        assert_eq!(
+            (lock.soul["a"].as_str(), lock.soul["b"].as_str()),
+            ("old", "old"),
+            "no sections found, so no section record changes"
+        );
     }
 
     #[test]

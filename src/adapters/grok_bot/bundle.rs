@@ -9,7 +9,7 @@
 //!
 //! A directory without manifest.json is read as a legacy hand export (profile.json, settings.json, MEMORY.md,
 //! skills/<name>/SKILL.md at its top level, like `examples/acme/grok/`) and normalized in memory.
-use crate::util::*;
+use crate::core::util::*;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::fs;
@@ -140,7 +140,7 @@ pub fn load(dir: &Path) -> Res<Bundle> {
         .collect();
     let p = dir.join("memory/memory.jsonl");
     if p.is_file() {
-        let b = crate::util::read(&p)?;
+        let b = crate::core::util::read(&p)?;
         read.insert("memory/memory.jsonl".into(), sha256_hex(&b));
         let rows = parse_jsonl(&String::from_utf8_lossy(&b));
         facts.extend(
@@ -628,10 +628,10 @@ pub fn export(o: &ExportOpts) -> Res<ExportResult> {
         not_captured(&describe, &excluded).as_bytes(),
     )?;
     if !describe.trim().is_empty() {
-        let d = crate::describe::parse(&describe);
+        let d = crate::adapters::grok_bot::describe::parse(&describe);
         out.put(
             "normalized/describe.json",
-            crate::util::json_sorted(&d).as_bytes(),
+            crate::core::util::json_sorted(&d).as_bytes(),
         )?;
     }
     // 6. manifest (no timestamps: identical input -> identical bytes)

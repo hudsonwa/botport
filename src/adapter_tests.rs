@@ -199,3 +199,102 @@ fn hermes_write_carries_schedules_connectors_and_credential_names() {
     assert_eq!(names(&back), names(&m));
     std::fs::remove_dir_all(&d).unwrap();
 }
+
+/// fixture -> read -> write -> read -> write -> read: returns the models of every read.
+fn hermes_rounds(tag: &str, src: &std::path::Path, n: usize) -> Vec<BotModel> {
+    let mut out = vec![HermesProfile.read(src).unwrap()];
+    for i in 0..n {
+        let d = scratch(&format!("{tag}-{i}"));
+        HermesProfile.write(out.last().unwrap(), &d).unwrap();
+        out.push(HermesProfile.read(&d).unwrap());
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+    out
+}
+
+#[test]
+fn hermes_round_trip_keeps_cron_names_and_config_in_model_fields() {
+    // issue #8: cron jobs and MCP servers come back as schedules and connectors, the same on every round trip
+    let rounds = hermes_rounds(
+        "rounds-fixture",
+        &root().join("tests/fixtures/conformance/hermes"),
+        3,
+    );
+    let first = &rounds[0];
+    assert_eq!(first.schedules[0].name, "Conformance: Nightly tidy");
+    assert_eq!(first.connectors[0].name, "visitor-log");
+    for back in &rounds[1..] {
+        assert_eq!(back.schedules, first.schedules);
+        assert_eq!(back.connectors, first.connectors);
+        assert_eq!(back.credentials, first.credentials);
+        assert_eq!(back.manual, first.manual);
+        assert_eq!(back.skills, first.skills);
+        assert_eq!(back.persona.instructions, first.persona.instructions);
+        assert_eq!(
+            back.extras["hermes"]["config"],
+            first.extras["hermes"]["config"]
+        );
+    }
+}
+
+#[test]
+fn hermes_write_does_not_duplicate_a_kept_mcp_server_or_list_it_as_manual() {
+    let src = scratch("mcp-src");
+    std::fs::write(
+        src.join("config.yaml"),
+        "mcp_servers:\n  My_Server:\n    url: https://x.example.test/mcp\n  local-tool:\n    command: tool\n",
+    )
+    .unwrap();
+    let rounds = hermes_rounds("rounds-mcp", &src, 2);
+    for back in &rounds {
+        let mut names: Vec<_> = back.connectors.iter().map(|c| c.name.as_str()).collect();
+        names.sort();
+        assert_eq!(names, ["My_Server", "local-tool"]);
+        assert!(back.manual.is_empty(), "{:?}", back.manual);
+    }
+    std::fs::remove_dir_all(&src).unwrap();
+}
+
+#[test]
+fn hermes_manual_names_with_colons_and_ticks_survive() {
+    let src = scratch("manual-src");
+    std::fs::write(
+        src.join("botport-manual.md"),
+        "# Set up by hand (botport)\n\n\
+         - [ ] schedule Report: weekly: no schedule/timezone in the description: create the Hermes cron job by hand\n\
+         - [x] connector Team: wiki: builtin connector: enable the matching Hermes tool or MCP server by hand\n\
+         - [ ] schedule A: b: not imported: looks like it holds a secret (x); its text was not copied, set it up by hand\n\
+         - [x] skill odd: hand-written todo\n",
+    )
+    .unwrap();
+    let rounds = hermes_rounds("rounds-manual", &src, 2);
+    let got = |m: &BotModel| {
+        let mut v: Vec<_> = m
+            .manual
+            .iter()
+            .map(|x| {
+                (
+                    x.item.clone(),
+                    x.todo.split(' ').next().unwrap().to_string(),
+                    x.done,
+                )
+            })
+            .collect();
+        v.sort();
+        v
+    };
+    let want = vec![
+        (
+            "connector Team: wiki".to_string(),
+            "builtin".to_string(),
+            true,
+        ),
+        ("schedule A: b".into(), "not".into(), false),
+        ("schedule Report: weekly".into(), "no".into(), false),
+        ("skill odd".into(), "hand-written".into(), true),
+    ];
+    for m in &rounds {
+        assert_eq!(got(m), want);
+    }
+    std::fs::remove_dir_all(&src).unwrap();
+}
