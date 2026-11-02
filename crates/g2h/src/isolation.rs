@@ -77,8 +77,7 @@ pub fn approve_allowed(s: Option<&SeparateUser>, own: u32, peer: Option<u32>) ->
 
 /// The effective uid of this process: who g2hd really runs as.
 pub fn euid() -> u32 {
-    // SAFETY: geteuid has no preconditions and cannot fail.
-    unsafe { libc::geteuid() }
+    rustix::process::geteuid().as_raw()
 }
 
 /// A path g2hd trusts must be owned by `own` (or root) and not writable by
@@ -119,6 +118,16 @@ fn owned_not_writable(
 /// the path as written (each symlink and its directory) and the resolved path.
 fn trusted_chain(path: &Path, own: u32, what: &str) -> Result<(), String> {
     trusted(path, own, what)?;
+    // the leaf itself, if a symlink: its owner could re-point it later
+    let leaf =
+        std::fs::symlink_metadata(path).map_err(|e| format!("{what} {}: {e}", path.display()))?;
+    if leaf.file_type().is_symlink() && leaf.uid() != own && leaf.uid() != 0 {
+        return Err(format!(
+            "{what} {} is a symlink owned by uid {}; must be g2hd's or root's",
+            path.display(),
+            leaf.uid()
+        ));
+    }
     let real =
         std::fs::canonicalize(path).map_err(|e| format!("{what} {}: {e}", path.display()))?;
     for p in [path, real.as_path()] {
@@ -234,6 +243,13 @@ pub fn check_startup(
         }
     }
     if let Some(argv) = approver.filter(|a| !a.is_empty()) {
+        // one element only: any argument could be a script or a program for a
+        // launcher (nice, xargs, awk -f, …) that no name list can cover
+        if argv.len() != 1 {
+            return Err(format!(
+                "separate_user: [ops_approver] command must be one element (the program itself, no arguments), got {argv:?}; put the arguments in a root-owned wrapper script"
+            ));
+        }
         let bin = Path::new(&argv[0]);
         if !bin.is_absolute() {
             return Err(format!(
@@ -241,15 +257,40 @@ pub fn check_startup(
                 argv[0]
             ));
         }
-        if is_interpreter(bin) {
+        // by name as written, then (after the chain check) by what it resolves to
+        let real = if is_interpreter(bin) {
+            bin.to_path_buf()
+        } else {
+            trusted_chain(bin, own, "approver")?;
+            std::fs::canonicalize(bin).map_err(|e| format!("approver {}: {e}", bin.display()))?
+        };
+        if is_interpreter(&real) {
             return Err(format!(
                 "separate_user: [ops_approver] command {:?} is an interpreter; its script or code is not checked. Point command at the script itself (root-owned, with a #! line)",
                 argv[0]
             ));
         }
-        trusted_chain(bin, own, "approver")?;
     }
     Ok(())
+}
+
+/// The approve command the approval message shows. In separate-user mode a
+/// bare `g2h approve` from the owner's shell gets `not_owner` and would run a
+/// PATH-resolved `g2h` in the shell the bots control, so show the recipe's form.
+pub fn approve_hint(
+    s: Option<&SeparateUser>,
+    own: u32,
+    home: &Path,
+    id: &str,
+    code: &str,
+) -> String {
+    match s {
+        None => format!("To allow it once, run on your machine:\n  g2h approve {id} {code}"),
+        Some(_) => format!(
+            "To allow it once, run from a separate admin account's own login session (never a shell opened from your everyday account; see docs/G2H-SEPARATE-USER.md):\n  /usr/bin/sudo -u '#{own}' /usr/bin/env G2H_HOME={} /opt/g2h/bin/g2h approve {id} {code}",
+            home.display()
+        ),
+    }
 }
 
 /// One line for `g2h doctor`.
@@ -418,7 +459,7 @@ mod tests {
             "/usr/bin/python3.12",
             "/usr/bin/perl",
         ] {
-            let argv = vec![i.to_string(), "/tmp/x".to_string()];
+            let argv = vec![i.to_string()];
             assert!(
                 check_startup(&su(), own, &home, &cfg, Some(&argv))
                     .unwrap_err()
@@ -427,6 +468,58 @@ mod tests {
             );
         }
         assert!(!is_interpreter(Path::new("/opt/g2h/bin/g2h-approver")));
+    }
+
+    #[test]
+    fn startup_refuses_approver_arguments_and_interpreter_symlinks() {
+        let (t, home, own) = sep_home();
+        let cfg = home.join("config.toml");
+        // the audit's bypasses: launchers and interpreters with arguments
+        for argv in [
+            &["/usr/bin/nice", "/bin/sh", "/tmp/evil.sh"][..],
+            &["/usr/bin/awk", "-f", "/tmp/evil.sh"],
+            &["/usr/bin/arch", "-arm64", "/bin/sh", "/tmp/evil.sh"],
+            &["/usr/bin/xargs", "-n1", "/bin/sh", "/tmp/evil.sh"],
+        ] {
+            let argv: Vec<String> = argv.iter().map(|a| a.to_string()).collect();
+            assert!(
+                check_startup(&su(), own, &home, &cfg, Some(&argv))
+                    .unwrap_err()
+                    .contains("one element"),
+                "{argv:?}"
+            );
+        }
+        // a trusted-looking name that links to a shell
+        let d = t.path().join("bin");
+        std::fs::create_dir(&d).unwrap();
+        let notify = d.join("notify");
+        std::os::unix::fs::symlink("/bin/sh", &notify).unwrap();
+        let argv = vec![notify.display().to_string()];
+        assert!(check_startup(&su(), own, &home, &cfg, Some(&argv))
+            .unwrap_err()
+            .contains("interpreter"));
+    }
+
+    #[test]
+    fn startup_checks_the_leaf_symlink_owner() {
+        let (t, home, own) = sep_home();
+        let cfg = home.join("config.toml");
+        let link = t.path().join("approver");
+        std::os::unix::fs::symlink("/usr/bin/true", &link).unwrap();
+        let argv = vec![link.display().to_string()];
+        // our own link passes; the same link judged for another g2hd uid fails
+        assert!(check_startup(&su(), own, &home, &cfg, Some(&argv)).is_ok());
+        let e = trusted_chain(&link, own + 1, "approver").unwrap_err();
+        assert!(e.contains("is a symlink owned by uid"), "{e}");
+    }
+
+    #[test]
+    fn approve_hint_shows_the_separate_user_form() {
+        let h = Path::new("/var/lib/g2h");
+        assert!(approve_hint(None, 7, h, "r1", "c").ends_with("\n  g2h approve r1 c"));
+        let m = approve_hint(Some(&su()), 7, h, "r1", "c");
+        assert!(m.contains("/usr/bin/sudo -u '#7' /usr/bin/env G2H_HOME=/var/lib/g2h /opt/g2h/bin/g2h approve r1 c"));
+        assert!(m.contains("docs/G2H-SEPARATE-USER.md"));
     }
 
     #[test]

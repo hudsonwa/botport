@@ -19,7 +19,7 @@ uuid = { version = "1", features = ["v7"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-util", "signal", "process"] }
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["handshake"] }
 unicode-normalization = "0.1"
-libc = "0.2"
+rustix = { version = "1", default-features = false, features = ["std", "process"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 
 [features]

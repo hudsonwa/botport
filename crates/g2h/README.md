@@ -8,7 +8,9 @@ the chance that one bot treats the other's text as instructions (framing, hop li
 language model can still follow framed text, so this is defence in depth, not a guarantee. It is
 **not** a security boundary against a bot that already has a shell as your user: such a bot can change g2h's config
 or skip g2h entirely. That is the default. Running `g2hd` as a separate OS user is implemented as an opt-in mode
-(`[separate_user]`; not yet run in production): its config, state and approval step are then out of the bots' reach.
+(`[separate_user]`; not yet run in production): its config, state and approval step are then out of the bots' reach
+if the recipe's conditions hold (root-owned paths, and the whole setup and every approve done from a separate
+admin account's own login session).
 Setup: [G2H-SEPARATE-USER.md](../../docs/G2H-SEPARATE-USER.md). `g2h doctor` says which mode is running.
 
 | module | purpose |
@@ -128,7 +130,8 @@ approver channel reaches the human and the bot cannot read it. So use `auto` onl
 battery) and keep the approver on a channel neither bot can read. The opt-in separate-user mode
 (`[separate_user]`, [setup recipe](../../docs/G2H-SEPARATE-USER.md)) runs g2hd as its own user that owns its config,
 home and approver; the socket checks each peer uid, and `approve` is accepted only from the g2h user or root, so a bot
-running as your user cannot approve its own op. Implemented and tested with a simulated uid; not yet run in production.
+running as your user cannot approve its own op, if the recipe's conditions hold (root-owned paths, and the whole
+setup and every approve done from a separate admin account's own login session). Implemented and tested with a simulated uid; not yet run in production.
 
 **Sending.**
 - `g2h send-op <op> --args '<json object>'` sends a request. It prints the request_id and a status: `done` (handed to

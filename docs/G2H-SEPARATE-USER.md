@@ -14,9 +14,11 @@ approver or read the state. In separate-user mode:
   - every file of these that exists in the home is a regular file (not a symlink), owned by that user, and not
     group/other-writable: `config.toml`, `state.json`, `credentials`, `inbox.credentials`, `g2h.log.jsonl`,
     `g2hd.lock`, `sessions.json`, `approvals.txt`;
-  - `[ops_approver] command[0]` is an absolute path, is not an interpreter (`sh`, `bash`, `env`, `python3`, `perl`,
-    `node` …, whose script would go unchecked), and it and every directory above it are owned by that user or root
-    and not group/other-writable.
+  - `[ops_approver] command` is exactly one element (no arguments: an argument could be a script, or a program for
+    a launcher such as `nice`, `xargs` or `awk -f`, that no name list can cover); it is an absolute path; neither the
+    name as written nor the file it resolves to is an interpreter (`sh`, `bash`, `env`, `python3`, `perl`, `node` …);
+    and it, a symlink at that path, and every directory above it are owned by that user or root and not
+    group/other-writable. Put any arguments in a root-owned wrapper script.
 
   Each time it reads a credentials file it also refuses one that is not 0600 or not owned by the uid it runs as.
   It does **not** check the `g2h`/`g2hd` binaries themselves, rotated logs, or anything outside the home; that part
@@ -25,7 +27,7 @@ approver or read the state. In separate-user mode:
   connection's peer uid (`SO_PEERCRED` / `getpeereid`) must be g2hd's, root's, or in `allowed_uids`; other uids are
   dropped and logged (`peer_refused`).
 - Your bots run as your user, so they can still `ask`, `send`, `send-op`, `recv`. They **cannot approve**:
-  `approve` is accepted only from g2hd's uid or root (`sudo -u _g2h …`), even with the right code.
+  `approve` is accepted only from g2hd's uid or root (`/usr/bin/sudo -u _g2h …`), even with the right code.
 - The one-time code goes out through `[ops_approver]`, which runs as the g2h user. Point it at something your user
   cannot read: a file in the g2h home (below), or a notifier whose token lives only in the g2h home.
 
@@ -38,42 +40,56 @@ approver and the approval step are out of that bot's reach, **only if all of the
    replace it. Install root-owned copies (step 2 below). Avoid `/usr/local` on Intel Macs with Homebrew, where
    `/usr/local/bin` and `/usr/local/var` belong to the admin user; the recipe uses `/opt/g2h/bin` and `/var/db/g2h`
    (macOS) or `/var/lib/g2h` (Linux).
-2. **Every command run as the g2h user uses absolute paths** (`/usr/bin/sudo`, `/bin/cat`, `/opt/g2h/bin/g2h`),
-   because `sudo` on macOS keeps your `PATH`, and your bots can edit it.
-3. **You approve from a session your bots cannot modify**: a separate admin account, or a clean login shell
-   (for example `/usr/bin/env -i /bin/zsh -f`, then `/usr/bin/sudo …`). Your bots run as you, so they control your
-   shell's rc files, aliases and functions (including a fake `sudo`), and could capture your password or swap the
-   command the first time you type it there.
+2. **Every command uses absolute paths** (`/usr/bin/sudo`, `/bin/cat`, `/opt/g2h/bin/g2h`), because `sudo` on
+   macOS keeps your `PATH`.
+3. **The whole recipe runs from a separate admin account's own login session**: building the binaries or checking
+   the release archive's checksum, the install, the config, the credentials, and every later `approve`. Log in to
+   that account at the login window, by fast user switching, or on the console. **Never** use a shell started from
+   your everyday account (`su`, `sudo -i`, `env -i zsh -f`, a new terminal tab): your bots run as you, so they
+   control that shell's rc files, and zsh and bash both accept functions *named* with an absolute path
+   (`/usr/bin/sudo() { … }` overrides the real `/usr/bin/sudo`), so absolute paths alone do not help there. A
+   process running as you can also read your terminal device. Either way a bot could capture the admin password or
+   swap a command. If a bot already has a shell as you while you set this up, it can tamper with the setup; if you
+   cannot use a second account, at least stop the bots' gateways first and verify afterwards (`g2h doctor` as the
+   g2h user, below).
 4. Your bots cannot run `sudo` (no passwordless sudo for your user, no cached sudo ticket they can use).
 
-Run these yourself. Replace `501` with your uid (`id -u`) and `you` with your login. Build `g2h` and `g2hd`
-first (`cargo build --release`, or the release archive) and run the install from that directory.
+Run these yourself, in that admin session. Replace `501` with your everyday uid (`id -u you`) and `you` with that
+login. Get the binaries **in that session**, never from a directory your everyday user can write:
+
+- build from a fresh checkout in the admin account: `/usr/bin/git clone https://github.com/hudsonwa/botport
+  "$HOME/botport"` (that account's own home), then `cargo build --release --locked -p g2h` there; or
+- download the release archive there and compare `/usr/bin/shasum -a 256 <archive>` (`/usr/bin/sha256sum` on Linux)
+  with the release's `SHA256SUMS` before unpacking.
+
+The install lines below use `B=/absolute/path/to/that/release-dir` (the build's `target/release`, or the unpacked
+archive); set it first.
 
 ## macOS (dscl + launchd)
 
 ```sh
 # 1. a group and a hidden system user (pick ids that `dscl . -list /Users UniqueID` shows free)
 D=/Users   # dscl's user records
-sudo /usr/bin/dscl . -create /Groups/g2h PrimaryGroupID 450
-sudo /usr/bin/dscl . -create "$D/_g2h" UniqueID 450
-sudo /usr/bin/dscl . -create "$D/_g2h" PrimaryGroupID 450
-sudo /usr/bin/dscl . -create "$D/_g2h" UserShell /usr/bin/false
-sudo /usr/bin/dscl . -create "$D/_g2h" NFSHomeDirectory /var/db/g2h
-sudo /usr/bin/dscl . -create "$D/_g2h" IsHidden 1
-sudo /usr/sbin/dseditgroup -o edit -a you -t user g2h
-sudo /usr/sbin/dseditgroup -o edit -a _g2h -t user g2h
+/usr/bin/sudo /usr/bin/dscl . -create /Groups/g2h PrimaryGroupID 450
+/usr/bin/sudo /usr/bin/dscl . -create "$D/_g2h" UniqueID 450
+/usr/bin/sudo /usr/bin/dscl . -create "$D/_g2h" PrimaryGroupID 450
+/usr/bin/sudo /usr/bin/dscl . -create "$D/_g2h" UserShell /usr/bin/false
+/usr/bin/sudo /usr/bin/dscl . -create "$D/_g2h" NFSHomeDirectory /var/db/g2h
+/usr/bin/sudo /usr/bin/dscl . -create "$D/_g2h" IsHidden 1
+/usr/bin/sudo /usr/sbin/dseditgroup -o edit -a you -t user g2h
+/usr/bin/sudo /usr/sbin/dseditgroup -o edit -a _g2h -t user g2h
 
 # 2. root-owned binaries in root-owned directories
-sudo /usr/bin/install -d -o root -g wheel -m 0755 /opt /opt/g2h /opt/g2h/bin /opt/g2h/libexec
-sudo /usr/bin/install -o root -g wheel -m 0755 target/release/g2h target/release/g2hd /opt/g2h/bin/
+/usr/bin/sudo /usr/bin/install -d -o root -g wheel -m 0755 /opt /opt/g2h /opt/g2h/bin /opt/g2h/libexec
+/usr/bin/sudo /usr/bin/install -o root -g wheel -m 0755 "$B/g2h" "$B/g2hd" /opt/g2h/bin/
 
 # 3. the home, approver and config
-sudo /usr/bin/install -d -o _g2h -g g2h -m 0750 /var/db/g2h
+/usr/bin/sudo /usr/bin/install -d -o _g2h -g g2h -m 0750 /var/db/g2h
 printf '#!/bin/sh\n# appends each approval request to a file only _g2h (and root) can read\numask 077; /bin/cat >> /var/db/g2h/approvals.txt\n' \
-  | sudo /usr/bin/tee /opt/g2h/libexec/g2h-approver >/dev/null
-sudo /usr/sbin/chown root:wheel /opt/g2h/libexec/g2h-approver
-sudo /bin/chmod 0755 /opt/g2h/libexec/g2h-approver
-sudo -u _g2h /usr/bin/tee /var/db/g2h/config.toml >/dev/null <<'EOF'
+  | /usr/bin/sudo /usr/bin/tee /opt/g2h/libexec/g2h-approver >/dev/null
+/usr/bin/sudo /usr/sbin/chown root:wheel /opt/g2h/libexec/g2h-approver
+/usr/bin/sudo /bin/chmod 0755 /opt/g2h/libexec/g2h-approver
+/usr/bin/sudo -u _g2h /usr/bin/tee /var/db/g2h/config.toml >/dev/null <<'EOF'
 peers = ["grok"]
 [separate_user]
 allowed_uids = [501]
@@ -83,17 +99,18 @@ command = ["/opt/g2h/libexec/g2h-approver"]
 [ops]
 export = "approve"
 EOF
-sudo /bin/chmod 0600 /var/db/g2h/config.toml
+/usr/bin/sudo /bin/chmod 0600 /var/db/g2h/config.toml
 
 # 4. move the credentials in (owned by _g2h, 0600); a plain cp -p or rsync -a would keep your uid as owner,
 #    and g2hd refuses that
-sudo /usr/bin/install -o _g2h -g g2h -m 0600 ~/.g2h/credentials /var/db/g2h/credentials
+/usr/bin/sudo /usr/bin/install -o _g2h -g g2h -m 0600 "$D"/you/.g2h/credentials /var/db/g2h/credentials
 # only if you use one:
-sudo /usr/bin/install -o _g2h -g g2h -m 0600 ~/.g2h/inbox.credentials /var/db/g2h/inbox.credentials
+/usr/bin/sudo /usr/bin/install -o _g2h -g g2h -m 0600 "$D"/you/.g2h/inbox.credentials /var/db/g2h/inbox.credentials
 ```
 
 Do not copy `state.json` or the log; g2hd starts them fresh. Afterwards delete the old credentials from `~/.g2h`
-(your bots can read them there).
+(your bots can read them there). They could read them before, too: rotate them if you want them out of the bots'
+hands.
 
 5. A LaunchDaemon (system-wide, so it can set `UserName`), `/Library/LaunchDaemons/io.g2h.daemon-user.plist`,
 owned by root, mode 0644:
@@ -112,31 +129,35 @@ owned by root, mode 0644:
 ```
 
 ```sh
-sudo /bin/launchctl bootstrap system /Library/LaunchDaemons/io.g2h.daemon-user.plist
+/usr/bin/sudo /bin/launchctl bootstrap system /Library/LaunchDaemons/io.g2h.daemon-user.plist
 ```
 
-Stop any same-user g2hd first (`g2h uninstall`), or run the two with different homes.
+Stop any same-user g2hd first (`g2h uninstall`, from your everyday account), or run the two with different homes.
 
 ## Linux (useradd + systemd)
 
+The paths below (`/usr/bin/chown`, `/usr/bin/chmod`, `/usr/bin/systemctl`, `/usr/sbin/useradd` …) assume a
+merged-`/usr` distribution (Debian 12+, current Ubuntu and Fedora). On others, look each one up with `command -v`
+in the admin session first.
+
 ```sh
 # 1. a group and a system user
-sudo /usr/sbin/groupadd --system g2h
-sudo /usr/sbin/useradd --system --gid g2h --home-dir /var/lib/g2h --shell /usr/sbin/nologin g2h
-sudo /usr/sbin/usermod -aG g2h you          # log out and in again for the group to apply
+/usr/bin/sudo /usr/sbin/groupadd --system g2h
+/usr/bin/sudo /usr/sbin/useradd --system --gid g2h --home-dir /var/lib/g2h --shell /usr/sbin/nologin g2h
+/usr/bin/sudo /usr/sbin/usermod -aG g2h you          # log out and in again for the group to apply
 
 # 2. root-owned binaries in root-owned directories
-sudo /usr/bin/install -d -o root -g root -m 0755 /opt/g2h /opt/g2h/bin /opt/g2h/libexec
-sudo /usr/bin/install -o root -g root -m 0755 target/release/g2h target/release/g2hd /opt/g2h/bin/
+/usr/bin/sudo /usr/bin/install -d -o root -g root -m 0755 /opt/g2h /opt/g2h/bin /opt/g2h/libexec
+/usr/bin/sudo /usr/bin/install -o root -g root -m 0755 "$B/g2h" "$B/g2hd" /opt/g2h/bin/
 
 # 3. the home, approver and config
-sudo /usr/bin/install -d -o g2h -g g2h -m 0750 /var/lib/g2h
+/usr/bin/sudo /usr/bin/install -d -o g2h -g g2h -m 0750 /var/lib/g2h
 printf '#!/bin/sh\numask 077; /bin/cat >> /var/lib/g2h/approvals.txt\n' \
-  | sudo /usr/bin/tee /opt/g2h/libexec/g2h-approver >/dev/null
-sudo /usr/bin/chown root:root /opt/g2h/libexec/g2h-approver
-sudo /usr/bin/chmod 0755 /opt/g2h/libexec/g2h-approver
+  | /usr/bin/sudo /usr/bin/tee /opt/g2h/libexec/g2h-approver >/dev/null
+/usr/bin/sudo /usr/bin/chown root:root /opt/g2h/libexec/g2h-approver
+/usr/bin/sudo /usr/bin/chmod 0755 /opt/g2h/libexec/g2h-approver
 GID=$(/usr/bin/getent group g2h | /usr/bin/cut -d: -f3)
-sudo -u g2h /usr/bin/tee /var/lib/g2h/config.toml >/dev/null <<EOF
+/usr/bin/sudo -u g2h /usr/bin/tee /var/lib/g2h/config.toml >/dev/null <<EOF
 peers = ["grok"]
 [separate_user]
 allowed_uids = [501]
@@ -146,10 +167,10 @@ command = ["/opt/g2h/libexec/g2h-approver"]
 [ops]
 export = "approve"
 EOF
-sudo /usr/bin/chmod 0600 /var/lib/g2h/config.toml
+/usr/bin/sudo /usr/bin/chmod 0600 /var/lib/g2h/config.toml
 
 # 4. move the credentials in (owned by g2h, 0600)
-sudo /usr/bin/install -o g2h -g g2h -m 0600 ~/.g2h/credentials /var/lib/g2h/credentials
+/usr/bin/sudo /usr/bin/install -o g2h -g g2h -m 0600 /home/you/.g2h/credentials /var/lib/g2h/credentials
 ```
 
 `/etc/systemd/system/g2hd.service`:
@@ -170,7 +191,7 @@ WantedBy=multi-user.target
 ```
 
 ```sh
-sudo /usr/bin/systemctl daemon-reload && sudo /usr/bin/systemctl enable --now g2hd
+/usr/bin/sudo /usr/bin/systemctl daemon-reload && /usr/bin/sudo /usr/bin/systemctl enable --now g2hd
 ```
 
 The Hermes gateway backend reads the profile's gateway files from `hermes_home`; give the g2h user read access to
@@ -183,8 +204,12 @@ export G2H_HOME=/var/db/g2h              # /var/lib/g2h on Linux; for you and fo
 /opt/g2h/bin/g2h doctor                  # "isolation: separate-user: g2hd uid 450; clients [501] …"
 ```
 
-Approving an op: from a clean session (condition 3 above), read the code as the g2h user, then approve as the
-g2h user, with absolute paths only:
+Check the setup as the g2h user, from the admin session:
+`/usr/bin/sudo -u _g2h /usr/bin/env G2H_HOME=/var/db/g2h /opt/g2h/bin/g2h doctor`.
+
+Approving an op: from the admin account's own login session (condition 3 above), read the code as the g2h user,
+then approve as the g2h user, with absolute paths only (the approval message shows the same command, with g2hd's
+uid as `'#450'`):
 
 ```sh
 /usr/bin/sudo -u _g2h /bin/cat /var/db/g2h/approvals.txt
@@ -199,7 +224,8 @@ In same-user mode `g2h doctor` says `isolation: same-user (…): NOT a security 
 - Tested (`crates/g2h/src/isolation.rs`, `crates/g2h/tests/ops.rs`): the peer-uid and approve policy; startup refusals
   (own uid in `allowed_uids`, root, group/other-writable home, config or approver, relative approver path, a home
   owned by another uid, a group/other-writable or symlinked state/credentials/inbox credentials/log/lock/sessions/
-  approvals file, a writable directory anywhere above the home or the approver, an interpreter as approver);
+  approvals file, a writable directory anywhere above the home or the approver, an interpreter as approver by name or through a symlink, an approver with arguments, including the
+  launcher bypasses `nice`/`xargs`/`arch`/`awk -f`, an approver symlink owned by another uid);
   g2hd's uid is the process euid; socket 0660 and home 0750 with the configured group; a simulated bots' uid can talk and
   request an op but gets `not_owner` on `approve` with the right code, and nothing runs; an unlisted uid is
   dropped; g2hd's own uid approves; doctor reports the mode. The bots' uid is simulated by a test-only override of

@@ -1051,8 +1051,15 @@ impl<B: PeerBackend + 'static> Broker<B> {
             Err(e) => return refuse(self, format!("cannot make an approval code: {e}")),
         };
         let args = self.scrub(&args.to_string());
+        let hint = isolation::approve_hint(
+            self.opts.config.separate_user.as_ref(),
+            self.uid,
+            &self.opts.paths.home,
+            id,
+            &code,
+        );
         let msg = format!(
-            "g2h: the Grok bot asks to run op {op:?} with args {args}\nrequest {id}\nTo allow it once, run on your machine:\n  g2h approve {id} {code}\nThe code expires in {} min. Ignore this message to refuse.\n",
+            "g2h: the Grok bot asks to run op {op:?} with args {args}\nrequest {id}\n{hint}\nThe code expires in {} min. Ignore this message to refuse.\n",
             self.opts.code_ttl.as_secs() / 60
         );
         self.logw(json!({"event": "op_code", "request_id": id, "code_sha256": code_hash(&code)}));
