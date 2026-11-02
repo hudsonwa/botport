@@ -18,6 +18,16 @@ All notable changes to this project are documented here. The format is based on
   pasted those instructions in by hand, remove your copy.
 - Writing a Grok description: an event schedule stays "on an event" and reads back as an event (#14). A timed
   schedule with no cron is now written as "no schedule given", not "on an event", and reads back as a manual item.
+- Commands that write into a Hermes profile hold a per-profile OS file lock (`flock` on `<profile>/.botport.lock`):
+  `apply`, `sync` (one lock across both halves of `--direction both`), and the `botport.lock.json` record written by
+  `export-hermes` and `sync --direction h2g`. A second such run is refused at once with the holder's pid; the lock is
+  released by the kernel when the holder exits, so there is no stale-lock logic, and the file is kept. `plan`,
+  `drift` and `--dry-run` never take it. It is advisory and per host: `hermes` itself and other machines are not
+  covered (docs/SECURITY.md).
+- A malformed or unreadable `cron/jobs.json` is now an error for `plan`, `apply`, `sync`, `drift` and
+  `export-hermes`, not "no jobs". If it turns up malformed after files were written, the error says so and names
+  the restore point.
+- If the `--details` report can't be written, one warning on stderr names the path and the reason.
 
 ## [0.1.0] - 2026-11-03
 First public release. The tool was called grok2hermes before release; the old names still work (see

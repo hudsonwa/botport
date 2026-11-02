@@ -112,7 +112,7 @@ impl Adapter for HermesProfile {
             memory,
             memory_text: None,
             skills,
-            schedules: read_schedules(src),
+            schedules: read_schedules(src)?,
             connectors: read_connectors(src)?,
             credentials,
             history: None,
@@ -268,8 +268,8 @@ impl Adapter for HermesProfile {
 }
 
 /// cron/jobs.json -> schedules (Hermes runs cron in the host's timezone: `local`).
-fn read_schedules(src: &Path) -> Vec<Schedule> {
-    sync::live_jobs(src)
+fn read_schedules(src: &Path) -> Res<Vec<Schedule>> {
+    Ok(sync::live_jobs(src)?
         .iter()
         .map(|j| {
             let expr = sync::cron_expr(j);
@@ -286,7 +286,7 @@ fn read_schedules(src: &Path) -> Vec<Schedule> {
                 enabled: j["enabled"] != json!(false),
             }
         })
-        .collect()
+        .collect())
 }
 
 /// config.yaml `mcp_servers` -> connectors (url and `tools.include`; header and auth values are never read).
@@ -422,7 +422,7 @@ fn unmapped(src: &Path) -> Res<Option<serde_json::Value>> {
         scrub(&mut j);
         x.insert("config".into(), j);
     }
-    let jobs = sync::live_jobs(src);
+    let jobs = sync::live_jobs(src)?;
     if !jobs.is_empty() {
         let mut j = serde_json::Value::Array(jobs);
         scrub(&mut j);

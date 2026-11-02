@@ -151,7 +151,8 @@ for root, dirs, files in os.walk(w):
     for f in sorted(files):
         p = os.path.join(root, f)
         rel = norm(os.path.relpath(p, w))
-        if rel in ("o", "e", "fake-hermes"):
+        # .botport.lock is the operation lock: it holds only the last run's pid and time
+        if rel in ("o", "e", "fake-hermes") or f == ".botport.lock":
             continue
         if f.endswith(".zip"):
             z = zipfile.ZipFile(p)

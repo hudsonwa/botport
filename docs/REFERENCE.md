@@ -85,6 +85,13 @@ manifests with `"tool": "grok2hermes"`. `plan`/`drift` treat them as in sync; th
 Says which Hermes-side templates own which parts of the profile. See the made-up example [`examples/acme/botport.toml`](../examples/acme/botport.toml); a real bot keeps its spec in its own repo.
 Without a spec: skills + a memory skill under `skills/grok-<name>/` only.
 
+Two botport files sit in the profile and are easy to confuse:
+- `botport.lock.json` is the **sync record** (what was written and sent each way). Don't delete it: without it every
+  owned unit reads as a conflict until `apply --adopt`.
+- `.botport.lock` is the **operation lock**: an OS file lock held while a botport run writes into the profile, so two
+  runs never interleave (see [SECURITY.md](SECURITY.md)). It holds only the last holder's pid. It is released when
+  that run exits; never delete it to "unlock" a profile.
+
 Ownership rules (from agent-importers `sync.py`):
 - **skills** — one unit per skill dir under `skills/<category>/`; its tree digest is recorded in
   `<profile>/botport.lock.json` when written. Live differs from both the export and the record → **conflict**,

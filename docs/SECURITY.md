@@ -113,7 +113,18 @@ point and with it the whole apply, before anything is written, not even a direct
 
 **Apply is sequential, not transactional.** It writes one file at a time behind a restore point; if it stops
 part-way, the files already written stay written. The restore point lets you put them back by hand; it does not roll
-back a partial apply on its own.
+back a partial apply on its own. **What the lock covers.** Every command that writes into a Hermes profile holds an OS file lock
+(`flock`) on `<profile>/.botport.lock` while it plans and writes: `apply`, `sync` (both halves of `--direction both`
+under one lock), and the record that `export-hermes` and `sync --direction h2g` write to `botport.lock.json`. A
+second such run on the same profile is refused at once, naming the holder's pid. The kernel drops the lock when the
+holder exits, however it exits, so there is no stale-lock takeover. The file itself stays (it only holds the last
+holder's pid for that message); deleting it while a run holds it would let a second run in, so don't. `plan`,
+`drift` and `--dry-run` never take or create it. Limits: the lock is advisory and per host. It doesn't stop
+`hermes` itself, your editor, or a botport on another machine writing to a shared or network profile directory. A
+symlink or non-regular file at that path is refused. On a read-only profile that has no lock file yet, a run that
+has nothing to write goes ahead without one (with a note); one that would write fails. A malformed or unreadable
+`cron/jobs.json` stops `plan`, `apply`, `sync`, `drift` and `export-hermes` with an error instead of being read as
+"no jobs".
 
 **Paths stay confined.** Profile names must be plain names (no `/`, no leading `.`); skill names and skill file paths
 from a bundle must stay below `skills/<category>/<name>/` or the skill goes to the checklist (the library

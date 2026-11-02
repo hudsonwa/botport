@@ -225,6 +225,177 @@ fn random_hex() -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
+/// The per-profile operation lock file: commands that write into a profile hold it; plan/drift never touch it.
+pub const OP_LOCK: &str = ".botport.lock";
+
+/// Profile dirs this process holds the lock on: a nested acquire (e.g. the two halves of `sync --direction both`)
+/// shares the outer lock instead of blocking on it.
+static HELD: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+/// Set once: locks taken from now on are kept until the process exits (one lock across several steps).
+static KEEP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// An exclusive per-profile lock: an OS file lock (`flock`) on `<dir>/.botport.lock`. The file is never deleted;
+/// the kernel releases the lock when the holder exits, however it exits, so there is no stale-lock logic.
+/// The holder's `pid=<pid> since=<unix secs>` is written into the file only to name it in the error message.
+pub struct OpLock {
+    dir: PathBuf,
+    file: Option<fs::File>,
+}
+
+impl OpLock {
+    /// Take the lock, or fail fast naming the holder. A symlink or non-regular file at the lock path is refused.
+    pub fn acquire(dir: &Path) -> Res<OpLock> {
+        Self::try_acquire(dir)?.ok_or_else(|| {
+            format!(
+                "{} is not writable (could not create the lock file {OP_LOCK})",
+                dir.display()
+            )
+        })
+    }
+
+    /// Like `acquire`, but `None` when the lock file doesn't exist and the dir is read-only: a run that turns out
+    /// to write nothing can go ahead, and one that does write fails on its first write.
+    pub fn try_acquire(dir: &Path) -> Res<Option<OpLock>> {
+        let key = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+        let mut held = HELD.lock().unwrap_or_else(|e| e.into_inner());
+        if held.contains(&key) {
+            return Ok(Some(OpLock {
+                dir: key,
+                file: None,
+            }));
+        }
+        let p = dir.join(OP_LOCK);
+        let Some((f, writable)) = open_lock_file(&p)? else {
+            eprintln!(
+                "botport: note: {} is read-only; the operation lock {OP_LOCK} was not created",
+                dir.display()
+            );
+            return Ok(None);
+        };
+        match f.try_lock() {
+            Ok(()) => {}
+            Err(fs::TryLockError::WouldBlock) => {
+                let mut b = Vec::new();
+                std::io::Read::take(&f, 256).read_to_end(&mut b).ok();
+                let who = String::from_utf8_lossy(&b);
+                let who = who.split_whitespace().collect::<Vec<_>>().join(" ");
+                return err(format!(
+                    "another botport run holds the lock {} ({}); wait for it to finish (don't delete the file: the lock is released when that run exits)",
+                    p.display(),
+                    if who.is_empty() { "holder unknown" } else { &who }
+                ));
+            }
+            Err(fs::TryLockError::Error(e)) => return err(format!("lock {}: {e}", p.display())),
+        }
+        if writable {
+            let since = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            // only for the message another run prints; a failure here doesn't weaken the lock
+            f.set_len(0).ok();
+            std::io::Seek::seek(&mut &f, std::io::SeekFrom::Start(0)).ok();
+            writeln!(&f, "pid={} since={since}", std::process::id()).ok();
+        }
+        held.push(key.clone());
+        Ok(Some(OpLock {
+            dir: key,
+            file: Some(f),
+        }))
+    }
+
+    /// Keep every lock taken from now on until the process exits (the kernel releases it then).
+    pub fn keep_until_exit() {
+        KEEP.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+use std::io::Read as _;
+
+impl Drop for OpLock {
+    fn drop(&mut self) {
+        let Some(f) = self.file.take() else { return };
+        if KEEP.load(std::sync::atomic::Ordering::SeqCst) {
+            std::mem::forget(f);
+            return;
+        }
+        let mut held = HELD.lock().unwrap_or_else(|e| e.into_inner());
+        held.retain(|d| d != &self.dir);
+        f.unlock().ok();
+    }
+}
+
+/// Open (or create, 0600) the lock file without following a symlink: refuse anything but a regular file, and
+/// check the opened file is the one that was inspected. `None`: missing and the dir can't take a new file.
+/// The bool says whether it opened for writing (a lock file owned by another user opens read-only).
+fn open_lock_file(p: &Path) -> Res<Option<(fs::File, bool)>> {
+    let refuse = |what: &str| {
+        format!(
+            "{} is {what}, not a lock file; refusing to use it (move it aside)",
+            p.display()
+        )
+    };
+    for _ in 0..3 {
+        let m = match fs::symlink_metadata(p) {
+            Ok(m) => m,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let mut o = fs::OpenOptions::new();
+                o.read(true).write(true).create_new(true);
+                #[cfg(unix)]
+                std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+                match o.open(p) {
+                    Ok(f) => return Ok(Some((f, true))),
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(e)
+                        if matches!(
+                            e.kind(),
+                            std::io::ErrorKind::PermissionDenied
+                                | std::io::ErrorKind::ReadOnlyFilesystem
+                        ) =>
+                    {
+                        return Ok(None);
+                    }
+                    Err(e) => return err(format!("lock {}: {e}", p.display())),
+                }
+            }
+            Err(e) => return err(format!("lock {}: {e}", p.display())),
+        };
+        if m.file_type().is_symlink() {
+            return Err(refuse("a symlink"));
+        }
+        if !m.is_file() {
+            return Err(refuse("not a regular file"));
+        }
+        let (f, w) = match fs::OpenOptions::new().read(true).write(true).open(p) {
+            Ok(f) => (f, true),
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => (
+                fs::File::open(p).map_err(|e| format!("lock {}: {e}", p.display()))?,
+                false,
+            ),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return err(format!("lock {}: {e}", p.display())),
+        };
+        let fm = f
+            .metadata()
+            .map_err(|e| format!("lock {}: {e}", p.display()))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if (fm.dev(), fm.ino()) != (m.dev(), m.ino()) {
+                continue; // swapped between the check and the open: look again
+            }
+        }
+        if !fm.is_file() {
+            return Err(refuse("not a regular file"));
+        }
+        return Ok(Some((f, w)));
+    }
+    err(format!(
+        "lock {}: it keeps changing; try again",
+        p.display()
+    ))
+}
+
 /// A plain name for one path component (a profile, a skill category or name): not empty, no `/` or `\`, no
 /// leading `.` (so neither `.` nor `..`), no NUL.
 pub fn plain_name(what: &str, s: &str) -> Res<()> {
