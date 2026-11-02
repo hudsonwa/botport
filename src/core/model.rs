@@ -1,4 +1,15 @@
-//! Platform-neutral bot model (`bot-model/1`). See docs/MODEL.md.
+//! Platform-neutral bot model (`bot-model/1`). Spec: docs/MODEL.md; JSON Schema: docs/schema/botmodel-v1.json
+//! (tests/schema.rs keeps the two in step).
+//!
+//! ```
+//! use botport::core::model::BotModel;
+//!
+//! let m = BotModel::from_json(r#"{"schema": "bot-model/1", "persona": {"name": "helper", "instructions": ""}}"#)
+//!     .unwrap();
+//! assert_eq!(m.persona.name, "helper");
+//! assert!(m.to_json().starts_with("{\n  \"schema\": \"bot-model/1\""));
+//! ```
+#![warn(missing_docs)]
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -23,24 +34,34 @@ const KNOWN: [&str; 11] = [
     "extras",
 ];
 
+/// One bot, platform-neutral: what an adapter reads from a platform and writes to one. Parse with
+/// [`BotModel::from_json`], write the canonical form with [`BotModel::to_json`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BotModel {
+    /// `bot-model/MAJOR[.MINOR]`; see [`check_schema`].
     pub schema: String,
+    /// Name and instructions.
     pub persona: Persona,
+    /// Remembered facts, in origin order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub memory: Vec<Fact>,
     /// The origin's memory as one document, verbatim (e.g. a MEMORY.md with its headings), when it keeps one.
     /// `memory` holds the same facts one by one; a writer that keeps a document prefers this text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory_text: Option<String>,
+    /// Reusable instruction packs.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<Skill>,
+    /// Timed or event-triggered jobs.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub schedules: Vec<Schedule>,
+    /// Tool servers (MCP etc.).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub connectors: Vec<Connector>,
+    /// Names of the secrets the bot needs, never values.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub credentials: Vec<CredentialRef>,
+    /// Conversation history stored beside the model (referenced, not embedded).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history: Option<HistoryRef>,
     /// What the reader saw but could not carry (a schedule that runs elsewhere, an app with no url, an entry
@@ -53,14 +74,19 @@ pub struct BotModel {
     pub extras: BTreeMap<String, serde_json::Value>,
 }
 
+/// Who the bot is.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Persona {
+    /// Display name.
     pub name: String,
+    /// Role / system prompt / persona text (may be empty).
     pub instructions: String,
 }
 
+/// One remembered fact.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Fact {
+    /// The fact itself.
     pub text: String,
     /// e.g. `core` (always loaded) or `recall` (searchable).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -79,9 +105,12 @@ pub struct Fact {
     pub origin_side: Option<String>,
 }
 
+/// A reusable instruction pack: a named set of files (usually a `SKILL.md`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Skill {
+    /// Skill name (also its directory name on most platforms).
     pub name: String,
+    /// One-line summary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// Relative path -> UTF-8 content.
@@ -133,7 +162,9 @@ impl Skill {
 /// Something only a human can set up; `item` names it (e.g. `schedule Nightly`), `todo` says what to do.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct ManualItem {
+    /// What it is, e.g. `schedule Nightly`.
     pub item: String,
+    /// What to do by hand.
     pub todo: String,
     /// ticked off by a human (`- [x]` in a checklist)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -141,6 +172,7 @@ pub struct ManualItem {
 }
 
 impl ManualItem {
+    /// An open (not done) item.
     pub fn new(item: impl Into<String>, todo: impl Into<String>) -> Self {
         ManualItem {
             item: item.into(),
@@ -150,34 +182,45 @@ impl ManualItem {
     }
 }
 
+/// How a [`Schedule`] is triggered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ScheduleKind {
+    /// By time: `cron` is set.
     Scheduled,
+    /// By something outside (mail, a webhook, ...): no `cron`.
     Event,
 }
 
+/// A timed or event-triggered job.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Schedule {
+    /// Job name.
     pub name: String,
     /// Five-field cron; absent for `event` schedules.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cron: Option<String>,
-    /// IANA timezone.
+    /// IANA timezone; empty when the origin gave none.
     pub tz: String,
+    /// Time or event trigger.
     pub kind: ScheduleKind,
     /// Natural-language prompt to run.
     pub action: String,
+    /// False for a paused job.
     pub enabled: bool,
 }
 
+/// A tool server the bot uses.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Connector {
+    /// Short id.
     pub name: String,
     /// e.g. `mcp-http`, `mcp-stdio`.
     pub kind: String,
+    /// Endpoint, for http connectors.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    /// Allowed tool names (empty: all).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tools: Vec<String>,
 }
@@ -187,6 +230,7 @@ pub struct Connector {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CredentialRef {
+    /// e.g. `TELEGRAM_BOT_TOKEN`.
     pub name: String,
     /// `where` from older documents: accepted and dropped, never written (a location phrase can hold a value).
     #[serde(rename = "where", default, skip_serializing)]
@@ -194,6 +238,7 @@ pub struct CredentialRef {
 }
 
 impl CredentialRef {
+    /// A reference by name.
     pub fn new(name: impl Into<String>) -> Self {
         CredentialRef {
             name: name.into(),
@@ -202,9 +247,12 @@ impl CredentialRef {
     }
 }
 
+/// Where conversation history is stored beside the model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HistoryRef {
+    /// Format, e.g. `jsonl`, `sqlite`.
     pub kind: String,
+    /// Relative to the model file.
     pub path: String,
 }
 
@@ -228,6 +276,8 @@ pub fn check_schema(schema: &str) -> Result<(), String> {
 }
 
 impl BotModel {
+    /// Parse a document: rejects another family or major version and any credential field but `name`; keeps
+    /// unknown top-level fields from a newer minor in `extras["_unknown"]`.
     pub fn from_json(s: &str) -> Result<Self, String> {
         let v: serde_json::Value = serde_json::from_str(s).map_err(|e| e.to_string())?;
         let schema = v

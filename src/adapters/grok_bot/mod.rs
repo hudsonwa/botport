@@ -331,7 +331,7 @@ impl Adapter for GrokBot {
         Ok((m, s))
     }
 
-    /// Writes the legacy hand-export layout (profile.json, MEMORY.md, skills/<name>/...), which `read` loads back.
+    /// Writes the legacy hand-export layout (profile.json, MEMORY.md, `skills/<name>/...`), which `read` loads back.
     fn write(&self, m: &BotModel, dest: &Path) -> Res<Vec<String>> {
         let mut profile = m
             .extras

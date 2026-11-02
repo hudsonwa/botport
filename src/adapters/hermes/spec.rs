@@ -10,12 +10,12 @@ use std::path::{Path, PathBuf};
 pub struct Spec {
     pub profile: Option<String>,
     pub base: Option<PathBuf>,
-    /// Installer-owned skills category under <profile>/skills/
+    /// Installer-owned skills category under `<profile>/skills/`
     pub skill_category: Option<String>,
     /// Grok skills to import, by folder name; absent = all, `[]` = none. Excluded skills are invisible to every
     /// command: not imported, not in the sync digest, never pending/conflict/deleted, never sent back by h2g.
     pub skills_include: Option<Vec<String>>,
-    /// Text for <category>/DESCRIPTION.md; `{names}` = the category's skill names, sorted, comma-separated
+    /// Text for `<category>/DESCRIPTION.md`; `{names}` = the category's skill names, sorted, comma-separated
     pub category_description: Option<String>,
     /// Put every installed skill outside the category into config `skills.disabled`
     #[serde(default)]
