@@ -52,7 +52,8 @@ Tests never touch your real `~/.hermes` or `~/.g2h`: they use temp directories. 
 ## How this code was built
 The code and docs were written by Claude agents, directed by Josh, the maintainer. Each change was checked by a
 separate Claude agent acting as auditor (a fresh session with its own checklist), plus the tests and CI. Near launch,
-three fresh-context Claude critique passes reviewed the repo. The history was squashed into one commit for the public release.
+three fresh-context Claude critique passes reviewed the repo. The work before the first outside review is one squashed commit; everything after it is kept as separate,
+reviewed commits.
 
 ## Adding a platform
 New platforms are added as adapters. An adapter reads its platform into the neutral model and writes it back, and

@@ -144,7 +144,8 @@ the [roadmap](ROADMAP.md) and the [changelog](CHANGELOG.md).
 The code and docs were written by Claude agents, directed by Josh, the maintainer. Each change was checked by a
 separate Claude agent acting as auditor (a fresh session with its own checklist), plus the tests and CI (fmt, clippy,
 the full test suite and cargo-deny on Linux and macOS). Near launch, three fresh-context Claude critique passes reviewed
-the repo. The history was squashed into one commit for the public release.
+the repo. The work before the first outside review is one squashed commit; everything after it is kept as separate,
+reviewed commits.
 
 ## Docs and contributing
 - [docs/README.md](docs/README.md): every guide, in one list.
