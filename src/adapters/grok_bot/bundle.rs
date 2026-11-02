@@ -322,6 +322,8 @@ pub struct ExportOpts {
     pub agent_data: PathBuf,
     pub agent_id: Option<String>,
     pub memory_drop: PathBuf,
+    /// Copy chat history into the bundle (opt-in: it is personal and nothing on the Hermes side reads it).
+    pub with_history: bool,
     pub history_db: Option<PathBuf>,
     pub history_sqlite: Option<PathBuf>,
     pub describe: Option<PathBuf>,
@@ -345,7 +347,7 @@ struct Out {
 
 impl Out {
     fn put(&mut self, rel: &str, data: &[u8]) -> Res<()> {
-        write_atomic(&self.root.join(rel), data, Some(0o644))?;
+        write_private(&self.root, rel, data)?;
         self.files.insert(rel.to_string(), sha256_hex(data));
         Ok(())
     }
@@ -357,6 +359,7 @@ pub fn clear_out(out: &Path) -> Res<()> {
         return Ok(());
     }
     let man = out.join("manifest.json");
+    let mut skipped: Vec<String> = vec![];
     if man.is_file() {
         let m: Value =
             serde_json::from_slice(&read(&man)?).map_err(|e| format!("old manifest: {e}"))?;
@@ -370,14 +373,19 @@ pub fn clear_out(out: &Path) -> Res<()> {
             .as_object()
             .map(|o| o.keys().cloned().collect())
             .unwrap_or_default();
+        let root = fs::canonicalize(out).map_err(|e| format!("{}: {e}", out.display()))?;
         for rel in listed
             .iter()
             .chain(std::iter::once(&"manifest.json".to_string()))
         {
-            if rel.split('/').any(|c| c == ".." || c.is_empty()) {
-                return err(format!("bad path in old manifest: {rel}"));
+            safe_rel("old manifest", rel).map_err(|e| format!("bad path in old manifest: {e}"))?;
+            match listed_file(&root, rel) {
+                Some(true) => {
+                    fs::remove_file(root.join(rel)).ok();
+                }
+                Some(false) => skipped.push(rel.clone()),
+                None => {}
             }
-            fs::remove_file(out.join(rel)).ok();
         }
         remove_empty_dirs(out);
     }
@@ -385,12 +393,35 @@ pub fn clear_out(out: &Path) -> Res<()> {
         .map(|mut d| d.next().is_some())
         .unwrap_or(false)
     {
+        if !skipped.is_empty() {
+            return err(format!(
+                "{}: old export entries left in place (a symlink or not a regular file inside it): {}; choose an empty --out",
+                out.display(),
+                skipped.join(", ")
+            ));
+        }
         return err(format!(
             "{} is not empty and holds no {TOOL} export; choose an empty --out",
             out.display()
         ));
     }
     Ok(())
+}
+
+/// May `root/rel` (rel already a safe_rel) be removed? Some(true): a regular file reached through real directories
+/// only; Some(false): a symlink or other non-file on the way (never followed); None: not there.
+fn listed_file(root: &Path, rel: &str) -> Option<bool> {
+    let parts: Vec<&str> = rel.split('/').collect();
+    let mut p = root.to_path_buf();
+    for (i, c) in parts.iter().enumerate() {
+        p.push(c);
+        let m = fs::symlink_metadata(&p).ok()?;
+        let last = i + 1 == parts.len();
+        if m.file_type().is_symlink() || (last && !m.is_file()) || (!last && !m.is_dir()) {
+            return Some(false);
+        }
+    }
+    Some(true)
 }
 
 fn remove_empty_dirs(dir: &Path) {
@@ -421,6 +452,9 @@ fn age_days(p: &Path) -> Option<f64> {
 }
 
 pub fn export(o: &ExportOpts) -> Res<ExportResult> {
+    if !o.with_history && (o.history_db.is_some() || o.history_sqlite.is_some()) {
+        return err("--history-db/--history-sqlite need --with-history (chat history is left out by default)");
+    }
     clear_out(&o.out)?;
     let mut out = Out {
         root: o.out.clone(),
@@ -567,8 +601,10 @@ pub fn export(o: &ExportOpts) -> Res<ExportResult> {
     if let Some(m) = memory_md {
         out.put("normalized/MEMORY.md", &m)?;
     }
-    // 4. history
-    let history = if let Some(p) = &o.history_sqlite {
+    // 4. history (opt-in)
+    let history = if !o.with_history {
+        "off".into()
+    } else if let Some(p) = &o.history_sqlite {
         let name = p
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
@@ -645,11 +681,7 @@ pub fn export(o: &ExportOpts) -> Res<ExportResult> {
     // 6. manifest (no timestamps: identical input -> identical bytes)
     let manifest = json!({"tool": TOOL, "version": VERSION, "agent_id": agent_id, "files": out.files,
                           "digest": digest_pairs(&out.files)});
-    write_atomic(
-        &o.out.join("manifest.json"),
-        json_sorted(&manifest).as_bytes(),
-        Some(0o644),
-    )?;
+    write_private(&o.out, "manifest.json", json_sorted(&manifest).as_bytes())?;
     if o.strict && !warnings.is_empty() {
         return err(format!("--strict: {}", warnings.join("; ")));
     }

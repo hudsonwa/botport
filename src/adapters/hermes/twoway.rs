@@ -363,7 +363,7 @@ pub fn write(e: &Export, c: &Ctx, out: &Path) -> Res<BTreeMap<String, String>> {
     crate::adapters::grok_bot::bundle::clear_out(out)?;
     let mut files = BTreeMap::new();
     let mut put = |rel: String, data: &[u8]| -> Res<()> {
-        write_atomic(&out.join(&rel), data, Some(0o644))?;
+        write_private(out, &rel, data)?;
         files.insert(rel, sha256_hex(data));
         Ok(())
     };
@@ -378,11 +378,7 @@ pub fn write(e: &Export, c: &Ctx, out: &Path) -> Res<BTreeMap<String, String>> {
     put("REQUESTS.md".into(), requests_md(e).as_bytes())?;
     let manifest = json!({"tool": TOOL, "version": VERSION, "origin": "hermes", "profile": c.profile,
                           "agent_id": c.source.id, "files": files, "digest": digest_pairs(&files)});
-    write_atomic(
-        &out.join("manifest.json"),
-        json_sorted(&manifest).as_bytes(),
-        Some(0o644),
-    )?;
+    write_private(out, "manifest.json", json_sorted(&manifest).as_bytes())?;
     Ok(files)
 }
 

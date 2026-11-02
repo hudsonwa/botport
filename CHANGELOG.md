@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+- `export` (and `export-hermes`) no longer follow a symlink when replacing an old export in `--out`: only regular files
+  listed in the old manifest, reached through real folders inside `--out`, are removed; anything else is left in place
+  and named in the error. Before, a tampered old export listing `link/victim` with `link` pointing outside could delete
+  any file the user could write.
+
+### Changed
+- Chat history is **opt-in**: `export` leaves it out unless `--with-history` is given (`--history-db` and
+  `--history-sqlite` now need it). Nothing on the Hermes side reads history, so import, sync and drift are unchanged.
+- Bundles are private: every file `export`/`export-hermes` writes is `0600` and its folders `0700` (were `0644`/`0755`);
+  `describe --out` writes `0600`.
+- Docs: the user guide no longer suggests keeping an unpacked bundle in git; it says what personal data a bundle holds.
+
 ## [0.1.1] - 2026-11-03
 
 ### Fixed

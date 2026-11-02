@@ -26,10 +26,16 @@ these bots: helpdesk, sales, …"* (or *"all bots"*). It coordinates the others;
 one line to paste into each of their chats. You get one bundle per bot.
 
 ## 2. Check the bundle
-Unpack the bundle into a folder of your choice. Below it is `~/your-bot/grok` (keeping it under git is a good idea,
-so you can see what changed between exports):
+Unpack the bundle into a private folder of your choice. Below it is `~/your-bot/grok`.
+
+**The bundle is personal data.** It holds the bot's memories (facts about you and your work), its skills, the bot's
+own description of its instructions, schedules and connectors, and, only if the export was run with
+`--with-history`, your chat history with the bot. Chat history is **off by default**: nothing on the Hermes side needs
+it. botport writes every bundle file `0600` in `0700` folders; keep it that way. Don't commit an unpacked bundle to
+git, put it in a shared or synced folder, or attach it to an issue. Secret redaction only catches things that look
+like credentials, not private conversations. Delete old bundles you no longer need.
 ```bash
-mkdir -p ~/your-bot/grok && tar -xzf /path/to/your-bot-g2h-bundle.tgz -C ~/your-bot/grok --strip-components=1
+mkdir -p -m 700 ~/your-bot/grok && tar -xzf /path/to/your-bot-g2h-bundle.tgz -C ~/your-bot/grok --strip-components=1
 ```
 ```bash
 botport verify --bundle ~/your-bot/grok

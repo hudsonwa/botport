@@ -64,10 +64,15 @@ looks different, the check finds nothing rather than guessing.
 | `raw/` | source files verbatim: `agents/<id>/{profile,settings}.json`, `workflows/` skills (managed/plugin skills excluded), memory drop |
 | `normalized/` | `profile.json`, `settings.json` (sorted keys), `MEMORY.md`, `skills/<name>/` (literal `\n` unescaped) |
 | `memory/memory.jsonl` | the bot's memory drop `{date,tier,scope,source,fact}`, sorted; `memory-status.json` attests "none" |
-| `history/messages.jsonl` | read-only snapshot of `search-index.db` (sqlite backup API via `python3`) |
+| `history/messages.jsonl` | only with `--with-history` (off by default; nothing on the Hermes side reads it): read-only snapshot of `search-index.db` (sqlite backup API via `python3`); `--history-db`/`--history-sqlite` need `--with-history` |
 | `NOT_CAPTURED.md` | instructions, schedules, connectors, credentials — with the bot's own description (`--describe`) |
 | `normalized/describe.json` | that description parsed: instructions, schedules (cron + IANA timezone), connectors, credential **names**, and any `unparsed` lines (only when a description was supplied); import turns them into paused cron jobs, `mcp_servers` entries and a `botport-manual.md` checklist |
 | `manifest.json` | SHA-256 per file + digest; no timestamps |
+
+Every bundle file (this one and the `export-hermes` bundle) is written `0600` and its folders `0700`: memories, facts,
+the bot's description and any history are personal data. When `export` replaces an old export in `--out`, it removes
+only the regular files the old manifest lists, reached through real folders inside `--out`; it never follows a symlink,
+and an entry it leaves in place is named in the error.
 
 Secrets are excluded by file name (`.env`, `auth.json`, `*token*`, `*credential*`, keys) and by content (private
 keys, `xai-`/`sk-ant-`/`ghp_`… tokens); excluded names are listed in `NOT_CAPTURED.md`. A memory drop older than

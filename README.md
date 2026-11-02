@@ -115,8 +115,8 @@ Two tools: **botport** ports and syncs the bot; **g2h** (`g2h` CLI, `g2hd` daemo
 companion that lets the two copies talk. botport works on its own: you do not need to install or run g2h to port, sync
 or test a bot. g2h is feature-frozen for v0.1 (bug fixes only, no new features); separate-user hardening (#17)
 is post-launch.
-- **Port.** `export` makes a bundle from a Grok Bot: skills, memory, chat history (read-only), and a checklist of
-  what it can't copy. `plan` and `apply` turn that bundle into a Hermes profile. A short spec file says which parts
+- **Port.** `export` makes a bundle from a Grok Bot: skills, memory, and a checklist of
+  what it can't copy (chat history only with `--with-history`; a bundle is personal data, written private). `plan` and `apply` turn that bundle into a Hermes profile. A short spec file says which parts
   of the profile botport owns.
 - **Sync and drift.** `sync` re-applies only when something changed. `drift` checks both directions. An edit made on
   the Hermes side is reported as a **conflict** and never overwritten. Every apply writes a restore point first.
