@@ -287,7 +287,16 @@ impl OpLock {
             }
             Err(fs::TryLockError::Error(e)) => return err(format!("lock {}: {e}", p.display())),
         }
-        if writable {
+        // write the pid line only into a plain file of our own: a hard link planted at the lock path (nlink > 1) or a
+        // file owned by someone other than the profile dir's owner is locked but never written through
+        let own_plain_file = {
+            use std::os::unix::fs::MetadataExt;
+            match (f.metadata(), fs::metadata(dir)) {
+                (Ok(m), Ok(d)) => m.nlink() == 1 && m.uid() == d.uid(),
+                _ => false,
+            }
+        };
+        if writable && own_plain_file {
             let since = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())

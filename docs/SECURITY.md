@@ -118,7 +118,9 @@ back a partial apply on its own. **What the lock covers.** Every command that wr
 under one lock), and the record that `export-hermes` and `sync --direction h2g` write to `botport.lock.json`. A
 second such run on the same profile is refused at once, naming the holder's pid. The kernel drops the lock when the
 holder exits, however it exits, so there is no stale-lock takeover. The file itself stays (it only holds the last
-holder's pid for that message); deleting it while a run holds it would let a second run in, so don't. `plan`,
+holder's pid for that message); deleting it while a run holds it would let a second run in, so don't. A lock file that is a hard link or belongs to
+someone other than the profile's owner is still locked but never written. On a network filesystem (NFS) the lock may
+only be local, or may fail with "No locks available" when the lock daemon isn't running; use a local disk for profiles. `plan`,
 `drift` and `--dry-run` never take or create it. Limits: the lock is advisory and per host. It doesn't stop
 `hermes` itself, your editor, or a botport on another machine writing to a shared or network profile directory. A
 symlink or non-regular file at that path is refused. On a read-only profile that has no lock file yet, a run that
