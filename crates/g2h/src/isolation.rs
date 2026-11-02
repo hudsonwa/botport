@@ -309,9 +309,13 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
+    /// The bots' uid in these tests: far from any real account, so it never equals the uid running the tests
+    /// (macOS CI runs as 501, the default first user).
+    const BOTS: u32 = 4_242_424;
+
     fn su() -> SeparateUser {
         SeparateUser {
-            allowed_uids: vec![501],
+            allowed_uids: vec![BOTS],
             socket_gid: 20,
         }
     }
@@ -329,13 +333,13 @@ mod tests {
     fn separate_user_peer_and_approve_policy() {
         let s = su();
         let own = 300;
-        assert!(peer_allowed(Some(&s), own, Some(501)));
+        assert!(peer_allowed(Some(&s), own, Some(BOTS)));
         assert!(peer_allowed(Some(&s), own, Some(own)));
         assert!(peer_allowed(Some(&s), own, Some(0)));
         assert!(!peer_allowed(Some(&s), own, Some(502)));
         assert!(!peer_allowed(Some(&s), own, None));
         assert!(
-            !approve_allowed(Some(&s), own, Some(501)),
+            !approve_allowed(Some(&s), own, Some(BOTS)),
             "the bots' uid must not approve"
         );
         assert!(approve_allowed(Some(&s), own, Some(own)));

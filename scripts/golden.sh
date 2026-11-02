@@ -128,6 +128,8 @@ cycle exported "$HH3/profiles/acme-helper" --bundle "$W/bundle-acme" --spec "$AC
 
 # 8. a hand export with a binary skill file
 cp -R "$ACME/grok" "$W/bin-src"
+# plain skill dir names; ls keeps the harness output stable
+# shellcheck disable=SC2012
 sk=$(cd "$W/bin-src/skills" && ls | sort | head -1)
 printf '\377\376\000\200' > "$W/bin-src/skills/$sk/logo.bin"
 cycle binary "$W/p-binary" --bundle "$W/bin-src" --profile-dir "$W/p-binary"
