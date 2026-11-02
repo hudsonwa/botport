@@ -82,7 +82,8 @@ Create `tests/fixtures/conformance/<id>/` with a minimal native layout that cont
 1. a persona/instructions, at least two memory facts and one skill (if the platform has them);
 2. the string `CONFORMANCE-FAKE-SECRET-0000` where a real credential would live (e.g. `.env`, a token field);
 3. the string `CONFORMANCE-UNKNOWN-MARKER` in a field or file your mapping has no model field for.
-4. at least one schedule with a cron, one connector with an http url and one credential name.
+4. at least one schedule with a cron, one event schedule (or a manual `schedule X` item), one connector with an
+   http url and one credential name. The schedule check also requires that an event never comes back as a cron.
 
 Use made-up content only. Then add one line to `src/conformance_tests.rs`:
 

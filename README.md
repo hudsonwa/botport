@@ -58,7 +58,9 @@ mapping follows agent-importers, and credit goes to that project (see [NOTICE](N
 | `g2hd` running as a separate OS user | implemented, opt-in (not yet run in production) |
 
 The OpenClaw and OpenBot adapters are what the `BotModel` seam is for: plan/apply/sync/drift now run on the neutral
-model, so each new platform needs one adapter that reads into (and writes from) that model. Neither adapter has code yet.
+model. A new platform needs an adapter that reads into (and writes from) that model and passes the conformance
+suite, plus a small CLI change to select it as a source. Porting *into* a new platform also needs a `Target` (Hermes
+is the only one today), and the two-way export back to Grok is Hermes-specific code. Neither adapter has code yet.
 
 Details in [ROADMAP.md](ROADMAP.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#today-vs-target).
 

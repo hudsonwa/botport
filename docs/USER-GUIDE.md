@@ -186,6 +186,18 @@ cd ~/.hermes/profiles/your-bot && ls -t backups/botport | head -1
 unzip -o backups/botport/<that file> -d ~/.hermes/profiles/your-bot
 ```
 
+**If an apply stopped part-way** (an error, Ctrl-C, a crash): apply writes one file at a time, so the files written
+before the stop stay written. You have two ways back:
+- **Finish it:** run `plan`, then the same `apply` again. The sync record (`botport.lock.json`) is written once, at the
+  end of an apply, so the files written before the stop are not recorded yet. They match the bundle, so the re-run
+  normally just finishes and records them. If `plan` shows one of them as a conflict, check it, then take it over
+  with `apply --adopt`.
+- **Undo it:** stop the profile's gateway and unzip the newest restore point as above. It holds the files as they
+  were before that apply started. Then `plan` shows what the apply would do again.
+
+Cron jobs are created through the `hermes` CLI, so a job created before the stop stays in Hermes (always paused).
+Undoing the files does not remove it: `hermes cron list` shows it.
+
 ## Output and tokens
 Every command prints at most 10 summary lines (`--json` for machines) and puts full detail in a file
 (`--details FILE`). Agents should read the summary, not the bundle. Exit codes: 0 ok, 1 drift/verify/test failure,
