@@ -1011,7 +1011,12 @@ pub fn live_jobs(dest: &Path) -> Res<Vec<serde_json::Value>> {
     let b = match fs::read(&p) {
         Ok(b) => b,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
-        Err(e) => return Err(format!("{}: unreadable: {e}", p.display())),
+        Err(e) => {
+            return Err(format!(
+                "{}: unreadable ({e}); fix or move it aside, nothing was written",
+                p.display()
+            ))
+        }
     };
     let bad = |why: String| {
         format!(
@@ -1769,48 +1774,68 @@ pub fn restore_point(dest: &Path, cat: &str, keep: usize) -> Res<PathBuf> {
 }
 
 pub fn apply(c: &Ctx, adopt: bool, dry: bool) -> Res<Applied> {
-    // one writer per profile: the lock is taken before the plan, so the plan can't go stale under another run
-    let mut held = (!dry && c.dest.is_dir())
-        .then(|| OpLock::acquire(&c.dest))
-        .transpose()?;
-    let p = plan(c)?;
+    if dry {
+        return Ok(Applied {
+            items: plan(c)?.items,
+            restore_point: None,
+            restart_needed: false,
+        });
+    }
+    // one writer per profile: the lock is taken before the plan, so the plan can't go stale under another run.
+    // A read-only profile gets no lock file (None): fine as long as nothing needs writing.
+    let mut held = if c.dest.is_dir() {
+        OpLock::try_acquire(&c.dest)?
+    } else {
+        None
+    };
+    let mut p = plan(c)?;
+    let wants_write = |p: &Plan| {
+        p.items
+            .iter()
+            .any(|i| should_write(i, adopt) && i.area != "export")
+    };
+    let legacy = has_legacy_names(&c.dest);
+    if (wants_write(&p) || legacy) && held.is_none() {
+        // a new profile: create it, lock it, then plan again under the lock (another first run may have won)
+        fs::create_dir_all(&c.dest).map_err(|e| e.to_string())?;
+        held = Some(OpLock::acquire(&c.dest)?);
+        p = plan(c)?;
+    }
     let todo: Vec<&Item> = p
         .items
         .iter()
         .filter(|i| should_write(i, adopt) && i.area != "export")
         .collect();
     let mut out: Vec<Item> = p.items.clone();
-    if dry {
-        return Ok(Applied {
-            items: out,
-            restore_point: None,
-            restart_needed: false,
-        });
-    }
     let mut rp = None;
     let legacy = has_legacy_names(&c.dest);
     if !todo.is_empty() || legacy {
-        fs::create_dir_all(&c.dest).map_err(|e| e.to_string())?;
-        if held.is_none() {
-            held = Some(OpLock::acquire(&c.dest)?);
-        }
         rp = Some(restore_point(&c.dest, &p.want.cat, 5)?);
     }
+    // past this point files may be written: an error must not claim otherwise
+    let written = |e: String| match &rp {
+        Some(r) => format!(
+            "{}; earlier changes in this run were written (restore point {})",
+            e.trim_end_matches(", nothing was written"),
+            r.display()
+        ),
+        None => e,
+    };
     if legacy {
-        migrate_legacy(&c.dest)?;
+        migrate_legacy(&c.dest).map_err(written)?;
     }
     let mut lock = p.lock.clone().unwrap_or_default();
-    apply_skills(c, &p, &todo, &mut out, &mut lock, adopt)?;
+    apply_skills(c, &p, &todo, &mut out, &mut lock, adopt).map_err(written)?;
     if let Some(ws) = &p.want.soul {
-        apply_soul(c, &p, ws, &todo, &mut out, &mut lock, adopt)?;
+        apply_soul(c, &p, ws, &todo, &mut out, &mut lock, adopt).map_err(written)?;
     }
-    let mut restart = apply_config(c, &p, &todo, &mut out, &mut lock, adopt)?;
-    apply_user(c, &p, &todo, &mut out)?;
-    restart |= apply_mcp(c, &p, &todo, &mut out, &mut lock, adopt)?;
-    apply_manual(c, &p, &todo, &mut out)?;
-    record_model_cron(c, &p.want.model_cron, &out, &mut lock)?;
-    apply_cron(c, &p, &todo, &mut out)?;
-    write_lock(c, &mut lock)?;
+    let mut restart = apply_config(c, &p, &todo, &mut out, &mut lock, adopt).map_err(written)?;
+    apply_user(c, &p, &todo, &mut out).map_err(written)?;
+    restart |= apply_mcp(c, &p, &todo, &mut out, &mut lock, adopt).map_err(written)?;
+    apply_manual(c, &p, &todo, &mut out).map_err(written)?;
+    record_model_cron(c, &p.want.model_cron, &out, &mut lock).map_err(written)?;
+    apply_cron(c, &p, &todo, &mut out).map_err(written)?;
+    write_lock(c, &mut lock).map_err(written)?;
     drop(held);
     Ok(Applied {
         items: out,

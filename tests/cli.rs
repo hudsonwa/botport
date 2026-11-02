@@ -1832,20 +1832,34 @@ fn run_with(cmd: &str, base: &[String], extra: &[&str]) -> (i32, String) {
     run(&v)
 }
 
+/// Hold the profile's operation lock from this (test) process, as another botport run would: flock is per open
+/// file, so the child binary sees it held.
+fn hold_lock(prof: &Path) -> fs::File {
+    fs::create_dir_all(prof).unwrap();
+    let f = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(prof.join(".botport.lock"))
+        .unwrap();
+    f.try_lock().unwrap();
+    use std::io::Write;
+    writeln!(&f, "pid=4242 since=1").unwrap();
+    f
+}
+
 #[test]
-fn apply_refuses_a_held_lock_and_takes_over_a_stale_one() {
+fn apply_refuses_a_held_lock_and_runs_once_it_is_released() {
     let t = Tmp::new("oplock");
     let (prof, base) = demo_args(&t.0);
-    fs::create_dir_all(&prof).unwrap();
     let lock = prof.join(".botport.lock");
-    let mut holder = Command::new("sleep").arg("30").spawn().unwrap();
-    w(&lock, &format!("pid={} since=1\n", holder.id()));
+    let holder = hold_lock(&prof);
     for cmd in ["apply", "sync"] {
         let (rc, out) = run_with(cmd, &base, &[]);
         assert_eq!(rc, 2, "{out}");
         assert!(
-            out.contains("another botport run holds")
-                && out.contains(&format!("pid={}", holder.id())),
+            out.contains("another botport run holds") && out.contains("pid=4242"),
             "{out}"
         );
     }
@@ -1853,45 +1867,192 @@ fn apply_refuses_a_held_lock_and_takes_over_a_stale_one() {
     // plan and drift stay lock-free: they run and leave the holder's lock alone
     assert_eq!(run_with("drift", &base, &[]).0, 1);
     assert_eq!(run_with("plan", &base, &[]).0, 0);
-    assert!(lock.is_file());
-    holder.kill().unwrap();
-    holder.wait().unwrap();
+    drop(holder); // released, as the kernel does when a run exits, however it exits
     let (rc, out) = run_with("apply", &base, &[]);
     assert_eq!(rc, 0, "{out}");
-    assert!(out.contains("taking over a stale lock"), "{out}");
-    assert!(!lock.exists(), "released after the run");
+    assert!(
+        lock.is_file(),
+        "the lock file stays; only the lock is released"
+    );
+    let held = fs::read_to_string(&lock).unwrap();
+    assert!(held.starts_with("pid=") && !held.contains("4242"), "{held}");
     assert_eq!(run_with("drift", &base, &[]).0, 0);
-    assert!(!lock.exists(), "drift never creates the lock");
 }
 
 #[test]
-fn concurrent_applies_never_interleave() {
-    let t = Tmp::new("oplock2");
+fn a_symlinked_or_odd_lock_file_is_refused() {
+    let t = Tmp::new("oplock-link");
     let (prof, base) = demo_args(&t.0);
     fs::create_dir_all(&prof).unwrap();
-    let kids: Vec<_> = (0..6)
-        .map(|_| {
-            let mut c = bin();
-            c.arg("apply").args(&base);
-            c.stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .spawn()
-                .unwrap()
+    let target = t.0.join("elsewhere");
+    w(&target, "x");
+    std::os::unix::fs::symlink(&target, prof.join(".botport.lock")).unwrap();
+    let (rc, out) = run_with("apply", &base, &[]);
+    assert_eq!(rc, 2, "{out}");
+    assert!(out.contains("is a symlink"), "{out}");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "x");
+    fs::remove_file(prof.join(".botport.lock")).unwrap();
+    fs::create_dir(prof.join(".botport.lock")).unwrap();
+    let (rc, out) = run_with("apply", &base, &[]);
+    assert_eq!(rc, 2, "{out}");
+    assert!(out.contains("not a regular file"), "{out}");
+    assert!(!prof.join("skills").exists());
+}
+
+#[test]
+fn a_held_lock_refuses_the_h2g_writers() {
+    let t = Tmp::new("oplock-h2g");
+    let (prof, base) = demo_args(&t.0);
+    assert_eq!(run_with("apply", &base, &[]).0, 0);
+    w(
+        &prof.join("cron/jobs.json"),
+        r#"{"jobs":[{"name":"hermes-own","schedule":"0 8 * * *","prompt":"hi","deliver":"local"}]}"#,
+    );
+    let mem = prof.join("memories/MEMORY.md");
+    let m0 = fs::read_to_string(&mem).unwrap_or_default();
+    w(&mem, &format!("{m0}A hermes fact.\n"));
+    let rec = prof.join("botport.lock.json");
+    let before = fs::read_to_string(&rec).unwrap();
+    let out_dir = t.0.join("h2g-out");
+    let o = s(&out_dir);
+    let holder = hold_lock(&prof);
+    for args in [
+        vec!["export-hermes", "--out", o],
+        vec!["sync", "--direction", "h2g", "--out", o],
+        vec!["sync", "--direction", "both", "--out", o],
+    ] {
+        let (rc, out) = run_with(args[0], &base, &args[1..]);
+        assert_eq!(rc, 2, "{args:?}: {out}");
+        assert!(out.contains("another botport run holds"), "{out}");
+        assert!(
+            fs::read_to_string(&rec).unwrap() == before,
+            "{args:?} touched the record"
+        );
+        assert!(!out_dir.exists(), "{args:?} wrote the bundle");
+    }
+    // read-only h2g stays lock-free
+    assert_ne!(run_with("drift", &base, &["--direction", "h2g"]).0, 2);
+    drop(holder);
+    let (rc, out) = run_with("export-hermes", &base, &["--out", o]);
+    assert_eq!(rc, 0, "{out}");
+    assert!(
+        fs::read_to_string(&rec).unwrap() != before,
+        "the export records what it sent: {out}"
+    );
+}
+
+#[test]
+fn a_read_only_in_sync_profile_still_applies() {
+    use std::os::unix::fs::PermissionsExt;
+    let t = Tmp::new("oplock-ro");
+    let (prof, base) = demo_args(&t.0);
+    assert_eq!(run_with("apply", &base, &[]).0, 0);
+    fs::remove_file(prof.join(".botport.lock")).unwrap();
+    fs::set_permissions(&prof, fs::Permissions::from_mode(0o555)).unwrap();
+    let r = run_with("apply", &base, &[]);
+    let s2 = run_with("sync", &base, &["--direction", "g2h"]);
+    fs::set_permissions(&prof, fs::Permissions::from_mode(0o755)).unwrap();
+    if is_root() {
+        return; // root ignores the mode
+    }
+    assert_eq!(r.0, 0, "{}", r.1);
+    assert!(r.1.contains("read-only"), "{}", r.1);
+    assert_eq!(s2.0, 0, "{}", s2.1);
+    assert!(!prof.join(".botport.lock").exists());
+}
+
+fn is_root() -> bool {
+    Command::new("id")
+        .arg("-u")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "0")
+        .unwrap_or(false)
+}
+
+/// Many runs looping `apply` on one profile: a fake hermes marks the locked section (`mkdir inside`, held for
+/// each `cron create`), so two runs inside it at once is an overlap. Workers/iterations: BOTPORT_STRESS_WORKERS
+/// (default 16) and BOTPORT_STRESS_ITERS (default 6).
+#[test]
+fn concurrent_applies_never_overlap_under_load() {
+    use std::os::unix::fs::PermissionsExt;
+    let t = Tmp::new("oplock-stress");
+    let race = t.0.join("race");
+    fs::create_dir_all(&race).unwrap();
+    let fake = t.0.join("fake-hermes");
+    w(
+        &fake,
+        &format!(
+            "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo 'Hermes Agent v0.22.5'; exit 0; }}\n\
+             if mkdir '{r}/inside' 2>/dev/null; then sleep 0.02; rmdir '{r}/inside'; \
+             else echo overlap >> '{r}/overlaps'; sleep 0.02; fi\necho \"$*\" >> '{r}/calls'\n",
+            r = race.display()
+        ),
+    );
+    fs::set_permissions(&fake, fs::Permissions::from_mode(0o755)).unwrap();
+    let env_n = |k: &str, d: usize| {
+        std::env::var(k)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(d)
+    };
+    let (workers, iters) = (
+        env_n("BOTPORT_STRESS_WORKERS", 16),
+        env_n("BOTPORT_STRESS_ITERS", 6),
+    );
+    let acme = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/acme");
+    let hh = t.0.join("hh");
+    let ths: Vec<_> = (0..workers)
+        .map(|n| {
+            let (acme, hh, fake, d) = (
+                acme.clone(),
+                hh.clone(),
+                fake.clone(),
+                t.0.join(format!("d{n}")),
+            );
+            std::thread::spawn(move || {
+                let mut res = vec![];
+                for _ in 0..iters {
+                    let o = bin()
+                        .args(["apply", "--bundle", s(&acme.join("grok")), "--spec"])
+                        .arg(acme.join("botport.toml"))
+                        .arg("--hermes-home")
+                        .arg(&hh)
+                        .arg("--hermes-bin")
+                        .arg(&fake)
+                        .arg("--details")
+                        .arg(&d)
+                        .env_remove("HERMES_HOME")
+                        .output()
+                        .unwrap();
+                    res.push((
+                        o.status.code(),
+                        String::from_utf8_lossy(&o.stdout).to_string()
+                            + &String::from_utf8_lossy(&o.stderr),
+                    ));
+                }
+                res
+            })
         })
         .collect();
-    let mut ok = 0;
-    for k in kids {
-        let o = k.wait_with_output().unwrap();
-        let out =
-            String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr);
-        match o.status.code() {
-            Some(0) => ok += 1,
-            _ => assert!(out.contains("another botport run holds"), "{out}"),
+    let (mut ok, mut refused) = (0, 0);
+    for th in ths {
+        for (rc, out) in th.join().unwrap() {
+            match rc {
+                Some(0) => ok += 1,
+                Some(2) if out.contains("another botport run holds") => refused += 1,
+                _ => panic!("unexpected result {rc:?}: {out}"),
+            }
         }
     }
-    assert!(ok >= 1);
-    assert!(!prof.join(".botport.lock").exists());
-    assert_eq!(run_with("drift", &base, &[]).0, 0);
+    let overlaps = fs::read_to_string(race.join("overlaps")).unwrap_or_default();
+    let calls = fs::read_to_string(race.join("calls")).unwrap_or_default();
+    eprintln!(
+        "stress {workers}x{iters}: {ok} ok, {refused} refused, {} hermes calls, {} overlaps",
+        calls.lines().count(),
+        overlaps.lines().count()
+    );
+    assert!(overlaps.is_empty(), "two runs were inside the lock at once");
+    assert!(ok >= 1 && calls.lines().count() >= 3);
 }
 
 #[test]
@@ -1904,6 +2065,7 @@ fn malformed_jobs_json_is_an_error_not_no_jobs() {
             let (rc, out) = run_with(cmd, &base, &[]);
             assert_eq!(rc, 2, "{cmd} {bad}: {out}");
             assert!(out.contains("cron/jobs.json: malformed"), "{out}");
+            assert!(out.contains("nothing was written"), "{out}");
         }
         assert!(!prof.join("backups").exists() && !prof.join("skills").exists());
         assert_eq!(

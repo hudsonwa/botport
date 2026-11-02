@@ -632,6 +632,18 @@ fn cmd_profile(a: &Args, cmd: &str) -> Res<Report> {
             |_| botport::core::secrets::guard("the summary", r.lines.join("\n").as_bytes()),
         )
     };
+    // `sync --direction both`: one lock across both halves (taken here when the profile exists; a profile this run
+    // creates is locked by the g2h half, and that lock is kept until exit)
+    let _both = if cmd == "sync" && dir == "both" && !a.has("dry-run") {
+        OpLock::keep_until_exit();
+        if dest.is_dir() {
+            OpLock::try_acquire(&dest)?
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     let (items, rp, restart) = match cmd {
         "plan" | "drift" => (target.plan(&m, &src, &dest, &o)?.items, None, false),
         "sync" => {
@@ -684,6 +696,12 @@ fn h2g_report(
     write: bool,
     g2h: Option<Report>,
 ) -> Res<Report> {
+    // the h2g record rewrites botport.lock.json in the profile: the same lock as apply, before the read
+    let _held = if write && c.dest.is_dir() {
+        OpLock::try_acquire(&c.dest)?
+    } else {
+        None
+    };
     let e = twoway::collect(c)?;
     let pending: Vec<&Item> = e
         .items
