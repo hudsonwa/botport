@@ -13,8 +13,8 @@ skills you list (`[]` takes none). See [USER-GUIDE.md](USER-GUIDE.md).
 
 ### Grok Bot: skill and instruction text exported with escaped newlines
 The bot's self-export (`grok-bot-export` v1) can store skill texts and instructions with literal `\n` and no real
-newlines. botport now unescapes text that has literal `\n` and no real newline, the same rule as upstream Hermes'
-importer, so the Hermes skill files read as written. See [MODEL.md](MODEL.md).
+newlines. botport now unescapes text that has literal `\n` and no real newline, the same rule as the fix prepared for
+upstream Hermes' importer, so the Hermes skill files read as written. See [MODEL.md](MODEL.md).
 
 ### Grok Bot: replies to a routine run need a new wake
 The Grok side reads g2h messages from a routine run, and that run can end while a reply is still on its way. A
