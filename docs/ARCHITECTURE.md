@@ -25,7 +25,7 @@ source (`--bundle`), so a new source adapter also needs a way to be selected the
 | Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | done (v0.1.0) |
 | OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |
-| `g2hd` running as a separate OS user | planned |
+| `g2hd` running as a separate OS user | implemented, opt-in (not yet run in production) |
 
 ## Library and CLI
 `src/lib.rs` is the library (crate `botport`): the public modules `core`, `adapters`, `battery` and `doctor`.

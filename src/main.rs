@@ -1,16 +1,16 @@
 // botport (formerly grok2hermes) — export a Grok Bot and import/sync it into a Hermes profile. Deterministic; terse by default:
 // every command prints at most 10 summary lines (or one JSON document with --json) and writes full detail to a file.
 // The CLI on top of the library (src/lib.rs): argument parsing, reports, and the seam wired end to end.
-use adapters::grok_bot::{bundle, describe, export_json, GrokBot};
-use adapters::hermes::{spec, sync as hermes, twoway, HermesProfile};
+use botport::adapters::grok_bot::{bundle, describe, export_json, GrokBot};
+use botport::adapters::hermes::{spec, sync, twoway, HermesProfile};
 use botport::core::adapter::{retain_skills, Adapter, Item, Source, St, Target};
 use botport::core::util;
 use botport::{adapters, battery, doctor};
 
-use hermes::Ctx;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use sync::Ctx;
 use util::*;
 
 const USAGE: &str = "botport <command> [options]   (v{V}; --version prints it)
@@ -448,7 +448,7 @@ fn cmd_profile(a: &Args, cmd: &str) -> Res<Report> {
     };
     // Allowlist: drop the Grok skills this profile doesn't take. Skills that originated on the Hermes side (sent by
     // h2g and now back in the Grok export) are always kept, so the two-way rules keep seeing them.
-    let sent = hermes::read_lock(&dest)
+    let sent = sync::read_lock(&dest)
         .map(|l| l.h2g_skills)
         .unwrap_or_default();
     retain_skills(&mut m, &mut src, |n| {
@@ -504,7 +504,7 @@ fn cmd_profile(a: &Args, cmd: &str) -> Res<Report> {
             &dest,
             &src,
             items,
-            Some(dest.join(hermes::BACKUPS).join("restore.zip")),
+            Some(dest.join(sync::BACKUPS).join("restore.zip")),
             false,
             a.has("dry-run"),
         );
@@ -516,7 +516,7 @@ fn cmd_profile(a: &Args, cmd: &str) -> Res<Report> {
         "plan" | "drift" => (target.plan(&m, &src, &dest, &o)?.items, None, false),
         "sync" => {
             let p = target.plan(&m, &src, &dest, &o)?;
-            let unchanged = !hermes::has_legacy_names(&dest)
+            let unchanged = !sync::has_legacy_names(&dest)
                 && p.synced_digest == Some(src.digest())
                 && !p.items.iter().any(|i| i.status.is_change());
             if unchanged {
@@ -720,7 +720,7 @@ fn profile_report(
         lines.push(format!(
             "manual: {} item(s) to set up by hand (names only): {}",
             count(St::Manual),
-            hermes::MANUAL
+            sync::MANUAL
         ));
     }
     if let Some(p) = &rp {
@@ -857,25 +857,22 @@ fn cmd_battery_init(a: &Args) -> Res<Report> {
             "battery init needs a bundle directory or grok-bot-export file (PATH or --bundle)",
         )?;
     let out = a.path("out").ok_or("--out is required")?;
-    let mut b = if dir.is_dir() {
-        bundle::load(&dir)?
-    } else if adapters::grok_bot::export_json::is_export(&dir) {
-        adapters::grok_bot::export_json::load_bundle(&dir)?
-    } else {
+    if !dir.is_dir() && !adapters::grok_bot::export_json::is_export(&dir) {
         return Err(format!(
             "battery init: {} is not a bundle directory or a grok-bot-export v1 file",
             dir.display()
         ));
-    };
+    }
+    let (mut m, mut src) = GrokBot.read_source(&dir)?;
     if let Some(p) = a.path("spec") {
         let s = spec::Spec::load(
             &p,
             &a.path("hermes-home").unwrap_or_else(default_hermes_home),
         )?;
-        b.retain_skills(|n| s.skill_allowed(n));
+        retain_skills(&mut m, &mut src, |n| s.skill_allowed(n));
     }
     let nc = std::fs::read_to_string(dir.join("NOT_CAPTURED.md")).unwrap_or_default();
-    let v = battery::init(&b, &nc);
+    let v = battery::init(&m, &src, &nc);
     write_atomic(&out, json_sorted(&v).as_bytes(), Some(0o644))?;
     let mut fams = std::collections::BTreeMap::<&str, usize>::new();
     for c in v["cases"].as_array().into_iter().flatten() {

@@ -9,8 +9,3 @@ pub mod battery;
 mod conformance_tests;
 pub mod core;
 pub mod doctor;
-
-// Old module paths kept as aliases so moved code compiles unchanged (see docs/ARCHITECTURE.md).
-use crate::core::{util, yaml11};
-use adapters::grok_bot::{bundle, describe};
-use adapters::hermes::{spec, sync as hermes};

@@ -50,11 +50,16 @@ pub fn round_trips_portable_fields<A: Adapter>(a: &A, fixture: &Path) {
     assert_eq!(back.skills, m.skills);
 }
 
-/// read -> write -> read, and both models.
-fn round_trip<A: Adapter>(a: &A, fixture: &Path, tag: &str) -> (BotModel, BotModel) {
+/// read -> write -> read, and both models. `bare` clears `extras` before the write, as for a model read from
+/// another platform: the write must then carry the data through the model fields alone.
+fn round_trip<A: Adapter>(a: &A, fixture: &Path, tag: &str, bare: bool) -> (BotModel, BotModel) {
     let m = read(a, fixture);
     let d = scratch(a, tag);
-    a.write(&m, &d).unwrap();
+    let mut w = m.clone();
+    if bare {
+        w.extras.clear();
+    }
+    a.write(&w, &d).unwrap();
     let back = read(a, &d);
     std::fs::remove_dir_all(&d).unwrap();
     (m, back)
@@ -78,10 +83,16 @@ fn manual_names<'a>(m: &'a BotModel, kind: &str) -> Vec<&'a str> {
         .collect()
 }
 
-/// read -> write -> read keeps every schedule: one with a cron by cron + action (a target may rename it); one
+/// read -> write -> read, once as read and once with `extras` cleared, keeps every schedule: one with a cron by cron + action (a target may rename it); one
 /// without (an event), or one only listed for a human, at least by name.
 pub fn round_trips_schedules<A: Adapter>(a: &A, fixture: &Path) {
-    let (m, back) = round_trip(a, fixture, "sched");
+    for bare in [false, true] {
+        round_trips_schedules_once(a, fixture, bare);
+    }
+}
+
+fn round_trips_schedules_once<A: Adapter>(a: &A, fixture: &Path, bare: bool) {
+    let (m, back) = round_trip(a, fixture, "sched", bare);
     assert!(
         m.schedules.iter().any(|s| s.cron.is_some()),
         "{}: the fixture needs a schedule with a cron",
@@ -95,21 +106,32 @@ pub fn round_trips_schedules<A: Adapter>(a: &A, fixture: &Path) {
                 .any(|b| b.cron.as_deref() == Some(c) && b.action.trim() == s.action.trim()),
             None => kept_by_name(&back, "schedule", &s.name),
         };
-        assert!(kept, "{}: schedule {:?} dropped", a.id(), s.name);
+        assert!(
+            kept,
+            "{} (bare {bare}): schedule {:?} dropped",
+            a.id(),
+            s.name
+        );
     }
     for n in manual_names(&m, "schedule") {
         assert!(
             kept_by_name(&back, "schedule", n),
-            "{}: schedule {n:?} (manual) dropped",
+            "{} (bare {bare}): schedule {n:?} (manual) dropped",
             a.id()
         );
     }
 }
 
-/// read -> write -> read keeps every connector: one with a url by url; one without, or one only listed for a
+/// read -> write -> read, once as read and once with `extras` cleared, keeps every connector: one with a url by url; one without, or one only listed for a
 /// human, at least by name.
 pub fn round_trips_connectors<A: Adapter>(a: &A, fixture: &Path) {
-    let (m, back) = round_trip(a, fixture, "conn");
+    for bare in [false, true] {
+        round_trips_connectors_once(a, fixture, bare);
+    }
+}
+
+fn round_trips_connectors_once<A: Adapter>(a: &A, fixture: &Path, bare: bool) {
+    let (m, back) = round_trip(a, fixture, "conn", bare);
     assert!(
         m.connectors.iter().any(|c| c.url.is_some()),
         "{}: the fixture needs a connector with a url",
@@ -120,20 +142,31 @@ pub fn round_trips_connectors<A: Adapter>(a: &A, fixture: &Path) {
             Some(u) => back.connectors.iter().any(|b| b.url.as_ref() == Some(u)),
             None => kept_by_name(&back, "connector", &c.name),
         };
-        assert!(kept, "{}: connector {:?} dropped", a.id(), c.name);
+        assert!(
+            kept,
+            "{} (bare {bare}): connector {:?} dropped",
+            a.id(),
+            c.name
+        );
     }
     for n in manual_names(&m, "connector") {
         assert!(
             kept_by_name(&back, "connector", n),
-            "{}: connector {n:?} (manual) dropped",
+            "{} (bare {bare}): connector {n:?} (manual) dropped",
             a.id()
         );
     }
 }
 
-/// read -> write -> read keeps every credential name (names only: values never reach the model).
+/// read -> write -> read, once as read and once with `extras` cleared, keeps every credential name (names only: values never reach the model).
 pub fn round_trips_credential_names<A: Adapter>(a: &A, fixture: &Path) {
-    let (m, back) = round_trip(a, fixture, "cred");
+    for bare in [false, true] {
+        round_trips_credential_names_once(a, fixture, bare);
+    }
+}
+
+fn round_trips_credential_names_once<A: Adapter>(a: &A, fixture: &Path, bare: bool) {
+    let (m, back) = round_trip(a, fixture, "cred", bare);
     assert!(
         !m.credentials.is_empty(),
         "{}: the fixture needs a credential name",
@@ -142,7 +175,7 @@ pub fn round_trips_credential_names<A: Adapter>(a: &A, fixture: &Path) {
     for c in &m.credentials {
         assert!(
             back.credentials.iter().any(|b| b.name == c.name),
-            "{}: credential {:?} dropped",
+            "{} (bare {bare}): credential {:?} dropped",
             a.id(),
             c.name
         );

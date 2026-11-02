@@ -1,6 +1,6 @@
 //! The port spec (botport.toml; the old name grok2hermes.toml works the same): which Hermes-side templates own which parts of the profile.
 //! Relative paths resolve against `base` (default: the spec file's directory).
-use crate::util::*;
+use crate::core::util::*;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

@@ -94,14 +94,10 @@ fn an_adapter_that_drops_unscheduled_items_fails() {
 }
 
 #[test]
-#[should_panic(expected = "dropped")]
-fn an_adapter_that_drops_connectors_fails() {
-    // the profile's config.yaml (kept whole in `extras`) also holds the server, so drop both
-    let drop = Dropping(|m| {
-        m.connectors.clear();
-        m.extras.clear();
-    });
-    c::round_trips_connectors(&drop, &fixture("hermes"));
+#[should_panic(expected = "(bare true): connector")]
+fn an_adapter_that_keeps_connectors_only_in_extras_fails() {
+    // the profile's config.yaml (kept whole in `extras`) still holds the server, so only the bare pass catches it
+    c::round_trips_connectors(&Dropping(|m| m.connectors.clear()), &fixture("hermes"));
 }
 
 #[test]
