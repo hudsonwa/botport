@@ -60,7 +60,8 @@ changes additively (a new optional field, together with the types). A breaking c
 
 - Minor (`bot-model/1.N`): additive only — new optional fields. Readers of major 1 accept any 1.x. Unknown
   **top-level** data from a newer minor is kept in `extras["_unknown"]` (one entry per field) by `BotModel::from_json`;
-  unknown fields **inside** nested objects (a persona, skill, schedule …) are not kept today, so a newer minor should
+  unknown fields **inside** nested objects (a persona, skill, schedule …) are dropped today, and inside a credential
+  they are rejected on purpose (names only), so a newer minor should
   add new data at the top level or in `extras` until that changes.
 - Major (`bot-model/2`): anything breaking (rename, removal, type or meaning change). Readers reject any major
   they do not know with `unsupported major version N`.
