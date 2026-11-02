@@ -1,5 +1,8 @@
 # Architecture
 
+Read [OWNERSHIP.md](OWNERSHIP.md) first: the ownership state machine (per-item states, the lock record, when apply
+writes and when it refuses) is botport's core; this page is how the code around it is arranged.
+
 Hub and spoke: a platform-free **core** around the neutral bot model (`bot-model/1`, see [MODEL.md](MODEL.md)),
 with one **adapter** per platform. Adding a platform means adding an adapter; the core does not change.
 
@@ -21,7 +24,7 @@ source (`--bundle`), so a new source adapter also needs a way to be selected the
 | Item | Status |
 |---|---|
 | Grok Bot ↔ Hermes export/import, sync and drift | done |
-| g2h talk bridge (`g2h` + `g2hd`, running as your user) | done |
+| g2h talk bridge (`g2h` + `g2hd`, running as your user) | done; optional, experimental companion, feature-frozen for v0.1 |
 | Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | done (v0.1.0) |
 | OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |

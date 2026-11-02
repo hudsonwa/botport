@@ -3,6 +3,9 @@
 The g2h talk bridge (Grok Bot <-> Hermes bot direct chat): the core library plus the `g2hd` daemon and the `g2h` CLI.
 The daemon talks to the bots over a local Unix socket and HTTP wake calls; it opens no network listener.
 
+**Scope.** g2h is an optional, experimental companion to botport: botport ports and syncs a bot without it. g2h is
+**feature-frozen for v0.1**: bug fixes only, no new features. Separate-user hardening (#17) is post-launch.
+
 **What g2h is, and is not.** g2h is a bridge between two bots you own, both running as your user. It reduces
 the chance that one bot treats the other's text as instructions (framing, hop limit, caps, owner-approved ops); a
 language model can still follow framed text, so this is defence in depth, not a guarantee. It is

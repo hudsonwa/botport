@@ -16,6 +16,7 @@ Hand these to an agent and it can do the job for you.
 - [ROUTINE-PROMPT.md](ROUTINE-PROMPT.md): paste-ready prompts for the Grok side of g2h.
 
 ## How it works
+- [OWNERSHIP.md](OWNERSHIP.md): the ownership state machine (what botport writes, records and refuses). Read first.
 - [ARCHITECTURE.md](ARCHITECTURE.md): core and adapters, the `Adapter` trait.
 - [MODEL.md](MODEL.md): the neutral bot model and how each platform maps onto it.
 - [ADAPTERS.md](ADAPTERS.md): write an adapter for another platform; conformance tests.

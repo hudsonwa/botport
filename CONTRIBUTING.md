@@ -1,15 +1,27 @@
 # Contributing to botport
 
 Thanks for looking. botport is an early v0.1 by one maintainer. There is no team behind it yet, and no outside pull
-request has been merged so far, so the first contributors will help shape how review works here. Two kinds of help
-would matter most:
+request has been merged so far, so the first contributors will help shape how review works here.
+
+**The best first read is [docs/OWNERSHIP.md](docs/OWNERSHIP.md)**: one page on the ownership rules that are botport's
+core (what the lock records, when apply writes, when it refuses). Every change to sync must keep them.
+
+**Recommended first contributions:** a [docs/PLATFORM-CHANGES.md](docs/PLATFORM-CHANGES.md) entry from a bot you
+run; [#16](https://github.com/hudsonwa/botport/issues/16) (Hermes adapter write: connector key order, repeated -N
+duplicates, stale credential ticks); [#5](https://github.com/hudsonwa/botport/issues/5) (more parity-battery cases).
+
+Two kinds of longer-term help would matter most:
 1. **A co-maintainer who runs Grok Bots daily**, to own the export brief ([docs/AGENT-EXPORT.md](docs/AGENT-EXPORT.md))
    and the Grok side. The brief is a contract with a closed platform that changes without notice; it needs someone
    who notices first. Changes go in [docs/PLATFORM-CHANGES.md](docs/PLATFORM-CHANGES.md).
-2. **Rust contributors for adapters.** plan/apply/sync/drift run through `BotModel` + `Adapter` since v0.1.0, so an
-   adapter that reads its platform into the model can be ported to Hermes. The next adapters are OpenClaw (formerly
-   Moltbot/Clawdbot), [#1](https://github.com/hudsonwa/botport/issues/1), and OpenBot,
-   [#2](https://github.com/hudsonwa/botport/issues/2).
+2. **Rust contributors for adapters.** The planned ones are OpenClaw (formerly Moltbot/Clawdbot),
+   [#1](https://github.com/hudsonwa/botport/issues/1), and OpenBot, [#2](https://github.com/hudsonwa/botport/issues/2).
+   Neither has code and neither is a small first task: each needs an adapter that passes the conformance suite plus a
+   CLI source selector, and porting *into* either also needs a `Target` that keeps the rules in
+   [docs/OWNERSHIP.md](docs/OWNERSHIP.md) (see "Adding a platform" below).
+
+g2h is an optional, experimental companion and is feature-frozen for v0.1: bug fixes only, no new features.
+Separate-user hardening (#17) is post-launch.
 
 You don't need to be a Rust expert for everything else: docs, test cases and bug reports with the `--json` output
 attached all help.
