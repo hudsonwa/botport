@@ -14,7 +14,8 @@ This tool ports logic (re-implemented in Rust, not copied verbatim) from:
    Copyright (c) 2026 Nous Research. MIT License.
    Ported: preview-before-apply with item states, restore points that keep the last 5, the sync digest
    over exactly the files read, per-skill tree digests, and the rule that a skill edited on the Hermes
-   side is reported as a conflict and never overwritten. shim/ adds a `grok-bot` source to that plugin.
+   side is reported as a conflict and never overwritten. shim/ adds a `grok-bot` source to versions of that plugin older
+   than 1.2.0, which have no Grok Bot importer of their own.
 
 3. An earlier hand-made renderer, drift checker and battery by the same author (not published) served as the
    reference implementation and test oracle.

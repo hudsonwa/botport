@@ -38,6 +38,23 @@ the archive and `SHA256SUMS` from the Releases page, `shasum -a 256 -c SHA256SUM
 `shasum` and GNU `sha256sum -c --ignore-missing`; it skips the archives you did not download), unpack, and
 copy the binaries onto your `PATH`.
 
+## With pipx (no Rust needed)
+
+    pipx install botport
+
+The Python wheel bundles the prebuilt `botport` binary (and its `grok2hermes` alias); pipx puts both on your
+`PATH`. **Not on PyPI yet:** until the first upload, build the wheel yourself (see
+[RELEASING.md](RELEASING.md#python-wheel)) and run `pipx install ./botport-<version>-*.whl`. The wheel does **not**
+include the optional talk bridge `g2h`/`g2hd` (a separate crate); get those from the curl script, Homebrew or cargo.
+Uninstall with `pipx uninstall botport`.
+
+## With Homebrew (after the tap exists)
+
+    brew install hudsonwa/tap/botport
+
+Installs `botport`, `grok2hermes`, `g2h` and `g2hd` from the release archives. The tap repo `hudsonwa/homebrew-tap`
+is **not created yet**; the draft formula is in `packaging/homebrew/`.
+
 ## From source with cargo
 
 Needs a Rust toolchain (stable, via rustup):
