@@ -1,5 +1,5 @@
 //! Loop/abuse guard: hop limit, daily caps with local-day rollover, and
-//! one in-flight turn per direction. Pure logic; the clock is injected.
+//! one in-flight turn per key (g2hd keys it by direction and conversation). Pure logic; the clock is injected.
 
 use crate::envelope::Kind;
 use chrono::NaiveDate;

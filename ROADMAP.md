@@ -8,7 +8,7 @@ would matter most.
 |---|---|
 | Grok Bot ↔ Hermes export/import, sync and drift | done |
 | g2h talk bridge, running as your user | done |
-| Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | in progress (lands in v0.1.0) |
+| Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | done (v0.1.0) |
 | OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |
 | `g2hd` running as a separate OS user | planned |
@@ -19,8 +19,8 @@ would matter most.
    [docs/AGENT-IMPORT.md](docs/AGENT-IMPORT.md). Those briefs depend on paths and behaviour inside a closed platform;
    fixture tests stay green when it changes. This needs someone who sees the changes first, keeps the briefs working
    and records each change in [docs/PLATFORM-CHANGES.md](docs/PLATFORM-CHANGES.md).
-2. **Rust contributors for adapters, once the seam lands.** Until plan/apply/sync/drift go through `BotModel` +
-   `Adapter`, a new adapter can read a platform but cannot port it. After that, OpenClaw and OpenBot are the next
+2. **Rust contributors for adapters.** plan/apply/sync/drift now go through `BotModel` + `Adapter`, so a new
+   adapter that reads a platform into the model can be ported to Hermes. OpenClaw (#1) and OpenBot (#2) are the next
    adapters.
 
 Smaller open work: keep data the model can't place yet instead of dropping it; follow new Hermes releases; test the
@@ -30,8 +30,8 @@ g2h systemd user unit on more Linux distributions; an answer for Windows (g2h us
 - **OpenClaw (formerly Moltbot/Clawdbot)** adapter: planned.
 - **OpenBot** adapter: planned.
 
-These two are what the `BotModel` seam is for. Once plan/apply/sync/drift go through it, an adapter that reads a
-platform into the model and writes it back can port that bot to and from every other adapter. Their mappings are
+These two are what the `BotModel` seam is for. plan/apply/sync/drift go through it now, so an adapter that reads a
+platform into the model can port that bot to Hermes. Their mappings are
 written up in [docs/MODEL.md](docs/MODEL.md); no code yet.
 - **`g2hd` as a separate OS user** (planned). Today g2h runs as your user and is not a security boundary against a
   bot with a shell as that user; see [docs/SECURITY.md](docs/SECURITY.md).

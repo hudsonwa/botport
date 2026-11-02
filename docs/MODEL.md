@@ -25,7 +25,8 @@ map keys sorted. Empty lists/maps and absent optionals are omitted. A canonical 
 (`user`, `agent`, `project`, …), `source` (origin location, e.g. a file or table name), `date` (ISO-8601),
 `origin_side` (opaque id of the side that first wrote it, for two-way sync).
 
-**Skill** — `name`; optional `description`; `files` map of relative path → UTF-8 text. Binary files go to `extras`.
+**Skill** — `name`; optional `description`; `files` map of relative path → UTF-8 text; `binary_files` map of
+relative path → lowercase hex, for files that are not UTF-8.
 
 **Schedule** — `name`, `cron` (5-field; omitted for events), `tz` (IANA), `kind` (`scheduled` | `event`),
 `action` (prompt to run), `enabled` (bool, always written).
@@ -36,6 +37,11 @@ map keys sorted. Empty lists/maps and absent optionals are omitted. A canonical 
 written. Other unknown fields are rejected, so a document carrying a `value`/`secret` field fails to parse.
 
 **HistoryRef** — `kind` (e.g. `jsonl`, `sqlite`), `path` (relative to the model file).
+
+Two more optional top-level fields, omitted when empty (so older documents round-trip byte-identically and the
+schema stays `bot-model/1`): `memory_text`, the origin's memory as one document, verbatim (e.g. a Grok bundle's
+MEMORY.md); and `manual[]`, items `{item, todo}` the reader saw but could not carry (names and reasons only:
+schedules that run elsewhere, apps without an MCP url, entries that looked like secrets).
 
 ## Versioning
 
