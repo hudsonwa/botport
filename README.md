@@ -12,8 +12,8 @@ your own machine).**
 2. **Sync both directions, with drift detection.** `botport sync` re-applies only what changed and `botport drift`
    checks both directions. An edit you made on the Hermes side is reported as a conflict and never overwritten.
    How: [sync and drift](docs/USER-GUIDE.md), [ownership rules](docs/REFERENCE.md).
-3. **Direct chat between the two bots.** The `g2h` bridge lets them message each other, typically under a
-   second per exchange (0.6–1.5 s measured live). How: [bridge setup brief](docs/AGENT-SETUP.md), [g2h README](crates/g2h/README.md).
+3. **Direct chat between the two bots.** The `g2h` bridge lets them message each other, 0.6–1.5 s per
+   exchange, measured live. How: [bridge setup brief](docs/AGENT-SETUP.md), [g2h README](crates/g2h/README.md).
 
 g2h is a bridge between two bots **you own**, both running as your user. It stops one bot's text from being treated
 as instructions by the other. It is **not** a security boundary against a bot that already has a shell as your user;
@@ -24,7 +24,7 @@ see [SECURITY.md](docs/SECURITY.md).
 - The bundle was imported into a Hermes bot and synced; `drift` reported IN SYNC in both directions.
 - The two bots exchanged messages live over g2h: 10 of 10 back-and-forth exchanges passed, 0.6–1.5 s each.
 - A live owner-approved operation: one bot asked the other to export itself, and it did.
-- Upstream Hermes' own Grok Bot importer was tested on the same bot; it found a bug (escaped skill text), and a fix
+- Upstream Hermes' own Grok Bot importer was tested on the same bot; testing found a bug (escaped skill text), and a fix
   is prepared for upstream.
 
 Platform changes we hit and how the brief or tool adapted are logged in
