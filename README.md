@@ -11,11 +11,11 @@
 2. **Sync both directions, with drift detection.** `botport sync` re-applies only what changed and `botport drift`
    checks both directions. An edit you made on the Hermes side is reported as a conflict and never overwritten.
    How: [sync and drift](docs/USER-GUIDE.md), [ownership rules](docs/REFERENCE.md).
-3. **Direct chat between the two bots.** The `g2h` bridge lets them message each other, 0.6–1.5 s per
+3. **Direct chat between the two bots (optional).** The separate `g2h` bridge lets them message each other, 0.6–1.5 s per
    exchange, measured live. How: [bridge setup brief](docs/AGENT-SETUP.md), [g2h README](crates/g2h/README.md).
 
-g2h is a bridge between two bots **you own**, both running as your user. It stops one bot's text from being treated
-as instructions by the other. It is **not** a security boundary against a bot that already has a shell as your user;
+g2h is a bridge between two bots **you own**, both running as your user. It frames one bot's text as untrusted data for
+the other, which reduces the chance that a bot treats peer text as instructions; no framing can guarantee that. It is **not** a security boundary against a bot that already has a shell as your user;
 see [SECURITY.md](docs/SECURITY.md).
 
 ### Tried on a real bot (2 Nov 2026)
@@ -32,13 +32,13 @@ Platform changes we hit and how the brief or tool adapted are logged in
 ## Where it's going (roadmap)
 | Item | Status |
 |---|---|
-| Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | in progress (lands in v0.1.0) |
+| Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | done (v0.1.0) |
 | OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |
 | `g2hd` running as a separate OS user | planned |
 
-The OpenClaw and OpenBot adapters are what the `BotModel` seam is for: once it lands, each new platform needs one
-adapter that reads into and writes from the neutral model, and it can then port to and from every other adapter.
+The OpenClaw and OpenBot adapters are what the `BotModel` seam is for: plan/apply/sync/drift now run on the neutral
+model, so each new platform needs one adapter that reads into (and writes from) that model. Neither adapter has code yet.
 
 Details in [ROADMAP.md](ROADMAP.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#today-vs-target).
 
@@ -81,7 +81,8 @@ For a Grok Bot exporting itself, use [docs/AGENT-EXPORT.md](docs/AGENT-EXPORT.md
 3. Port your own bot: follow the [user guide](docs/USER-GUIDE.md). It covers export, import, sync, testing and undo.
 
 ## What it does
-Two tools: **botport** ports and syncs the bot; **g2h** (`g2h` CLI, `g2hd` daemon) lets the two copies talk.
+Two tools: **botport** ports and syncs the bot; **g2h** (`g2h` CLI, `g2hd` daemon) is an optional companion that lets
+the two copies talk. botport works on its own: you do not need to install or run g2h to port, sync or test a bot.
 - **Port.** `export` makes a bundle from a Grok Bot: skills, memory, chat history (read-only), and a checklist of
   what it can't copy. `plan` and `apply` turn that bundle into a Hermes profile. A short spec file says which parts
   of the profile botport owns.
@@ -90,7 +91,7 @@ Two tools: **botport** ports and syncs the bot; **g2h** (`g2h` CLI, `g2hd` daemo
   With two-way sync, what the Hermes bot learned goes back to the Grok bot as a bundle it can load.
 - **Parity tests.** `test` runs a small battery of questions against the Hermes copy, to check that the persona,
   memory and routines came across. See the [worked example](docs/examples/daily-wisdom.md).
-- **Talk bridge (`g2h`).** `g2hd` is a local broker on a Unix socket, with no network listener. It lets the Grok Bot
+- **Talk bridge (`g2h`, optional).** `g2hd` is a local broker on a Unix socket, with no network listener. It lets the Grok Bot
   and the Hermes bot message each other, with daily caps and an owner approval step for actions. It is a bridge
   between two bots you own, not a security boundary between them. See
   [crates/g2h/README.md](crates/g2h/README.md) and the [security model](docs/SECURITY.md).
@@ -127,8 +128,8 @@ the repo. The history was squashed into one commit for the public release.
 
 ## Docs and contributing
 - [docs/README.md](docs/README.md): every guide, in one list.
-- [CONTRIBUTING.md](CONTRIBUTING.md): build, test, and send a pull request. Rust help with adapters is welcome
-  once the adapter seam lands (see the roadmap above).
+- [CONTRIBUTING.md](CONTRIBUTING.md): build, test, and send a pull request. Rust help with adapters is welcome:
+  OpenClaw and OpenBot are the next ones (see the roadmap above).
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License and credits
