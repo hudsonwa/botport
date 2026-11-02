@@ -1,11 +1,12 @@
 //! EXPERIMENTAL `--check-routines <path|auto>`: warn about routines the Grok desktop app's local cache knows
 //! (its automation-changed events) that the export left out. Opt-in, read-only, never fails the command.
 //!
-//! What is read (docs/REFERENCE.md "Routine check"): with a file path, that one file; with a directory (or `auto`,
-//! which resolves to the app's `sand-client-persistence` directory), only the `*.blob` files whose base32 key names
-//! a `transcript.replicas.*` slice. Nothing else in the app directory is opened (never `sand-secrets.json`, cookies,
-//! webhook keys or any other credential file). Only routine names are taken from the events; nothing is copied,
-//! and file names (which carry the account key) are never printed.
+//! What is read (docs/REFERENCE.md "Routine check"): only regular files (never symlinks) named `<base32>.blob` whose
+//! base32 key names a `transcript.replicas.*` slice: the user's local conversation transcripts, read in full. A file
+//! PATH must pass the same name rule or nothing is opened; a directory (or `auto`, the app's
+//! `sand-client-persistence` directory) is listed and only its matching files are read. Anything else (never
+//! `sand-secrets.json`, cookies, webhook keys or any other file) is not opened. Only routine names are taken from the
+//! events; nothing is copied, and file names (which carry the account key) are never printed.
 //!
 //! Assumed format (not confirmed against a real cache): each file is JSON or JSON lines; any object whose `type`,
 //! `event` or `kind` is `automation-changed` (also `automation_changed`, `automationChanged`) names a routine at
@@ -68,26 +69,37 @@ fn base32(s: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// The files the check may open: the file itself, or the transcript-replica blobs in a cache directory.
-fn cache_files(target: &Path) -> Vec<PathBuf> {
-    if target.is_file() {
-        return vec![target.to_path_buf()];
+/// A regular file (not a symlink) named `<base32>.blob` whose key names a transcript-replica slice.
+fn is_replica(p: &Path) -> bool {
+    std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_file())
+        && p.extension().is_some_and(|x| x == "blob")
+        && p.file_stem()
+            .and_then(|s| base32(&s.to_string_lossy()))
+            .is_some_and(|k| k.contains(SLICE))
+}
+
+/// The files the check may open: the file itself, or the transcript-replica blobs in a cache directory. Both go
+/// through `is_replica`; Err (nothing opened) for a symlink or a file that fails it.
+fn cache_files(target: &Path) -> Result<Vec<PathBuf>, &'static str> {
+    let meta = std::fs::symlink_metadata(target).map_err(|_| "no Grok desktop cache found")?;
+    if meta.file_type().is_symlink() {
+        return Err("the path is a symlink; nothing was opened");
+    }
+    if meta.is_file() {
+        return match is_replica(target) {
+            true => Ok(vec![target.to_path_buf()]),
+            false => Err("not a Grok transcript-replica file; nothing was opened"),
+        };
     }
     let mut files: Vec<PathBuf> = std::fs::read_dir(target)
         .into_iter()
         .flatten()
         .flatten()
         .map(|e| e.path())
-        .filter(|p| {
-            p.is_file()
-                && p.extension().is_some_and(|x| x == "blob")
-                && p.file_stem()
-                    .and_then(|s| base32(&s.to_string_lossy()))
-                    .is_some_and(|k| k.contains(SLICE))
-        })
+        .filter(|p| is_replica(p))
         .collect();
     files.sort();
-    files
+    Ok(files)
 }
 
 fn is_event(o: &serde_json::Map<String, Value>) -> bool {
@@ -154,6 +166,11 @@ fn read_file(p: &Path, names: &mut BTreeMap<String, String>) -> bool {
     !docs.is_empty()
 }
 
+/// The one-line note for a check that did not run.
+pub fn skip_line(why: &str) -> String {
+    format!("routine check (experimental): skipped ({why})")
+}
+
 /// Compare the cache's routine names with the export's (matched by slug, so case and punctuation don't matter).
 pub fn check(spec: &str, export_names: &[String]) -> Check {
     let target = if spec == "auto" {
@@ -162,13 +179,16 @@ pub fn check(spec: &str, export_names: &[String]) -> Check {
         Some(PathBuf::from(spec))
     };
     let skipped = |why: String| Check {
-        lines: vec![format!("routine check (experimental): {why}; skipped")],
+        lines: vec![skip_line(&why)],
         json: json!({"experimental": true, "skipped": why}),
     };
-    let Some(target) = target.filter(|t| t.exists()) else {
+    let Some(target) = target else {
         return skipped("no Grok desktop cache found".into());
     };
-    let files = cache_files(&target);
+    let files = match cache_files(&target) {
+        Ok(f) => f,
+        Err(why) => return skipped(why.into()),
+    };
     if files.is_empty() {
         return skipped("the cache holds no automation event files".into());
     }
@@ -214,6 +234,10 @@ pub fn check(spec: &str, export_names: &[String]) -> Check {
 mod tests {
     use super::*;
 
+    // synthetic fixtures, named like replica slices of a made-up account
+    const REPLICA: &str = "tests/fixtures/routines-cache/onqw4zbomnwgszlooqxhg3djmnss4yldmnxxk3tufztgs6duovzgkltuojqw443dojuxa5boojsxa3djmnqxgltsge.blob";
+    const MALFORMED: &str = "tests/fixtures/routines-cache/onqw4zbomnwgszlooqxhg3djmnss4yldmnxxk3tufztgs6duovzgkltuojqw443dojuxa5boojsxa3djmnqxgltsgi.blob";
+
     fn tmp(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("botport-rc-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
@@ -250,20 +274,14 @@ mod tests {
 
     #[test]
     fn all_present() {
-        let c = check(
-            "tests/fixtures/routines-cache/replica.json",
-            &names(&["Sample report", "weekly-review"]),
-        );
+        let c = check(REPLICA, &names(&["Sample report", "weekly-review"]));
         assert_eq!(c.lines.len(), 1, "{:?}", c.lines);
         assert!(c.lines[0].contains("all 2 routine(s)"));
     }
 
     #[test]
     fn one_missing_is_named() {
-        let c = check(
-            "tests/fixtures/routines-cache/replica.json",
-            &names(&["Sample Report"]),
-        );
+        let c = check(REPLICA, &names(&["Sample Report"]));
         assert_eq!(c.json["missing"], json!(["Weekly Review"]));
         assert!(c
             .lines
@@ -276,13 +294,13 @@ mod tests {
     #[test]
     fn absent_cache_is_a_note() {
         let c = check("tests/fixtures/routines-cache/nope", &names(&[]));
-        assert!(c.lines[0].contains("no Grok desktop cache found; skipped"));
+        assert!(c.lines[0].contains("skipped (no Grok desktop cache found)"));
         assert!(!c.lines[0].starts_with("WARN"));
     }
 
     #[test]
     fn malformed_cache_warns() {
-        let c = check("tests/fixtures/routines-cache/malformed.blob", &names(&[]));
+        let c = check(MALFORMED, &names(&[]));
         assert!(c.lines[0].starts_with("WARN") && c.lines[0].contains("1 of 1"));
     }
 
@@ -306,6 +324,75 @@ mod tests {
         let c = check(d.to_str().unwrap(), &names(&[]));
         assert_eq!(c.json["missing"], json!(["Inbox Sweep"]));
         assert_eq!(c.json["files"], json!(1));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    fn ev(name: &str) -> String {
+        format!(r#"{{"type":"automation-changed","name":"{name}"}}"#)
+    }
+
+    #[test]
+    fn file_mode_refuses_non_replica_files() {
+        let d = tmp("filemode");
+        let webhook = format!(
+            "{}.blob",
+            b32("sand.client.slice.account.x.automation-webhook-keys")
+        );
+        for f in [
+            "sand-secrets.json",
+            "Cookies",
+            "Cookies-journal",
+            &webhook,
+            "notes.blob",
+        ] {
+            std::fs::write(d.join(f), ev("FROM-SECRET")).unwrap();
+            let c = check(d.join(f).to_str().unwrap(), &names(&[]));
+            assert_eq!(c.lines.len(), 1, "{f}: {:?}", c.lines);
+            assert!(
+                c.lines[0].contains("skipped (not a Grok transcript-replica file"),
+                "{f}: {:?}",
+                c.lines
+            );
+            assert!(!c.lines[0].contains("FROM-SECRET") && c.json["missing"].is_null());
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_are_never_followed() {
+        let d = tmp("symlink");
+        let app = d.join("app");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(d.join("sand-secrets.json"), ev("FROM-SECRETS-FILE")).unwrap();
+        let replica = app.join(format!(
+            "{}.blob",
+            b32("sand.client.slice.account.x.transcript.replicas.r9")
+        ));
+        std::os::unix::fs::symlink(d.join("sand-secrets.json"), &replica).unwrap();
+        // file mode: a replica-named symlink is refused
+        let c = check(replica.to_str().unwrap(), &names(&[]));
+        assert!(
+            c.lines[0].contains("skipped (the path is a symlink"),
+            "{:?}",
+            c.lines
+        );
+        // dir mode: the symlink is skipped, so no file is left
+        let c = check(app.to_str().unwrap(), &names(&[]));
+        assert!(
+            c.lines[0].contains("skipped (the cache holds no"),
+            "{:?}",
+            c.lines
+        );
+        // a symlinked cache directory is refused too
+        let link = d.join("linked");
+        std::os::unix::fs::symlink(&app, &link).unwrap();
+        let c = check(link.to_str().unwrap(), &names(&[]));
+        assert!(
+            c.lines[0].contains("skipped (the path is a symlink"),
+            "{:?}",
+            c.lines
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 }

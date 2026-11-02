@@ -10,7 +10,9 @@ First public release. The tool was called grok2hermes before release; the old na
 
 ### Added
 - `--check-routines PATH|auto` (experimental, opt-in): warn about routines the Grok desktop app's cache knows
-  that the export left out; reads only the cache's transcript-replica files ([REFERENCE.md](docs/REFERENCE.md)).
+  that the export left out. This reads your Grok desktop app's local conversation transcripts (the
+  transcript.replicas files) in full, on this machine only. It keeps only the names of routines from automation
+  events. Nothing else is stored, copied or printed, and nothing is sent anywhere ([REFERENCE.md](docs/REFERENCE.md)).
 - `botport` binary: `export`, `verify`, `describe`, `plan`, `apply`, `sync`, `drift`, `export-hermes`, `test`
   and `battery init`. `grok2hermes` stays as an alias.
 - Grok Bot adapter: botport bundles and grok-bot-export v1 files.
