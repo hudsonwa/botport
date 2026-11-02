@@ -17,7 +17,7 @@ path = "src/main.rs"
 [[bin]]
 name = "grok2hermes"
 path = "src/bin/grok2hermes.rs"
-# Same main as `botport`: its unit tests already run there.
+# Same main as `botport`: its tests already run there.
 test = false
 
 [dependencies]

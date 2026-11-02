@@ -218,6 +218,7 @@ pub fn read_model(p: &Path) -> Res<BotModel> {
             name,
             description: None,
             files: [("SKILL.md".to_string(), md)].into(),
+            binary_files: Default::default(),
         })
         .collect();
     let mut schedules = vec![];
@@ -317,11 +318,14 @@ pub fn read_model(p: &Path) -> Res<BotModel> {
             instructions: text(&bot["instructions"]),
         },
         memory,
+        // memories as `- fact` lines: what a writer renders from `memory` anyway
+        memory_text: None,
         skills,
         schedules,
         connectors,
         credentials: vec![],
         history: None,
+        manual: vec![],
         extras: [(super::ID.to_string(), extra)].into_iter().collect(),
     })
 }

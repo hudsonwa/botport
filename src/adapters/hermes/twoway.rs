@@ -82,10 +82,10 @@ pub fn collect(c: &Ctx) -> Res<Export> {
     let mut items = vec![];
     // --- memory
     let grok: BTreeSet<String> = c
-        .bundle
-        .facts
+        .model
+        .memory
         .iter()
-        .map(|f| norm(f))
+        .map(|f| norm(&f.text))
         .filter(|f| !f.is_empty())
         .collect();
     let seed: BTreeSet<String> = w
@@ -139,32 +139,31 @@ pub fn collect(c: &Ctx) -> Res<Export> {
     let mut skills = BTreeMap::new();
     let mut resolved = BTreeMap::new();
     let mut seen = BTreeSet::new();
-    let mut add =
-        |name: String, files: BTreeMap<String, Vec<u8>>, why: &str, items: &mut Vec<Item>| {
-            if files.values().any(|b| secret_content(b)) {
-                items.push(hermes::item(
-                    "skills",
-                    &name,
-                    St::Skip,
-                    "credential-like text: not exported",
-                ));
-            } else if c.bundle.skills.get(&name).map(tree_digest_files)
-                == Some(tree_digest_files(&files))
-            {
-                // identical copy already on the Grok side: nothing to send
-            } else if let std::collections::btree_map::Entry::Vacant(v) = skills.entry(name.clone())
-            {
-                items.push(hermes::item("skills", &name, St::Create, why));
-                v.insert(files);
-            } else {
-                items.push(hermes::item(
-                    "skills",
-                    &name,
-                    St::Conflict,
-                    "two Hermes skills share this name; rename one",
-                ));
-            }
-        };
+    let mut add = |name: String,
+                   files: BTreeMap<String, Vec<u8>>,
+                   why: &str,
+                   items: &mut Vec<Item>| {
+        if files.values().any(|b| secret_content(b)) {
+            items.push(hermes::item(
+                "skills",
+                &name,
+                St::Skip,
+                "credential-like text: not exported",
+            ));
+        } else if c.skills.get(&name).map(tree_digest_files) == Some(tree_digest_files(&files)) {
+            // identical copy already on the Grok side: nothing to send
+        } else if let std::collections::btree_map::Entry::Vacant(v) = skills.entry(name.clone()) {
+            items.push(hermes::item("skills", &name, St::Create, why));
+            v.insert(files);
+        } else {
+            items.push(hermes::item(
+                "skills",
+                &name,
+                St::Conflict,
+                "two Hermes skills share this name; rename one",
+            ));
+        }
+    };
     // Outside the owned category, only what the bot itself made or changed counts. Hermes records that in
     // skills/.usage.json (skill_manage writes `created_by: "agent"` and patch counts); skills copied in by Hermes
     // updates, the hub or a profile clone carry no such mark and are never exported.
@@ -178,7 +177,7 @@ pub fn collect(c: &Ctx) -> Res<Export> {
             continue;
         }
         let dirname = rel.rsplit('/').next().unwrap_or(&rel).to_string();
-        if c.bundle.excluded.contains(&dirname) || lock.grok_excluded.contains(&dirname) {
+        if c.source.excluded.contains(&dirname) || lock.grok_excluded.contains(&dirname) {
             continue; // a Grok skill this profile does not take is never Hermes-made nor sent back
         }
         let fm = hermes::skill_name(&dir.join("SKILL.md"));
@@ -199,7 +198,7 @@ pub fn collect(c: &Ctx) -> Res<Export> {
         // Sent before: if the Grok copy changed since then, a further Hermes change is a both-sides conflict;
         // if only the Grok side changed, there is nothing to send (the Grok -> Hermes side reports it).
         let live_d = tree_digest_files(&files);
-        let grok_d = c.bundle.skills.get(&dirname).map(tree_digest_files);
+        let grok_d = c.skills.get(&dirname).map(tree_digest_files);
         if let Some(sent) = lock.h2g_skills.get(&dirname) {
             // Versions the Grok side may hold without having changed anything: any version ever sent (an older one
             // while a newer send is still unread) or agreed.
@@ -378,7 +377,7 @@ pub fn write(e: &Export, c: &Ctx, out: &Path) -> Res<BTreeMap<String, String>> {
     put("cron/requests.json".into(), json_sorted(&e.cron).as_bytes())?;
     put("REQUESTS.md".into(), requests_md(e).as_bytes())?;
     let manifest = json!({"tool": TOOL, "version": VERSION, "origin": "hermes", "profile": c.profile,
-                          "agent_id": c.bundle.agent_id, "files": files, "digest": digest_pairs(&files)});
+                          "agent_id": c.source.id, "files": files, "digest": digest_pairs(&files)});
     write_atomic(
         &out.join("manifest.json"),
         json_sorted(&manifest).as_bytes(),

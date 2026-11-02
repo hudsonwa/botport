@@ -69,6 +69,12 @@
       "url": "https://demo.example.test/mcp"
     }
   ],
+  "manual": [
+    {
+      "item": "connector Calendar",
+      "todo": "app without an MCP url (its login stays on the Grok side): connect it by hand"
+    }
+  ],
   "extras": {
     "grok-bot": {
       "apps_without_url": [

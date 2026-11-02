@@ -9,7 +9,9 @@
 //!   Hermes side's. A legacy SOUL.md without markers that equals the template exactly counts as in sync.
 //! - config.yaml: only the template's leaf paths (minus `preserve`) are owned; lists keep Hermes-side extra items.
 //! - USER.md seed entries are added if missing, never removed. Cron jobs are matched by name.
-use crate::bundle::Bundle;
+use crate::core::adapter::Source;
+pub use crate::core::adapter::{item, Applied, Item, St};
+use crate::core::model::BotModel;
 use crate::core::secrets;
 use crate::spec::Spec;
 use crate::util::*;
@@ -32,61 +34,6 @@ pub const BACKUPS: &str = "backups/botport";
 /// The checklist of things botport cannot set up (names only), in the profile dir.
 pub const MANUAL: &str = "botport-manual.md";
 const ENTRY_DELIM: &str = "\n§\n";
-
-#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord)]
-#[serde(rename_all = "lowercase")]
-pub enum St {
-    #[serde(rename = "in-sync")]
-    InSync,
-    Create,
-    Update,
-    Retire,
-    Conflict,
-    /// the same skill in the owned category and in upstream's `grok-bot-imports` (left for a human)
-    Duplicate,
-    Skip,
-    /// needs a human (listed in botport-manual.md); never written, not a difference
-    Manual,
-}
-
-impl St {
-    pub fn word(self) -> &'static str {
-        match self {
-            St::InSync => "in-sync",
-            St::Create => "create",
-            St::Update => "update",
-            St::Retire => "retire",
-            St::Conflict => "conflict",
-            St::Duplicate => "duplicate",
-            St::Skip => "skip",
-            St::Manual => "manual",
-        }
-    }
-    pub fn is_change(self) -> bool {
-        matches!(self, St::Create | St::Update | St::Retire)
-    }
-}
-
-#[derive(Serialize, Clone, Debug)]
-pub struct Item {
-    pub area: String,
-    pub name: String,
-    pub status: St,
-    pub detail: String,
-    /// conflict with no record of what botport wrote (`apply --adopt` may take it over)
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub unrecorded: bool,
-}
-
-pub fn item(area: &str, name: &str, status: St, detail: impl Into<String>) -> Item {
-    Item {
-        area: area.into(),
-        name: name.into(),
-        status,
-        detail: detail.into(),
-        unrecorded: false,
-    }
-}
 
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Lock {
@@ -118,8 +65,10 @@ pub struct Lock {
     pub g2h_cron: BTreeMap<String, String>,
 }
 
+/// One plan/apply run: the model (the only bot content read), its source bookkeeping, and the target profile.
 pub struct Ctx<'a> {
-    pub bundle: &'a Bundle,
+    pub model: &'a BotModel,
+    pub source: &'a Source,
     pub spec: &'a Spec,
     pub profile: String,
     pub dest: PathBuf,
@@ -127,20 +76,86 @@ pub struct Ctx<'a> {
     pub hermes_bin: String,
     /// HERMES_HOME for the hermes CLI when it is not ~/.hermes (None = the CLI's default)
     pub hermes_home: Option<PathBuf>,
+    /// the model's skills as files (text and binary), by skill name
+    pub skills: BTreeMap<String, BTreeMap<String, Vec<u8>>>,
+    /// the memory document the memory skill holds: the model's `memory_text`, else its facts as `- fact` lines
+    pub memory_md: Option<String>,
+    /// facts about the user (`user` scope or `profile` tier): USER.md entries
+    pub user_facts: Vec<String>,
+}
+
+/// A fact that belongs in USER.md rather than MEMORY.md.
+pub fn is_user_fact(f: &crate::core::model::Fact) -> bool {
+    f.scope.as_deref() == Some("user") || f.tier.as_deref() == Some("profile")
+}
+
+impl<'a> Ctx<'a> {
+    pub fn new(
+        model: &'a BotModel,
+        source: &'a Source,
+        dest: &Path,
+        o: &'a super::Opts,
+    ) -> Ctx<'a> {
+        let notes: String = model
+            .memory
+            .iter()
+            .filter(|f| !is_user_fact(f))
+            .map(|f| format!("- {}\n", f.text))
+            .collect();
+        Ctx {
+            model,
+            source,
+            spec: &o.spec,
+            profile: o.profile.clone(),
+            dest: dest.to_path_buf(),
+            real_home: o.real_home,
+            hermes_bin: o.hermes_bin.clone(),
+            hermes_home: o.hermes_home.clone(),
+            skills: model
+                .skills
+                .iter()
+                .map(|s| (s.name.clone(), s.bytes()))
+                .collect(),
+            memory_md: model
+                .memory_text
+                .clone()
+                .or_else(|| (!notes.is_empty()).then_some(notes)),
+            user_facts: model
+                .memory
+                .iter()
+                .filter(|f| is_user_fact(f))
+                .map(|f| f.text.clone())
+                .collect(),
+        }
+    }
+}
+
+/// The bot's display name ("Bot" when it has none).
+fn bot_name(m: &BotModel) -> &str {
+    if m.persona.name.is_empty() {
+        "Bot"
+    } else {
+        &m.persona.name
+    }
 }
 
 // ---------------------------------------------------------------- wanted state
+/// SOUL.md sections as (name, content)
+pub type Sections = Vec<(String, String)>;
+/// The config template: (head comment lines, values, preserved dotted paths split into segments)
+pub type ConfigWant = (String, Y, Vec<Vec<String>>);
+
 pub struct Want {
     pub cat: String,
     /// bundle skills that originated on the Hermes side (exported by export-hermes): never installed back
     pub hermes_origin: Vec<Item>,
     /// unit (path under skills/, e.g. "sample-skills/lookup-notes" or "sample-skills/DESCRIPTION.md") -> files
     pub units: BTreeMap<String, BTreeMap<String, Vec<u8>>>,
-    pub soul: Option<Vec<(String, String)>>,
+    pub soul: Option<Sections>,
     /// SOUL.md sections come only from the export's persona: a live SOUL.md without markers is Hermes-side text
     /// that is kept, with the sections appended after it
     pub soul_append: bool,
-    pub config: Option<(String, Y, Vec<Vec<String>>)>,
+    pub config: Option<ConfigWant>,
     pub user_seed: Option<String>,
     pub cron: Vec<CronJob>,
     /// unit holding the bundle's MEMORY.md, if any
@@ -181,22 +196,40 @@ fn job_digest(prompt: &str, schedule: &str) -> String {
 /// (paused cron jobs, owned MCP entries, manual items)
 type Described = (Vec<CronJob>, Vec<(String, Y)>, Vec<(String, String)>);
 
-/// The bot's schedules/connectors/credentials -> paused cron jobs, owned MCP entries and manual items.
-fn from_described(
-    c: &Ctx,
+/// The first of `fields` that looks like it holds a secret, as the reason.
+fn suspicious(fields: &[&str]) -> Option<secrets::Reason> {
+    fields.iter().find_map(|f| secrets::scan(f))
+}
+
+/// The model's schedules, connectors, credentials and manual items -> paused cron jobs, owned MCP entries and
+/// manual items (names only).
+pub fn from_described(
+    m: &BotModel,
     spec_cron: &[CronJob],
     template_owned: &[String],
     template_urls: &[String],
-) -> Res<Described> {
-    let d = crate::adapters::grok_bot::described(&c.bundle.root)?;
-    let bot = if c.bundle.name.is_empty() {
-        "Bot"
-    } else {
-        &c.bundle.name
-    };
-    let (mut jobs, mut mcp, mut manual) = (vec![], vec![], d.manual.clone());
-    let suspicious = |fields: &[&str]| fields.iter().find_map(|f| secrets::scan(f));
-    for x in &d.schedules {
+) -> Described {
+    let mut manual: Vec<(String, String)> = m
+        .manual
+        .iter()
+        .map(|x| (x.item.clone(), x.todo.clone()))
+        .collect();
+    let jobs = schedules_to_cron(m, spec_cron, &mut manual);
+    let mcp = connectors_to_mcp(m, template_owned, template_urls, &mut manual);
+    credentials_to_manual(m, &mut manual);
+    manual.sort();
+    manual.dedup_by(|a, b| a.0 == b.0);
+    (jobs, mcp, manual)
+}
+
+/// Scheduled schedules -> cron jobs `<Bot>: <name>`, created paused; the rest -> manual items.
+fn schedules_to_cron(
+    m: &BotModel,
+    spec_cron: &[CronJob],
+    manual: &mut Vec<(String, String)>,
+) -> Vec<CronJob> {
+    let mut jobs = vec![];
+    for x in &m.schedules {
         let key = format!("schedule {}", x.name);
         // A schedule that looks like it holds a secret is never written: the checklist gets the reason, not the text.
         if let Some(r) = suspicious(&[&x.name, &x.action, x.cron.as_deref().unwrap_or(""), &x.tz]) {
@@ -226,7 +259,7 @@ fn from_described(
                 ),
             ));
         } else {
-            let name = format!("{bot}: {}", x.name);
+            let name = format!("{}: {}", bot_name(m), x.name);
             if spec_cron.iter().any(|j| j.name == name) {
                 continue;
             }
@@ -244,13 +277,19 @@ fn from_described(
             });
         }
     }
-    for n in &d.elsewhere {
-        manual.push((
-            format!("schedule {n}"),
-            "runs on another machine, not on Grok: move it by hand if it should".into(),
-        ));
-    }
-    for x in &d.connectors {
+    jobs
+}
+
+/// MCP connectors with an http(s) url -> owned `mcp_servers.<id>` entries (unless the config template owns
+/// them); other connectors -> manual items.
+fn connectors_to_mcp(
+    m: &BotModel,
+    template_owned: &[String],
+    template_urls: &[String],
+    manual: &mut Vec<(String, String)>,
+) -> Vec<(String, Y)> {
+    let mut mcp = vec![];
+    for x in &m.connectors {
         let id = crate::adapters::grok_bot::export_json::slug(&x.name);
         let url = x.url.clone().unwrap_or_default();
         let key = format!("connector {}", x.name);
@@ -273,17 +312,7 @@ fn from_described(
             {
                 continue; // the spec's config template owns it
             }
-            let mut m = Mapping::new();
-            m.insert(key_y("url"), Y::String(url));
-            if !x.tools.is_empty() {
-                let mut t = Mapping::new();
-                t.insert(
-                    key_y("include"),
-                    Y::Sequence(x.tools.iter().cloned().map(Y::String).collect()),
-                );
-                m.insert(key_y("tools"), Y::Mapping(t));
-            }
-            mcp.push((id, Y::Mapping(m)));
+            mcp.push((id, mcp_entry(&url, &x.tools)));
         } else {
             manual.push((
                 key,
@@ -294,13 +323,27 @@ fn from_described(
             ));
         }
     }
-    for a in &d.apps_without_url {
-        manual.push((
-            format!("connector {a}"),
-            "app without an MCP url (its login stays on the Grok side): connect it by hand".into(),
-        ));
+    mcp
+}
+
+/// An owned `mcp_servers.<id>` entry: the url and, when the connector names tools, `tools.include`.
+pub fn mcp_entry(url: &str, tools: &[String]) -> Y {
+    let mut m = Mapping::new();
+    m.insert(key_y("url"), Y::String(url.to_string()));
+    if !tools.is_empty() {
+        let mut t = Mapping::new();
+        t.insert(
+            key_y("include"),
+            Y::Sequence(tools.iter().cloned().map(Y::String).collect()),
+        );
+        m.insert(key_y("tools"), Y::Mapping(t));
     }
-    for x in &d.credentials {
+    Y::Mapping(m)
+}
+
+/// Credential names -> manual items (a value-like name is not shown).
+fn credentials_to_manual(m: &BotModel, manual: &mut Vec<(String, String)>) {
+    for x in &m.credentials {
         if let Some(r) = secrets::credential_name(&x.name) {
             manual.push((
                 "credential (name not shown)".into(),
@@ -314,9 +357,6 @@ fn from_described(
                 .into(),
         ));
     }
-    manual.sort();
-    manual.dedup_by(|a, b| a.0 == b.0);
-    Ok((jobs, mcp, manual))
 }
 
 fn key_y(s: &str) -> Y {
@@ -324,7 +364,7 @@ fn key_y(s: &str) -> Y {
 }
 
 /// The manual checklist as written; ticks (`- [x]`) are the user's and do not count as a change.
-fn manual_text(items: &[(String, String)]) -> String {
+pub fn manual_text(items: &[(String, String)]) -> String {
     let mut t = String::from("# Set up by hand (botport)\n\nWhat botport could not set up from the Grok bot's description. Names only: no secret value is copied.\n\n");
     for (n, what) in items {
         t += &format!("- [ ] {n}: {what}\n");
@@ -348,7 +388,7 @@ fn memory_header(c: &Ctx, name: &str) -> Res<String> {
         Some(h) => Ok(c.spec.subst(&read_str(h)?)),
         None => Ok(format!("---\nname: {name}\ndescription: >-\n  Durable memory exported from the Grok Bot \"{}\". \
 Load before answering questions about its own facts, setup or history.\n---\n# Memory (synced from the Grok Bot)\n",
-                           if c.bundle.name.is_empty() { "bot" } else { &c.bundle.name })),
+                           if c.model.persona.name.is_empty() { "bot" } else { &c.model.persona.name })),
     }
 }
 
@@ -360,104 +400,13 @@ fn plain_name(what: &str, n: &str) -> Res<()> {
 }
 
 pub fn want(c: &Ctx) -> Res<Want> {
-    let cat = c.spec.category(&c.bundle.name);
+    let cat = c.spec.category(&c.model.persona.name);
     plain_name("skill_category", &cat)?;
-    let lk = read_lock(&c.dest).unwrap_or_default();
-    let (h2g, history) = (lk.h2g_skills, lk.h2g_history);
-    let mut hermes_origin = vec![];
     if let Some(m) = &c.spec.memory_skill {
         plain_name("memory_skill.name", &m.name)?;
     }
-    let mut units = BTreeMap::new();
-    let mut mem_manual = vec![];
-    for (n, files) in &c.bundle.skills {
-        // Loop prevention: a skill this profile exported comes back in the Grok export; it already lives here.
-        match h2g.get(n) {
-            Some(d)
-                if *d == tree_digest_files(files)
-                    || history
-                        .get(n)
-                        .is_some_and(|h| h.contains(&tree_digest_files(files))) =>
-            {
-                hermes_origin.push(item(
-                    "skills",
-                    n,
-                    St::InSync,
-                    "originated on the Hermes side (not installed back)",
-                ));
-                continue;
-            }
-            Some(_) => {
-                // equal to the Hermes original again (merged by hand): in sync; the next h2g sync re-baselines
-                let grok_d = tree_digest_files(files);
-                let live_equal = files_sorted(&c.dest.join("skills"))
-                    .iter()
-                    .map(|r| rel_str(r))
-                    .filter_map(|r| r.strip_suffix("/SKILL.md").map(String::from))
-                    .filter(|d| {
-                        d.rsplit('/').next() == Some(n.as_str())
-                            && d.split('/').next() != Some(cat.as_str())
-                    })
-                    .any(|d| {
-                        read_tree(&c.dest.join("skills").join(&d))
-                            .map(|t| tree_digest_files(&t) == grok_d)
-                            .unwrap_or(false)
-                    });
-                if live_equal {
-                    hermes_origin.push(item(
-                        "skills",
-                        n,
-                        St::InSync,
-                        "originated on the Hermes side; both copies equal",
-                    ));
-                } else {
-                    hermes_origin.push(item("skills", n, St::Conflict,
-                        "originated on the Hermes side and changed on the Grok side since; merge by hand (make both copies equal)"));
-                }
-                continue;
-            }
-            None => {}
-        }
-        // a skill file that would fail the write guard goes to the checklist (name and reason), not into the profile
-        if let Some(f) = files.iter().find_map(|(f, b)| {
-            secrets::guard(&format!("skills/{cat}/{n}/{f}"), b)
-                .err()
-                .map(|_| f.clone())
-        }) {
-            mem_manual.push((
-                format!("skill {n}"),
-                format!("not imported: {f} looks like it holds a secret; its text was not copied, add it by hand"),
-            ));
-            continue;
-        }
-        units.insert(format!("{cat}/{n}"), files.clone());
-    }
-    let mut memory_unit = None;
-    if let Some(mem) = &c.bundle.memory_md {
-        let name = c
-            .spec
-            .memory_skill
-            .as_ref()
-            .map(|m| m.name.clone())
-            .unwrap_or(format!("{cat}-memory"));
-        // a memory line that would fail the write guard (rule B) goes to the checklist, not into the skill
-        let mut kept = String::new();
-        for l in mem.split_inclusive('\n') {
-            match secrets::guard_str(l) {
-                Some(r) => mem_manual.push((
-                    format!("memory {}", secrets::display(l.trim().trim_start_matches("- "))),
-                    format!("not imported: looks like it holds a secret ({r}); its text was not copied, add it by hand"),
-                )),
-                None => kept.push_str(l),
-            }
-        }
-        let text = memory_header(c, &name)? + "\n" + &kept;
-        memory_unit = Some(format!("{cat}/{name}"));
-        units.insert(
-            format!("{cat}/{name}"),
-            [("SKILL.md".to_string(), text.into_bytes())].into(),
-        );
-    }
+    let (hermes_origin, mut units, mut mem_manual) = want_skills(c, &cat);
+    let memory_unit = want_memory_unit(c, &cat, &mut units, &mut mem_manual)?;
     if let Some(d) = &c.spec.category_description {
         let names: Vec<String> = units
             .keys()
@@ -472,72 +421,10 @@ pub fn want(c: &Ctx) -> Res<Want> {
             [(String::new(), text.into_bytes())].into(),
         );
     }
-    let mut soul = match &c.spec.soul {
-        Some(t) => Some(soul_sections(&c.spec.subst(&read_str(&t.template)?))),
-        None => None,
-    };
-    let soul_append = soul.is_none() && !c.bundle.instructions.trim().is_empty();
-    if !c.bundle.instructions.trim().is_empty() {
-        let s = soul.get_or_insert_with(Vec::new);
-        if !s.iter().any(|(n, _)| n == "persona") {
-            // as `wrap` writes it back, so a written section reads back equal
-            let t = c.bundle.instructions.trim_end();
-            s.push(("persona".into(), format!("{t}\n")));
-        }
-    }
-    let config = match &c.spec.config {
-        Some(cfg) => {
-            let text = c.spec.subst(&read_str(&cfg.template)?);
-            let head: String = text
-                .lines()
-                .take_while(|l| l.starts_with('#'))
-                .map(|l| format!("{l}\n"))
-                .collect();
-            let mut v: Y = serde_yaml::from_str(&crate::yaml11::read(&text))
-                .map_err(|e| format!("config template: {e}"))?;
-            for (path, file) in &cfg.inherit {
-                let segs: Vec<String> = path.split('.').map(String::from).collect();
-                if let Some(src) = load_yaml(Path::new(file))? {
-                    if let Some(x) = get_path(&src, &segs) {
-                        set_path(&mut v, &segs, x.clone());
-                    }
-                }
-            }
-            let preserve: Vec<Vec<String>> = cfg
-                .preserve
-                .iter()
-                .map(|p| p.split('.').map(String::from).collect())
-                .collect();
-            Some((head, v, preserve))
-        }
-        None => None,
-    };
-    let mut user_seed = match &c.spec.user {
-        Some(u) => Some(read_str(&u.seed)?),
-        None => None,
-    };
-    if !c.bundle.user_facts.is_empty() {
-        let mut e = entries(user_seed.as_deref().unwrap_or(""));
-        for f in &c.bundle.user_facts {
-            if !e.contains(f) {
-                e.push(f.clone());
-            }
-        }
-        user_seed = Some(e.join(ENTRY_DELIM));
-    }
-    let cron = match &c.spec.cron {
-        Some(cr) => {
-            #[derive(Deserialize)]
-            struct F {
-                #[serde(default)]
-                jobs: Vec<CronJob>,
-            }
-            let f: F = serde_yaml::from_str(&read_str(&cr.file)?)
-                .map_err(|e| format!("cron file: {e}"))?;
-            f.jobs
-        }
-        None => vec![],
-    };
+    let (soul, soul_append) = want_soul(c)?;
+    let config = want_config(c)?;
+    let user_seed = want_user_seed(c)?;
+    let cron = want_spec_cron(c)?;
     let mut owned = vec![];
     if let Some((_, tpl, _)) = &config {
         leaves(tpl, &mut vec![], &mut owned);
@@ -551,7 +438,7 @@ pub fn want(c: &Ctx) -> Res<Want> {
         .flatten()
         .filter_map(|(_, v)| v.get("url").and_then(|u| u.as_str()).map(String::from))
         .collect();
-    let (model_cron, mcp, mut manual) = from_described(c, &cron, &owned, &urls)?;
+    let (model_cron, mcp, mut manual) = from_described(c.model, &cron, &owned, &urls);
     manual.extend(mem_manual);
     manual.sort();
     manual.dedup_by(|a, b| a.0 == b.0);
@@ -569,6 +456,196 @@ pub fn want(c: &Ctx) -> Res<Want> {
         mcp,
         manual,
     })
+}
+
+type Units = BTreeMap<String, BTreeMap<String, Vec<u8>>>;
+
+/// The model's skills as owned units `<cat>/<name>`; skills that came from this profile (h2g) are reported, not
+/// installed back; a skill with a secret-looking file goes to the checklist.
+fn want_skills(c: &Ctx, cat: &str) -> (Vec<Item>, Units, Vec<(String, String)>) {
+    let lk = read_lock(&c.dest).unwrap_or_default();
+    let (mut origin, mut units, mut manual) = (vec![], BTreeMap::new(), vec![]);
+    for (n, files) in &c.skills {
+        // Loop prevention: a skill this profile exported comes back in the Grok export; it already lives here.
+        if let Some(sent) = lk.h2g_skills.get(n) {
+            origin.push(hermes_origin_item(c, cat, n, files, sent, &lk.h2g_history));
+            continue;
+        }
+        // a skill file that would fail the write guard goes to the checklist (name and reason), not into the profile
+        if let Some(f) = files.iter().find_map(|(f, b)| {
+            secrets::guard(&format!("skills/{cat}/{n}/{f}"), b)
+                .err()
+                .map(|_| f.clone())
+        }) {
+            manual.push((
+                format!("skill {n}"),
+                format!("not imported: {f} looks like it holds a secret; its text was not copied, add it by hand"),
+            ));
+            continue;
+        }
+        units.insert(format!("{cat}/{n}"), files.clone());
+    }
+    (origin, units, manual)
+}
+
+/// A source skill that this profile sent (h2g): in sync when it is a version we sent, or equal to the live
+/// Hermes copy again; otherwise a conflict to merge by hand.
+fn hermes_origin_item(
+    c: &Ctx,
+    cat: &str,
+    n: &str,
+    files: &BTreeMap<String, Vec<u8>>,
+    sent: &str,
+    history: &BTreeMap<String, BTreeSet<String>>,
+) -> Item {
+    let grok_d = tree_digest_files(files);
+    if sent == grok_d || history.get(n).is_some_and(|h| h.contains(&grok_d)) {
+        return item(
+            "skills",
+            n,
+            St::InSync,
+            "originated on the Hermes side (not installed back)",
+        );
+    }
+    // equal to the Hermes original again (merged by hand): in sync; the next h2g sync re-baselines
+    let live_equal = files_sorted(&c.dest.join("skills"))
+        .iter()
+        .map(|r| rel_str(r))
+        .filter_map(|r| r.strip_suffix("/SKILL.md").map(String::from))
+        .filter(|d| d.rsplit('/').next() == Some(n) && d.split('/').next() != Some(cat))
+        .any(|d| {
+            read_tree(&c.dest.join("skills").join(&d))
+                .map(|t| tree_digest_files(&t) == grok_d)
+                .unwrap_or(false)
+        });
+    if live_equal {
+        item(
+            "skills",
+            n,
+            St::InSync,
+            "originated on the Hermes side; both copies equal",
+        )
+    } else {
+        item("skills", n, St::Conflict,
+            "originated on the Hermes side and changed on the Grok side since; merge by hand (make both copies equal)")
+    }
+}
+
+/// The memory skill `<cat>/<name>`: header + the memory document, minus lines that look like secrets.
+fn want_memory_unit(
+    c: &Ctx,
+    cat: &str,
+    units: &mut Units,
+    manual: &mut Vec<(String, String)>,
+) -> Res<Option<String>> {
+    let Some(mem) = &c.memory_md else {
+        return Ok(None);
+    };
+    let name = c
+        .spec
+        .memory_skill
+        .as_ref()
+        .map(|m| m.name.clone())
+        .unwrap_or(format!("{cat}-memory"));
+    // a memory line that would fail the write guard (rule B) goes to the checklist, not into the skill
+    let mut kept = String::new();
+    for l in mem.split_inclusive('\n') {
+        match secrets::guard_str(l) {
+            Some(r) => manual.push((
+                format!("memory {}", secrets::display(l.trim().trim_start_matches("- "))),
+                format!("not imported: looks like it holds a secret ({r}); its text was not copied, add it by hand"),
+            )),
+            None => kept.push_str(l),
+        }
+    }
+    let text = memory_header(c, &name)? + "\n" + &kept;
+    units.insert(
+        format!("{cat}/{name}"),
+        [("SKILL.md".to_string(), text.into_bytes())].into(),
+    );
+    Ok(Some(format!("{cat}/{name}")))
+}
+
+/// SOUL.md sections: the spec's template, plus a `persona` section from the model's instructions. The bool is
+/// true when the sections come only from the persona (a live SOUL.md without markers is then kept, and the
+/// sections appended).
+fn want_soul(c: &Ctx) -> Res<(Option<Sections>, bool)> {
+    let mut soul = match &c.spec.soul {
+        Some(t) => Some(soul_sections(&c.spec.subst(&read_str(&t.template)?))),
+        None => None,
+    };
+    let instructions = &c.model.persona.instructions;
+    let soul_append = soul.is_none() && !instructions.trim().is_empty();
+    if !instructions.trim().is_empty() {
+        let s = soul.get_or_insert_with(Vec::new);
+        if !s.iter().any(|(n, _)| n == "persona") {
+            // as `wrap` writes it back, so a written section reads back equal
+            let t = instructions.trim_end();
+            s.push(("persona".into(), format!("{t}\n")));
+        }
+    }
+    Ok((soul, soul_append))
+}
+
+/// The spec's config template (head comment, values with `inherit` applied, preserved paths).
+fn want_config(c: &Ctx) -> Res<Option<ConfigWant>> {
+    let Some(cfg) = &c.spec.config else {
+        return Ok(None);
+    };
+    let text = c.spec.subst(&read_str(&cfg.template)?);
+    let head: String = text
+        .lines()
+        .take_while(|l| l.starts_with('#'))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    let mut v: Y = serde_yaml::from_str(&crate::yaml11::read(&text))
+        .map_err(|e| format!("config template: {e}"))?;
+    for (path, file) in &cfg.inherit {
+        let segs: Vec<String> = path.split('.').map(String::from).collect();
+        if let Some(src) = load_yaml(Path::new(file))? {
+            if let Some(x) = get_path(&src, &segs) {
+                set_path(&mut v, &segs, x.clone());
+            }
+        }
+    }
+    let preserve: Vec<Vec<String>> = cfg
+        .preserve
+        .iter()
+        .map(|p| p.split('.').map(String::from).collect())
+        .collect();
+    Ok(Some((head, v, preserve)))
+}
+
+/// USER.md seed entries: the spec's seed file plus the model's user facts.
+fn want_user_seed(c: &Ctx) -> Res<Option<String>> {
+    let mut user_seed = match &c.spec.user {
+        Some(u) => Some(read_str(&u.seed)?),
+        None => None,
+    };
+    if !c.user_facts.is_empty() {
+        let mut e = entries(user_seed.as_deref().unwrap_or(""));
+        for f in &c.user_facts {
+            if !e.contains(f) {
+                e.push(f.clone());
+            }
+        }
+        user_seed = Some(e.join(ENTRY_DELIM));
+    }
+    Ok(user_seed)
+}
+
+/// The spec's cron file jobs.
+fn want_spec_cron(c: &Ctx) -> Res<Vec<CronJob>> {
+    let Some(cr) = &c.spec.cron else {
+        return Ok(vec![]);
+    };
+    #[derive(Deserialize)]
+    struct F {
+        #[serde(default)]
+        jobs: Vec<CronJob>,
+    }
+    let f: F = serde_yaml::from_str(&read_str(&cr.file)?).map_err(|e| format!("cron file: {e}"))?;
+    Ok(f.jobs)
 }
 
 /// Upstream's skill category for imported skills.
@@ -726,7 +803,7 @@ fn get_path<'a>(v: &'a Y, p: &[String]) -> Option<&'a Y> {
     Some(cur)
 }
 
-fn set_path(v: &mut Y, p: &[String], val: Y) {
+pub fn set_path(v: &mut Y, p: &[String], val: Y) {
     if !v.is_mapping() {
         *v = Y::Mapping(Mapping::new());
     }
@@ -944,36 +1021,73 @@ pub fn plan(c: &Ctx) -> Res<Plan> {
     let lock = read_lock(&c.dest);
     let rec = lock.clone().unwrap_or_default();
     let mut items = vec![];
-    // 0. the bundle vs the last sync
     if let Some(l) = &lock {
-        if l.bundle_digest != c.bundle.digest() {
-            let changed: Vec<String> = c
-                .bundle
-                .read
-                .keys()
-                .chain(l.files_read.keys())
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .filter(|f| c.bundle.read.get(*f) != l.files_read.get(*f))
-                .cloned()
-                .collect();
-            items.push(item(
-                "export",
-                "bundle",
-                St::Update,
-                format!(
-                    "{} file(s) changed since the last sync: {}",
-                    changed.len(),
-                    changed.join(", ")
-                ),
-            ));
+        items.extend(plan_source(c, l));
+    }
+    items.extend(w.hermes_origin.iter().cloned());
+    items.extend(plan_skills(c, &w, &rec));
+    if let Some(ws) = &w.soul {
+        items.extend(plan_soul(c, ws, w.soul_append, &rec));
+    }
+    let (mut config_text, mut config_owned) = (None, BTreeMap::new());
+    if let Some(cfg) = &w.config {
+        let (cfg_items, text, owned) = plan_config(c, cfg, &w.cat, &rec)?;
+        items.extend(cfg_items);
+        (config_text, config_owned) = (text, owned);
+    }
+    if let Some(seed) = &w.user_seed {
+        items.push(plan_user(c, seed));
+    }
+    let jobs = live_jobs(&c.dest);
+    items.extend(plan_spec_cron(c, &w, &jobs));
+    items.extend(plan_model_cron(c, &w.model_cron, &jobs, &rec));
+    if !w.mcp.is_empty() {
+        let live = load_yaml(&c.dest.join("config.yaml"))?;
+        for (id, want) in &w.mcp {
+            items.push(plan_mcp(live.as_ref(), id, want, &rec));
         }
     }
-    // 1. skills
-    items.extend(w.hermes_origin.iter().cloned());
-    let cat_dir = c.dest.join("skills").join(&w.cat);
+    items.extend(plan_manual(c, &w.manual));
+    Ok(Plan {
+        items,
+        want: w,
+        lock,
+        config_text,
+        config_owned,
+    })
+}
+
+/// The source vs the last sync: which files changed.
+fn plan_source(c: &Ctx, l: &Lock) -> Option<Item> {
+    if l.bundle_digest == c.source.digest() {
+        return None;
+    }
+    let read = &c.source.files_read;
+    let changed: Vec<String> = read
+        .keys()
+        .chain(l.files_read.keys())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|f| read.get(*f) != l.files_read.get(*f))
+        .cloned()
+        .collect();
+    Some(item(
+        "export",
+        "bundle",
+        St::Update,
+        format!(
+            "{} file(s) changed since the last sync: {}",
+            changed.len(),
+            changed.join(", ")
+        ),
+    ))
+}
+
+/// Skill units: wanted ones (create / update / conflict / adopted) and live ones the source no longer has.
+fn plan_skills(c: &Ctx, w: &Want, rec: &Lock) -> Vec<Item> {
+    let mut items = vec![];
     let mut live_units: BTreeSet<String> = BTreeSet::new();
-    if let Ok(rd) = fs::read_dir(&cat_dir) {
+    if let Ok(rd) = fs::read_dir(c.dest.join("skills").join(&w.cat)) {
         for e in rd.flatten() {
             let n = e.file_name().to_string_lossy().to_string();
             if !n.starts_with('.') {
@@ -981,72 +1095,8 @@ pub fn plan(c: &Ctx) -> Res<Plan> {
             }
         }
     }
-    let memory_unit = w.memory_unit.clone();
     for (u, files) in &w.units {
-        let wd = tree_digest_files(files);
-        let leaf = u.split_once('/').map(|x| x.1).unwrap_or(u);
-        // `hermes migrate grok-bot` output: the same skill under skills/grok-bot-imports/<slug>
-        let imported = [
-            leaf.to_string(),
-            crate::adapters::grok_bot::export_json::slug(leaf),
-        ]
-        .into_iter()
-        .map(|n| format!("{IMPORTS}/{n}"))
-        .find(|n| c.dest.join("skills").join(n).join("SKILL.md").is_file());
-        let live = live_unit(&c.dest, u);
-        if let (Some(imp), Some(_)) = (&imported, &live) {
-            items.push(item(
-                "skills",
-                u,
-                St::Duplicate,
-                format!("in both skills/{u} and skills/{imp} (from hermes migrate grok-bot); keep one by hand, neither is deleted"),
-            ));
-        }
-        let it = match live {
-            None if imported.is_some() => item(
-                "skills",
-                u,
-                St::InSync,
-                format!(
-                    "adopted: present as skills/{} (hermes migrate grok-bot)",
-                    imported.unwrap_or_default()
-                ),
-            ),
-            None if memory_unit.as_deref() == Some(u.as_str())
-                && memory_in_store(&c.dest, c.bundle.memory_md.as_deref().unwrap_or("")) =>
-            {
-                item(
-                    "skills",
-                    u,
-                    St::InSync,
-                    "adopted: every fact already in memories/MEMORY.md or USER.md (hermes migrate grok-bot)",
-                )
-            }
-            None => item("skills", u, St::Create, "missing in live"),
-            Some(l) => {
-                let ld = tree_digest_files(&l);
-                if ld == wd {
-                    item("skills", u, St::InSync, "")
-                } else if rec.skills.get(u) == Some(&ld) {
-                    item(
-                        "skills",
-                        u,
-                        St::Update,
-                        "export changed; live copy untouched since last sync",
-                    )
-                } else if rec.skills.contains_key(u) {
-                    item(
-                        "skills",
-                        u,
-                        St::Conflict,
-                        "edited on the Hermes side since the last sync; not overwritten",
-                    )
-                } else {
-                    Item { unrecorded: true, ..item("skills", u, St::Conflict, "differs from the export and no sync record (apply --adopt to take it over)") }
-                }
-            }
-        };
-        items.push(it);
+        items.extend(plan_unit(c, w, rec, u, files));
     }
     for u in live_units.iter().filter(|u| !w.units.contains_key(*u)) {
         let ld = live_unit(&c.dest, u)
@@ -1068,192 +1118,300 @@ pub fn plan(c: &Ctx) -> Res<Plan> {
             )
         });
     }
-    // 2. SOUL.md
-    if let Some(ws) = &w.soul {
-        let p = c.dest.join("SOUL.md");
-        let live = read_soul(&p);
-        match (&live, live.as_deref().and_then(find_sections)) {
-            (None, _) => items.push(item("soul", "SOUL.md", St::Create, "missing in live")),
-            (Some(l), _) if markers_malformed(l) => items.push(item(
-                "soul",
-                "SOUL.md",
-                St::Conflict,
-                "botport markers unbalanced or duplicated; fix by hand",
-            )),
-            (Some(l), None) if w.soul_append => {
-                // Hermes-side text (or upstream's import of the same persona): kept; sections appended
-                for (n, wc) in ws {
-                    if l.contains(wc.trim()) {
-                        items.push(item(
-                            "soul",
-                            n,
-                            St::InSync,
-                            "already in SOUL.md (no markers)",
-                        ));
-                    } else {
-                        items.push(item("soul", n, St::Create, "section missing"));
-                    }
-                }
-            }
-            (Some(l), None) => {
-                if ws.len() == 1 && *l == ws[0].1 {
-                    items.push(item(
-                        "soul",
-                        "SOUL.md",
-                        St::InSync,
-                        "whole file equals the template (no markers)",
-                    ));
-                } else if rec.soul.get("__file__") == Some(&sha256_hex(l.as_bytes())) {
-                    items.push(item("soul", "SOUL.md", St::Update, "template changed"));
-                } else {
-                    items.push(Item {
-                        unrecorded: !rec.soul.contains_key("__file__"),
-                        ..item(
-                            "soul",
-                            "SOUL.md",
-                            St::Conflict,
-                            "differs from the template and has no botport markers",
-                        )
-                    });
-                }
-            }
-            (Some(_), Some(secs)) => {
-                for (n, wc) in ws {
-                    match secs.iter().find(|s| s.0 == *n) {
-                        None => items.push(item("soul", n, St::Create, "section missing")),
-                        Some(s) if s.1 == *wc => items.push(item("soul", n, St::InSync, "")),
-                        Some(s) if rec.soul.get(n) == Some(&sha256_hex(s.1.as_bytes())) => {
-                            items.push(item("soul", n, St::Update, "template changed"))
-                        }
-                        Some(_) => items.push(Item {
-                            unrecorded: !rec.soul.contains_key(n),
-                            ..item("soul", n, St::Conflict, "section edited on the Hermes side")
-                        }),
-                    }
-                }
-            }
-        }
+    items
+}
+
+/// One wanted skill unit (plus a `duplicate` item when `hermes migrate grok-bot` also installed it).
+fn plan_unit(
+    c: &Ctx,
+    w: &Want,
+    rec: &Lock,
+    u: &str,
+    files: &BTreeMap<String, Vec<u8>>,
+) -> Vec<Item> {
+    let mut items = vec![];
+    let wd = tree_digest_files(files);
+    let leaf = u.split_once('/').map(|x| x.1).unwrap_or(u);
+    // `hermes migrate grok-bot` output: the same skill under skills/grok-bot-imports/<slug>
+    let imported = [
+        leaf.to_string(),
+        crate::adapters::grok_bot::export_json::slug(leaf),
+    ]
+    .into_iter()
+    .map(|n| format!("{IMPORTS}/{n}"))
+    .find(|n| c.dest.join("skills").join(n).join("SKILL.md").is_file());
+    let live = live_unit(&c.dest, u);
+    if let (Some(imp), Some(_)) = (&imported, &live) {
+        items.push(item(
+            "skills",
+            u,
+            St::Duplicate,
+            format!("in both skills/{u} and skills/{imp} (from hermes migrate grok-bot); keep one by hand, neither is deleted"),
+        ));
     }
-    // 3. config.yaml (owned leaf paths only)
-    let mut config_text = None;
-    let mut config_owned = BTreeMap::new();
-    if let Some((head, tpl, preserve)) = &w.config {
-        let p = c.dest.join("config.yaml");
-        let live = load_yaml(&p)?;
-        let mut new = live.clone().unwrap_or_else(|| tpl.clone());
-        let mut owned = vec![];
-        leaves(tpl, &mut vec![], &mut owned);
-        if c.spec.disable_other_skills {
-            let dis: Vec<Y> = other_skills(&c.dest.join("skills"), &w.cat)
-                .into_iter()
-                .map(Y::String)
-                .collect();
-            owned.retain(|(p, _)| p.join(".") != "skills.disabled");
-            owned.push((vec!["skills".into(), "disabled".into()], Y::Sequence(dis)));
+    let it = match live {
+        None if imported.is_some() => item(
+            "skills",
+            u,
+            St::InSync,
+            format!(
+                "adopted: present as skills/{} (hermes migrate grok-bot)",
+                imported.unwrap_or_default()
+            ),
+        ),
+        None if w.memory_unit.as_deref() == Some(u)
+            && memory_in_store(&c.dest, c.memory_md.as_deref().unwrap_or("")) =>
+        {
+            item(
+                "skills",
+                u,
+                St::InSync,
+                "adopted: every fact already in memories/MEMORY.md or USER.md (hermes migrate grok-bot)",
+            )
         }
-        let mut changed = false;
-        for (path, wv) in owned {
-            if under(&path, preserve) {
-                continue;
-            }
-            let dotted = path.join(".");
-            let lv = live.as_ref().and_then(|l| get_path(l, &path)).cloned();
-            let is_disabled = dotted == "skills.disabled";
-            let target = match (&wv, &lv) {
-                (Y::Sequence(ws), Some(Y::Sequence(ls))) if !is_disabled => {
-                    Y::Sequence(merge_list(ws, ls))
-                }
-                _ => wv.clone(),
-            };
-            let same = match &lv {
-                Some(Y::Mapping(_)) if matches!(&wv, Y::Mapping(m) if m.is_empty()) => true,
-                Some(l) if is_disabled => {
-                    parse_list(Some(l)).into_iter().collect::<BTreeSet<_>>()
-                        == parse_list(Some(&target)).into_iter().collect()
-                }
-                Some(l) => *l == target,
-                None => false,
-            };
-            config_owned.insert(dotted.clone(), yhash(&target));
-            if same {
-                continue;
-            }
-            changed = true;
-            set_path(&mut new, &path, target.clone());
-            let detail_extra = if is_disabled {
-                let l: BTreeSet<String> = parse_list(lv.as_ref()).into_iter().collect();
-                let t: BTreeSet<String> = parse_list(Some(&target)).into_iter().collect();
-                format!(
-                    " [to disable: {}; to re-enable: {}]",
-                    t.difference(&l).cloned().collect::<Vec<_>>().join(", "),
-                    l.difference(&t).cloned().collect::<Vec<_>>().join(", ")
+        None => item("skills", u, St::Create, "missing in live"),
+        Some(l) => {
+            let ld = tree_digest_files(&l);
+            if ld == wd {
+                item("skills", u, St::InSync, "")
+            } else if rec.skills.get(u) == Some(&ld) {
+                item(
+                    "skills",
+                    u,
+                    St::Update,
+                    "export changed; live copy untouched since last sync",
+                )
+            } else if rec.skills.contains_key(u) {
+                item(
+                    "skills",
+                    u,
+                    St::Conflict,
+                    "edited on the Hermes side since the last sync; not overwritten",
                 )
             } else {
-                String::new()
-            };
-            let st = match &lv {
-                None => item("config", &dotted, St::Create, "missing in live"),
-                Some(l) if rec.config.get(&dotted) == Some(&yhash(l)) => {
-                    item("config", &dotted, St::Update, "template changed")
+                Item { unrecorded: true, ..item("skills", u, St::Conflict, "differs from the export and no sync record (apply --adopt to take it over)") }
+            }
+        }
+    };
+    items.push(it);
+    items
+}
+
+/// SOUL.md: per owned section when the live file has markers; the whole file when it has none.
+fn plan_soul(c: &Ctx, ws: &[(String, String)], soul_append: bool, rec: &Lock) -> Vec<Item> {
+    let mut items = vec![];
+    let live = read_soul(&c.dest.join("SOUL.md"));
+    match (&live, live.as_deref().and_then(find_sections)) {
+        (None, _) => items.push(item("soul", "SOUL.md", St::Create, "missing in live")),
+        (Some(l), _) if markers_malformed(l) => items.push(item(
+            "soul",
+            "SOUL.md",
+            St::Conflict,
+            "botport markers unbalanced or duplicated; fix by hand",
+        )),
+        (Some(l), None) if soul_append => {
+            // Hermes-side text (or upstream's import of the same persona): kept; sections appended
+            for (n, wc) in ws {
+                if l.contains(wc.trim()) {
+                    items.push(item(
+                        "soul",
+                        n,
+                        St::InSync,
+                        "already in SOUL.md (no markers)",
+                    ));
+                } else {
+                    items.push(item("soul", n, St::Create, "section missing"));
                 }
-                Some(_) if rec.config.contains_key(&dotted) => item(
-                    "config",
-                    &dotted,
-                    St::Conflict,
-                    "edited on the Hermes side (values redacted)",
-                ),
-                Some(_) => Item {
-                    unrecorded: true,
+            }
+        }
+        (Some(l), None) => {
+            if ws.len() == 1 && *l == ws[0].1 {
+                items.push(item(
+                    "soul",
+                    "SOUL.md",
+                    St::InSync,
+                    "whole file equals the template (no markers)",
+                ));
+            } else if rec.soul.get("__file__") == Some(&sha256_hex(l.as_bytes())) {
+                items.push(item("soul", "SOUL.md", St::Update, "template changed"));
+            } else {
+                items.push(Item {
+                    unrecorded: !rec.soul.contains_key("__file__"),
                     ..item(
-                        "config",
-                        &dotted,
+                        "soul",
+                        "SOUL.md",
                         St::Conflict,
-                        "differs from the template (values redacted)",
+                        "differs from the template and has no botport markers",
                     )
-                },
-            };
-            items.push(Item {
-                detail: st.detail.clone() + &detail_extra,
-                ..st
-            });
+                });
+            }
         }
-        if changed || live.is_none() {
-            config_text = Some(format!("{head}\n{}", crate::yaml11::emit_checked(&new)?));
-        }
-        if !items.iter().any(|i| i.area == "config") {
-            items.push(item(
-                "config",
-                "config.yaml",
-                St::InSync,
-                format!("{} owned path(s)", config_owned.len()),
-            ));
+        (Some(_), Some(secs)) => {
+            for (n, wc) in ws {
+                match secs.iter().find(|s| s.0 == *n) {
+                    None => items.push(item("soul", n, St::Create, "section missing")),
+                    Some(s) if s.1 == *wc => items.push(item("soul", n, St::InSync, "")),
+                    Some(s) if rec.soul.get(n) == Some(&sha256_hex(s.1.as_bytes())) => {
+                        items.push(item("soul", n, St::Update, "template changed"))
+                    }
+                    Some(_) => items.push(Item {
+                        unrecorded: !rec.soul.contains_key(n),
+                        ..item("soul", n, St::Conflict, "section edited on the Hermes side")
+                    }),
+                }
+            }
         }
     }
-    // 4. USER.md seed
-    if let Some(seed) = &w.user_seed {
-        let live = fs::read_to_string(c.dest.join("memories/USER.md")).unwrap_or_default();
-        let have = entries(&live);
-        let missing: Vec<String> = entries(seed)
+    items
+}
+
+/// (items, config.yaml as apply would write it, owned path -> value digest)
+type ConfigPlan = (Vec<Item>, Option<String>, BTreeMap<String, String>);
+
+/// config.yaml: the template's owned leaf paths (minus `preserve`), compared one by one.
+fn plan_config(
+    c: &Ctx,
+    (head, tpl, preserve): &ConfigWant,
+    cat: &str,
+    rec: &Lock,
+) -> Res<ConfigPlan> {
+    let mut items = vec![];
+    let mut config_owned = BTreeMap::new();
+    let live = load_yaml(&c.dest.join("config.yaml"))?;
+    let mut new = live.clone().unwrap_or_else(|| tpl.clone());
+    let mut owned = vec![];
+    leaves(tpl, &mut vec![], &mut owned);
+    if c.spec.disable_other_skills {
+        let dis: Vec<Y> = other_skills(&c.dest.join("skills"), cat)
             .into_iter()
-            .filter(|e| !have.contains(e))
+            .map(Y::String)
             .collect();
-        items.push(if missing.is_empty() {
-            item("user", "USER.md", St::InSync, "seed entries present")
-        } else {
-            item(
-                "user",
-                "USER.md",
-                St::Create,
-                format!("{} seed entr(y/ies) missing", missing.len()),
-            )
-        });
+        owned.retain(|(p, _)| p.join(".") != "skills.disabled");
+        owned.push((vec!["skills".into(), "disabled".into()], Y::Sequence(dis)));
     }
-    // 5. cron
-    let jobs = live_jobs(&c.dest);
+    let mut changed = false;
+    for (path, wv) in owned {
+        if under(&path, preserve) {
+            continue;
+        }
+        let dotted = path.join(".");
+        let lv = live.as_ref().and_then(|l| get_path(l, &path)).cloned();
+        let target = config_target(&dotted, &wv, lv.as_ref());
+        config_owned.insert(dotted.clone(), yhash(&target));
+        if config_same(&dotted, &wv, lv.as_ref(), &target) {
+            continue;
+        }
+        changed = true;
+        set_path(&mut new, &path, target.clone());
+        items.push(config_item(&dotted, lv.as_ref(), &target, rec));
+    }
+    let mut config_text = None;
+    if changed || live.is_none() {
+        config_text = Some(format!("{head}\n{}", crate::yaml11::emit_checked(&new)?));
+    }
+    if items.is_empty() {
+        items.push(item(
+            "config",
+            "config.yaml",
+            St::InSync,
+            format!("{} owned path(s)", config_owned.len()),
+        ));
+    }
+    Ok((items, config_text, config_owned))
+}
+
+/// The value an owned path should hold: the template's; a list keeps the live list's extra items
+/// (except `skills.disabled`, which is owned whole).
+fn config_target(dotted: &str, wv: &Y, lv: Option<&Y>) -> Y {
+    match (wv, lv) {
+        (Y::Sequence(ws), Some(Y::Sequence(ls))) if dotted != "skills.disabled" => {
+            Y::Sequence(merge_list(ws, ls))
+        }
+        _ => wv.clone(),
+    }
+}
+
+/// The live value already says what the template wants (an empty template mapping matches any mapping;
+/// `skills.disabled` compares as a set).
+fn config_same(dotted: &str, wv: &Y, lv: Option<&Y>, target: &Y) -> bool {
+    match lv {
+        Some(Y::Mapping(_)) if matches!(wv, Y::Mapping(m) if m.is_empty()) => true,
+        Some(l) if dotted == "skills.disabled" => {
+            parse_list(Some(l)).into_iter().collect::<BTreeSet<_>>()
+                == parse_list(Some(target)).into_iter().collect()
+        }
+        Some(l) => l == target,
+        None => false,
+    }
+}
+
+/// A differing owned config path: create / update / conflict (values redacted).
+fn config_item(dotted: &str, lv: Option<&Y>, target: &Y, rec: &Lock) -> Item {
+    let detail_extra = if dotted == "skills.disabled" {
+        let l: BTreeSet<String> = parse_list(lv).into_iter().collect();
+        let t: BTreeSet<String> = parse_list(Some(target)).into_iter().collect();
+        format!(
+            " [to disable: {}; to re-enable: {}]",
+            t.difference(&l).cloned().collect::<Vec<_>>().join(", "),
+            l.difference(&t).cloned().collect::<Vec<_>>().join(", ")
+        )
+    } else {
+        String::new()
+    };
+    let st = match lv {
+        None => item("config", dotted, St::Create, "missing in live"),
+        Some(l) if rec.config.get(dotted) == Some(&yhash(l)) => {
+            item("config", dotted, St::Update, "template changed")
+        }
+        Some(_) if rec.config.contains_key(dotted) => item(
+            "config",
+            dotted,
+            St::Conflict,
+            "edited on the Hermes side (values redacted)",
+        ),
+        Some(_) => Item {
+            unrecorded: true,
+            ..item(
+                "config",
+                dotted,
+                St::Conflict,
+                "differs from the template (values redacted)",
+            )
+        },
+    };
+    Item {
+        detail: st.detail.clone() + &detail_extra,
+        ..st
+    }
+}
+
+/// USER.md: every seed entry present (entries are added, never removed).
+fn plan_user(c: &Ctx, seed: &str) -> Item {
+    let live = fs::read_to_string(c.dest.join("memories/USER.md")).unwrap_or_default();
+    let have = entries(&live);
+    let missing: Vec<String> = entries(seed)
+        .into_iter()
+        .filter(|e| !have.contains(e))
+        .collect();
+    if missing.is_empty() {
+        item("user", "USER.md", St::InSync, "seed entries present")
+    } else {
+        item(
+            "user",
+            "USER.md",
+            St::Create,
+            format!("{} seed entr(y/ies) missing", missing.len()),
+        )
+    }
+}
+
+/// The spec's cron jobs (matched by name), and paused jobs `hermes migrate grok-bot` already made.
+fn plan_spec_cron(c: &Ctx, w: &Want, jobs: &[serde_json::Value]) -> Vec<Item> {
+    let mut items = vec![];
     // paused jobs `hermes migrate grok-bot` created ("<Bot>: <routine>"): already present, never re-created
-    if !c.bundle.name.is_empty() {
-        let pre = format!("{}: ", c.bundle.name);
-        for j in &jobs {
+    if !c.model.persona.name.is_empty() {
+        let pre = format!("{}: ", c.model.persona.name);
+        for j in jobs {
             let n = j["name"].as_str().unwrap_or("");
             if n.starts_with(&pre)
                 && j["enabled"] == json!(false)
@@ -1268,23 +1426,22 @@ pub fn plan(c: &Ctx) -> Res<Plan> {
             }
         }
     }
-    if !c.real_home {
-        // cron is managed through the hermes CLI, which only serves ~/.hermes (or --no-cron): not compared here
-        for j in &w.cron {
+    for j in &w.cron {
+        if !c.real_home {
+            // cron is managed through the hermes CLI, which only serves ~/.hermes (or --no-cron): not compared here
             items.push(item(
                 "cron",
                 &j.name,
                 St::Skip,
                 "not managed here (--no-cron or not ~/.hermes)",
             ));
+            continue;
         }
-    }
-    for j in w.cron.iter().filter(|_| c.real_home) {
         let same: Vec<&serde_json::Value> = jobs
             .iter()
             .filter(|x| x["name"].as_str() == Some(&j.name))
             .collect();
-        let st = match same.first() {
+        items.push(match same.first() {
             None => item("cron", &j.name, St::Create, "missing"),
             Some(_) if same.len() > 1 => item(
                 "cron",
@@ -1292,62 +1449,74 @@ pub fn plan(c: &Ctx) -> Res<Plan> {
                 St::Conflict,
                 format!("{} live jobs with this name", same.len()),
             ),
-            Some(cur) => {
-                let diff: Vec<&str> = [
-                    ("prompt", cur["prompt"].as_str() == Some(&j.prompt)),
-                    ("deliver", cur["deliver"].as_str() == Some(&j.deliver)),
-                    ("schedule", cron_expr(cur) == j.schedule),
-                ]
-                .iter()
-                .filter(|(_, ok)| !ok)
-                .map(|(k, _)| *k)
-                .collect();
-                // a job the spec creates paused is expected to be paused; resuming it on the Hermes side is the owner's call
-                if cur["enabled"] == json!(false) && !j.paused() {
-                    item(
-                        "cron",
-                        &j.name,
-                        St::Conflict,
-                        "paused/disabled on the Hermes side",
-                    )
-                } else if diff.is_empty() {
-                    item("cron", &j.name, St::InSync, "")
-                } else {
-                    item(
-                        "cron",
-                        &j.name,
-                        St::Update,
-                        format!("{} differ(s)", diff.join(", ")),
-                    )
-                }
-            }
-        };
-        items.push(st);
+            Some(cur) => spec_job_item(j, cur),
+        });
     }
-    // 6. the bot's own schedules: paused cron jobs, adopted when a job of that name exists
-    for j in &w.model_cron {
-        if !c.real_home && jobs.iter().any(|x| x["name"].as_str() == Some(&j.name)) {
-            items.push(item(
-                "cron",
-                &j.name,
-                St::InSync,
-                "adopted: a job with this name exists",
-            ));
-            continue;
-        }
-        if !c.real_home {
-            items.push(item(
-                "cron",
-                &j.name,
-                St::Skip,
-                "not managed here (--no-cron or not ~/.hermes)",
-            ));
-            continue;
-        }
+    items
+}
+
+/// A spec job that exists live: in sync, update (prompt/deliver/schedule differ) or paused by the owner.
+fn spec_job_item(j: &CronJob, cur: &serde_json::Value) -> Item {
+    let diff: Vec<&str> = [
+        ("prompt", cur["prompt"].as_str() == Some(&j.prompt)),
+        ("deliver", cur["deliver"].as_str() == Some(&j.deliver)),
+        ("schedule", cron_expr(cur) == j.schedule),
+    ]
+    .iter()
+    .filter(|(_, ok)| !ok)
+    .map(|(k, _)| *k)
+    .collect();
+    // a job the spec creates paused is expected to be paused; resuming it on the Hermes side is the owner's call
+    if cur["enabled"] == json!(false) && !j.paused() {
+        item(
+            "cron",
+            &j.name,
+            St::Conflict,
+            "paused/disabled on the Hermes side",
+        )
+    } else if diff.is_empty() {
+        item("cron", &j.name, St::InSync, "")
+    } else {
+        item(
+            "cron",
+            &j.name,
+            St::Update,
+            format!("{} differ(s)", diff.join(", ")),
+        )
+    }
+}
+
+/// The bot's own schedules: paused cron jobs, adopted when a job of that name exists.
+fn plan_model_cron(
+    c: &Ctx,
+    model_cron: &[CronJob],
+    jobs: &[serde_json::Value],
+    rec: &Lock,
+) -> Vec<Item> {
+    let mut items = vec![];
+    for j in model_cron {
         let same: Vec<&serde_json::Value> = jobs
             .iter()
             .filter(|x| x["name"].as_str() == Some(&j.name))
             .collect();
+        if !c.real_home {
+            items.push(if same.is_empty() {
+                item(
+                    "cron",
+                    &j.name,
+                    St::Skip,
+                    "not managed here (--no-cron or not ~/.hermes)",
+                )
+            } else {
+                item(
+                    "cron",
+                    &j.name,
+                    St::InSync,
+                    "adopted: a job with this name exists",
+                )
+            });
+            continue;
+        }
         let want_d = job_digest(&j.prompt, &j.schedule);
         items.push(match same.as_slice() {
             [] => item("cron", &j.name, St::Create, "missing (created paused)"),
@@ -1383,82 +1552,87 @@ pub fn plan(c: &Ctx) -> Res<Plan> {
             ),
         });
     }
-    // 7. MCP connectors: owned `mcp_servers.<id>` leaves, adopted when the live entry already says the same
-    if !w.mcp.is_empty() {
-        let live = load_yaml(&c.dest.join("config.yaml"))?;
-        for (id, want) in &w.mcp {
-            let name = format!("mcp_servers.{id}");
-            let pre = vec!["mcp_servers".to_string(), id.clone()];
-            let mut ls = vec![];
-            leaves(want, &mut pre.clone(), &mut ls);
-            let live_vals: Vec<Y> = ls
-                .iter()
-                .map(|(p, _)| {
-                    live.as_ref()
-                        .and_then(|l| get_path(l, p))
-                        .cloned()
-                        .unwrap_or(Y::Null)
-                })
-                .collect();
-            let want_vals: Vec<Y> = ls.iter().map(|(_, v)| v.clone()).collect();
-            let lh = yhash(&Y::Sequence(live_vals.clone()));
-            let exists = live.as_ref().and_then(|l| get_path(l, &pre)).is_some();
-            // `hermes migrate grok-bot` names the server after the whole app name: the same url is the same server
-            let same_url = live
-                .as_ref()
-                .and_then(|l| get_path(l, &["mcp_servers".to_string()]))
-                .and_then(|m| m.as_mapping())
-                .and_then(|m| {
-                    m.iter()
-                        .find(|(_, v)| v.get("url").is_some() && v.get("url") == want.get("url"))
-                })
-                .map(|(k, _)| key_str(k));
-            items.push(if live_vals == want_vals {
-                item("mcp", &name, St::InSync, "")
-            } else if let Some(other) = same_url.filter(|o| !exists && o != id) {
-                item("mcp", &name, St::InSync, format!("adopted: mcp_servers.{other} has this url"))
-            } else if !exists {
-                item("mcp", &name, St::Create, "missing in live")
-            } else if rec.config.get(&name) == Some(&lh) {
-                item("mcp", &name, St::Update, "description changed")
-            } else if rec.config.contains_key(&name) {
-                item("mcp", &name, St::Conflict, "edited on the Hermes side (values redacted)")
-            } else {
-                Item {
-                    unrecorded: true,
-                    ..item("mcp", &name, St::Conflict, "differs from the description and no sync record (apply --adopt to take it over)")
-                }
-            });
+    items
+}
+
+/// One MCP connector: owned `mcp_servers.<id>` leaves, adopted when the live entry already says the same.
+fn plan_mcp(live: Option<&Y>, id: &str, want: &Y, rec: &Lock) -> Item {
+    let name = format!("mcp_servers.{id}");
+    let pre = vec!["mcp_servers".to_string(), id.to_string()];
+    let mut ls = vec![];
+    leaves(want, &mut pre.clone(), &mut ls);
+    let live_vals: Vec<Y> = ls
+        .iter()
+        .map(|(p, _)| {
+            live.and_then(|l| get_path(l, p))
+                .cloned()
+                .unwrap_or(Y::Null)
+        })
+        .collect();
+    let want_vals: Vec<Y> = ls.iter().map(|(_, v)| v.clone()).collect();
+    let lh = yhash(&Y::Sequence(live_vals.clone()));
+    let exists = live.and_then(|l| get_path(l, &pre)).is_some();
+    // `hermes migrate grok-bot` names the server after the whole app name: the same url is the same server
+    let same_url = live
+        .and_then(|l| get_path(l, &["mcp_servers".to_string()]))
+        .and_then(|m| m.as_mapping())
+        .and_then(|m| {
+            m.iter()
+                .find(|(_, v)| v.get("url").is_some() && v.get("url") == want.get("url"))
+        })
+        .map(|(k, _)| key_str(k));
+    if live_vals == want_vals {
+        item("mcp", &name, St::InSync, "")
+    } else if let Some(other) = same_url.filter(|o| !exists && o != id) {
+        item(
+            "mcp",
+            &name,
+            St::InSync,
+            format!("adopted: mcp_servers.{other} has this url"),
+        )
+    } else if !exists {
+        item("mcp", &name, St::Create, "missing in live")
+    } else if rec.config.get(&name) == Some(&lh) {
+        item("mcp", &name, St::Update, "description changed")
+    } else if rec.config.contains_key(&name) {
+        item(
+            "mcp",
+            &name,
+            St::Conflict,
+            "edited on the Hermes side (values redacted)",
+        )
+    } else {
+        Item {
+            unrecorded: true,
+            ..item(
+                "mcp",
+                &name,
+                St::Conflict,
+                "differs from the description and no sync record (apply --adopt to take it over)",
+            )
         }
     }
-    // 8. what needs a human: one item each, and the checklist file
-    if !w.manual.is_empty() {
-        for (n, what) in &w.manual {
-            items.push(item("manual", n, St::Manual, what.clone()));
-        }
-        let want_t = manual_text(&w.manual);
-        items.push(match read_manual(&c.dest) {
-            None => item("manual", MANUAL, St::Create, "missing"),
-            Some(l) if untick(&l) == want_t => item("manual", MANUAL, St::InSync, ""),
-            Some(_) => item("manual", MANUAL, St::Update, "list changed (ticks kept)"),
-        });
+}
+
+/// What needs a human: one item each, and the checklist file.
+fn plan_manual(c: &Ctx, manual: &[(String, String)]) -> Vec<Item> {
+    if manual.is_empty() {
+        return vec![];
     }
-    Ok(Plan {
-        items,
-        want: w,
-        lock,
-        config_text,
-        config_owned,
-    })
+    let mut items: Vec<Item> = manual
+        .iter()
+        .map(|(n, what)| item("manual", n, St::Manual, what.clone()))
+        .collect();
+    let want_t = manual_text(manual);
+    items.push(match read_manual(&c.dest) {
+        None => item("manual", MANUAL, St::Create, "missing"),
+        Some(l) if untick(&l) == want_t => item("manual", MANUAL, St::InSync, ""),
+        Some(_) => item("manual", MANUAL, St::Update, "list changed (ticks kept)"),
+    });
+    items
 }
 
 // ---------------------------------------------------------------- apply
-pub struct Applied {
-    pub items: Vec<Item>,
-    pub restore_point: Option<PathBuf>,
-    pub restart_needed: bool,
-}
-
 fn should_write(i: &Item, adopt: bool) -> bool {
     i.status.is_change() || (adopt && i.status == St::Conflict && i.unrecorded)
 }
@@ -1539,7 +1713,6 @@ pub fn apply(c: &Ctx, adopt: bool, dry: bool) -> Res<Applied> {
         });
     }
     let mut rp = None;
-    let mut restart = false;
     let legacy = has_legacy_names(&c.dest);
     if !todo.is_empty() || legacy {
         fs::create_dir_all(&c.dest).map_err(|e| e.to_string())?;
@@ -1548,20 +1721,53 @@ pub fn apply(c: &Ctx, adopt: bool, dry: bool) -> Res<Applied> {
     if legacy {
         migrate_legacy(&c.dest)?;
     }
-    let stamp = utc_stamp();
     let mut lock = p.lock.clone().unwrap_or_default();
-    let done = |out: &mut Vec<Item>, area: &str, name: &str, detail: &str| {
-        for i in out.iter_mut().filter(|i| i.area == area && i.name == name) {
-            if i.status == St::Conflict {
-                i.status = St::Update;
-                i.unrecorded = false;
-                i.detail = format!("adopted -> {detail}");
-            } else {
-                i.detail = format!("{} -> {detail}", i.status.word());
-            }
+    apply_skills(c, &p, &todo, &mut out, &mut lock, adopt)?;
+    if let Some(ws) = &p.want.soul {
+        apply_soul(c, &p, ws, &todo, &mut out, &mut lock, adopt)?;
+    }
+    let mut restart = apply_config(c, &p, &todo, &mut out, &mut lock, adopt)?;
+    apply_user(c, &p, &todo, &mut out)?;
+    restart |= apply_mcp(c, &p, &todo, &mut out, &mut lock, adopt)?;
+    apply_manual(c, &p, &todo, &mut out)?;
+    record_model_cron(c, &p.want.model_cron, &out, &mut lock);
+    apply_cron(c, &p, &todo, &mut out)?;
+    write_lock(c, &mut lock)?;
+    Ok(Applied {
+        items: out,
+        restore_point: rp,
+        restart_needed: restart,
+    })
+}
+
+/// Mark the items of one unit written: a conflict taken over (`--adopt`) becomes an update.
+fn mark_done(out: &mut [Item], area: &str, name: &str, detail: &str) {
+    for i in out.iter_mut().filter(|i| i.area == area && i.name == name) {
+        if i.status == St::Conflict {
+            i.status = St::Update;
+            i.unrecorded = false;
+            i.detail = format!("adopted -> {detail}");
+        } else {
+            i.detail = format!("{} -> {detail}", i.status.word());
         }
-    };
-    // skills
+    }
+}
+
+/// A conflict that stays one in this run (not taken over by `--adopt`).
+fn kept_conflict(i: &Item, adopt: bool) -> bool {
+    i.status == St::Conflict && !(adopt && i.unrecorded)
+}
+
+/// Skill units: retired ones move to backups/, the rest are written; the lock records every unit now ours.
+fn apply_skills(
+    c: &Ctx,
+    p: &Plan,
+    todo: &[&Item],
+    out: &mut [Item],
+    lock: &mut Lock,
+    adopt: bool,
+) -> Res<()> {
+    let stamp = utc_stamp();
     for i in todo.iter().filter(|i| i.area == "skills") {
         let unit_path = c.dest.join("skills").join(&i.name);
         if i.status == St::Retire {
@@ -1573,7 +1779,7 @@ pub fn apply(c: &Ctx, adopt: bool, dry: bool) -> Res<Applied> {
             fs::create_dir_all(tgt.parent().unwrap()).map_err(|e| e.to_string())?;
             fs::rename(&unit_path, &tgt).map_err(|e| format!("retire {}: {e}", i.name))?;
             lock.skills.remove(&i.name);
-            done(&mut out, "skills", &i.name, "moved to backups/");
+            mark_done(out, "skills", &i.name, "moved to backups/");
             continue;
         }
         let files = &p.want.units[&i.name];
@@ -1589,7 +1795,7 @@ pub fn apply(c: &Ctx, adopt: bool, dry: bool) -> Res<Applied> {
                 write_atomic(&unit_path.join(rel), b, Some(0o644))?;
             }
         }
-        done(&mut out, "skills", &i.name, "written");
+        mark_done(out, "skills", &i.name, "written");
     }
     for (u, files) in &p.want.units {
         if out.iter().any(|i| {
@@ -1598,95 +1804,112 @@ pub fn apply(c: &Ctx, adopt: bool, dry: bool) -> Res<Applied> {
             lock.skills.insert(u.clone(), tree_digest_files(files));
         }
     }
-    // SOUL
-    if let Some(ws) = &p.want.soul {
-        let sp = c.dest.join("SOUL.md");
-        let live = fs::read_to_string(&sp).ok();
-        let soul_todo: Vec<&&Item> = todo.iter().filter(|i| i.area == "soul").collect();
-        if !soul_todo.is_empty() {
-            // Write only the sections being changed; conflicting sections keep their live text.
-            let keep: Vec<(String, String)> = ws
-                .iter()
-                .map(|(n, wc)| {
-                    let changing = soul_todo
-                        .iter()
-                        .any(|i| i.name == *n || i.name == "SOUL.md");
-                    let live_c = live
-                        .as_deref()
-                        .and_then(find_sections)
-                        .and_then(|s| s.into_iter().find(|x| x.0 == *n))
-                        .map(|x| x.1);
-                    (
-                        n.clone(),
-                        if changing {
-                            wc.clone()
-                        } else {
-                            live_c.unwrap_or(wc.clone())
-                        },
-                    )
-                })
-                .collect();
-            let legacy = live
-                .as_deref()
-                .map(|l| find_sections(l).is_none())
-                .unwrap_or(true);
-            let text = match (legacy, p.want.soul_append, live.as_deref()) {
-                (true, true, Some(l)) if !l.trim().is_empty() => {
-                    let sep = if l.ends_with('\n') { "" } else { "\n" };
-                    format!("{l}{sep}{}", render_soul(None, &keep))
-                }
-                _ => render_soul(if legacy { None } else { live.as_deref() }, &keep),
-            };
-            write_atomic(&sp, text.as_bytes(), Some(0o600))?;
-            for i in &soul_todo {
-                done(&mut out, "soul", &i.name, "written");
-            }
-        }
-        // Record only what is ours now (in sync or just written); a conflicting section keeps its old record
-        // (or none), so a later plan still sees the Hermes-side edit as a conflict.
-        let soul_conflict = |n: &str| {
-            p.items.iter().any(|i| {
-                i.area == "soul"
-                    && (i.name == n || i.name == "SOUL.md")
-                    && i.status == St::Conflict
-                    && !(adopt && i.unrecorded)
+    Ok(())
+}
+
+/// SOUL.md: only the sections being changed are written (conflicting ones keep their live text).
+fn apply_soul(
+    c: &Ctx,
+    p: &Plan,
+    ws: &[(String, String)],
+    todo: &[&Item],
+    out: &mut [Item],
+    lock: &mut Lock,
+    adopt: bool,
+) -> Res<()> {
+    let sp = c.dest.join("SOUL.md");
+    let live = fs::read_to_string(&sp).ok();
+    let soul_todo: Vec<&&Item> = todo.iter().filter(|i| i.area == "soul").collect();
+    if !soul_todo.is_empty() {
+        let live_secs = live.as_deref().and_then(find_sections);
+        let keep: Vec<(String, String)> = ws
+            .iter()
+            .map(|(n, wc)| {
+                let changing = soul_todo
+                    .iter()
+                    .any(|i| i.name == *n || i.name == "SOUL.md");
+                let live_c = live_secs
+                    .as_ref()
+                    .and_then(|s| s.iter().find(|x| x.0 == *n))
+                    .map(|x| x.1.clone());
+                let text = if changing {
+                    wc.clone()
+                } else {
+                    live_c.unwrap_or(wc.clone())
+                };
+                (n.clone(), text)
             })
+            .collect();
+        let legacy = live_secs.is_none();
+        let text = match (legacy, p.want.soul_append, live.as_deref()) {
+            (true, true, Some(l)) if !l.trim().is_empty() => {
+                let sep = if l.ends_with('\n') { "" } else { "\n" };
+                format!("{l}{sep}{}", render_soul(None, &keep))
+            }
+            _ => render_soul(if legacy { None } else { live.as_deref() }, &keep),
         };
-        if let Ok(now) = fs::read_to_string(&sp) {
-            if !p
-                .items
-                .iter()
-                .any(|i| i.area == "soul" && i.status == St::Conflict && !(adopt && i.unrecorded))
-            {
-                lock.soul
-                    .insert("__file__".into(), sha256_hex(now.as_bytes()));
-            } else {
-                lock.soul.remove("__file__");
-            }
-            for (n, cnt) in find_sections(&now)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|x| (x.0, x.1))
-            {
-                if !soul_conflict(&n) {
-                    lock.soul.insert(n, sha256_hex(cnt.as_bytes()));
-                }
-            }
+        write_atomic(&sp, text.as_bytes(), Some(0o600))?;
+        for i in &soul_todo {
+            mark_done(out, "soul", &i.name, "written");
         }
     }
-    // config
+    if let Ok(now) = fs::read_to_string(&sp) {
+        record_soul(lock, &p.items, &now, adopt);
+    }
+    Ok(())
+}
+
+/// Record only what is ours now (in sync or just written). `__file__` (the whole SOUL.md) is recorded only when
+/// no SOUL item conflicts, and removed when any does; a conflicting section keeps its old record (or none), so
+/// a later plan still sees the Hermes-side edit as a conflict. A conflict `--adopt` takes over counts as ours.
+fn record_soul(lock: &mut Lock, items: &[Item], now: &str, adopt: bool) {
+    let soul_conflict = |n: &str| {
+        items.iter().any(|i| {
+            i.area == "soul" && (i.name == n || i.name == "SOUL.md") && kept_conflict(i, adopt)
+        })
+    };
+    if items
+        .iter()
+        .any(|i| i.area == "soul" && kept_conflict(i, adopt))
+    {
+        lock.soul.remove("__file__");
+    } else {
+        lock.soul
+            .insert("__file__".into(), sha256_hex(now.as_bytes()));
+    }
+    for (n, cnt) in find_sections(now)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|x| (x.0, x.1))
+    {
+        if !soul_conflict(&n) {
+            lock.soul.insert(n, sha256_hex(cnt.as_bytes()));
+        }
+    }
+}
+
+/// config.yaml: the planned text, or (with conflicts) only the changing paths on top of the live file. True when
+/// it was written (the gateway needs a restart).
+fn apply_config(
+    c: &Ctx,
+    p: &Plan,
+    todo: &[&Item],
+    out: &mut [Item],
+    lock: &mut Lock,
+    adopt: bool,
+) -> Res<bool> {
+    let mut restart = false;
     if let Some(text) = &p.config_text {
         let cfg_todo: Vec<&&Item> = todo.iter().filter(|i| i.area == "config").collect();
         let has_conflict = p
             .items
             .iter()
-            .any(|i| i.area == "config" && i.status == St::Conflict && !(adopt && i.unrecorded));
+            .any(|i| i.area == "config" && kept_conflict(i, adopt));
         if !cfg_todo.is_empty() || !c.dest.join("config.yaml").exists() {
             if has_conflict {
                 // Rebuild without the conflicting paths: re-plan semantics, applied path by path.
-                let live =
+                let mut new =
                     load_yaml(&c.dest.join("config.yaml"))?.unwrap_or(Y::Mapping(Mapping::new()));
-                let mut new = live;
                 let full: Y =
                     serde_yaml::from_str(&crate::yaml11::read(text)).map_err(|e| e.to_string())?;
                 for i in &cfg_todo {
@@ -1706,34 +1929,49 @@ pub fn apply(c: &Ctx, adopt: bool, dry: bool) -> Res<Applied> {
             }
             restart = true;
             for i in &cfg_todo {
-                done(&mut out, "config", &i.name, "written");
+                mark_done(out, "config", &i.name, "written");
             }
         }
     }
     for (k, h) in &p.config_owned {
-        if !p.items.iter().any(|i| {
-            i.area == "config"
-                && i.name == *k
-                && i.status == St::Conflict
-                && !(adopt && i.unrecorded)
-        }) {
+        if !p
+            .items
+            .iter()
+            .any(|i| i.area == "config" && i.name == *k && kept_conflict(i, adopt))
+        {
             lock.config.insert(k.clone(), h.clone());
         }
     }
-    // USER.md
-    if let (Some(seed), true) = (&p.want.user_seed, todo.iter().any(|i| i.area == "user")) {
-        let up = c.dest.join("memories/USER.md");
-        let live = fs::read_to_string(&up).unwrap_or_default();
-        let mut have = entries(&live);
-        for e in entries(seed) {
-            if !have.contains(&e) {
-                have.push(e);
-            }
+    Ok(restart)
+}
+
+/// USER.md: missing seed entries appended.
+fn apply_user(c: &Ctx, p: &Plan, todo: &[&Item], out: &mut [Item]) -> Res<()> {
+    let (Some(seed), true) = (&p.want.user_seed, todo.iter().any(|i| i.area == "user")) else {
+        return Ok(());
+    };
+    let up = c.dest.join("memories/USER.md");
+    let live = fs::read_to_string(&up).unwrap_or_default();
+    let mut have = entries(&live);
+    for e in entries(seed) {
+        if !have.contains(&e) {
+            have.push(e);
         }
-        write_atomic(&up, (have.join(ENTRY_DELIM) + "\n").as_bytes(), Some(0o600))?;
-        done(&mut out, "user", "USER.md", "seed entries added");
     }
-    // MCP entries (owned leaves only, on top of whatever config.yaml now holds)
+    write_atomic(&up, (have.join(ENTRY_DELIM) + "\n").as_bytes(), Some(0o600))?;
+    mark_done(out, "user", "USER.md", "seed entries added");
+    Ok(())
+}
+
+/// MCP entries (owned leaves only, on top of whatever config.yaml now holds). True when config.yaml was written.
+fn apply_mcp(
+    c: &Ctx,
+    p: &Plan,
+    todo: &[&Item],
+    out: &mut [Item],
+    lock: &mut Lock,
+    adopt: bool,
+) -> Res<bool> {
     let mcp_todo: Vec<&&Item> = todo.iter().filter(|i| i.area == "mcp").collect();
     if !mcp_todo.is_empty() {
         let cp = c.dest.join("config.yaml");
@@ -1768,9 +2006,8 @@ pub fn apply(c: &Ctx, adopt: bool, dry: bool) -> Res<Applied> {
             format!("{head}\n{body}")
         };
         write_atomic(&cp, out_t.as_bytes(), Some(0o600))?;
-        restart = true;
         for i in &mcp_todo {
-            done(&mut out, "mcp", &i.name, "written");
+            mark_done(out, "mcp", &i.name, "written");
         }
     }
     for (id, want) in &p.want.mcp {
@@ -1787,27 +2024,36 @@ pub fn apply(c: &Ctx, adopt: bool, dry: bool) -> Res<Applied> {
             );
         }
     }
-    // manual checklist (ticks the user made on unchanged lines are kept)
-    if todo.iter().any(|i| i.area == "manual") {
-        let mp = c.dest.join(MANUAL);
-        let ticked: BTreeSet<String> = fs::read_to_string(&mp)
-            .unwrap_or_default()
-            .lines()
-            .filter_map(|l| l.strip_prefix("- [x] ").or(l.strip_prefix("- [X] ")))
-            .map(String::from)
-            .collect();
-        let t: String = manual_text(&p.want.manual)
-            .lines()
-            .map(|l| match l.strip_prefix("- [ ] ") {
-                Some(r) if ticked.contains(r) => format!("- [x] {r}\n"),
-                _ => format!("{l}\n"),
-            })
-            .collect();
-        write_atomic(&mp, t.as_bytes(), Some(0o644))?;
-        done(&mut out, "manual", MANUAL, "written");
+    Ok(!mcp_todo.is_empty())
+}
+
+/// The manual checklist (ticks the user made on unchanged lines are kept).
+fn apply_manual(c: &Ctx, p: &Plan, todo: &[&Item], out: &mut [Item]) -> Res<()> {
+    if !todo.iter().any(|i| i.area == "manual") {
+        return Ok(());
     }
-    // cron (through the hermes CLI, which owns jobs.json)
-    for j in &p.want.model_cron {
+    let mp = c.dest.join(MANUAL);
+    let ticked: BTreeSet<String> = fs::read_to_string(&mp)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.strip_prefix("- [x] ").or(l.strip_prefix("- [X] ")))
+        .map(String::from)
+        .collect();
+    let t: String = manual_text(&p.want.manual)
+        .lines()
+        .map(|l| match l.strip_prefix("- [ ] ") {
+            Some(r) if ticked.contains(r) => format!("- [x] {r}\n"),
+            _ => format!("{l}\n"),
+        })
+        .collect();
+    write_atomic(&mp, t.as_bytes(), Some(0o644))?;
+    mark_done(out, "manual", MANUAL, "written");
+    Ok(())
+}
+
+/// Record the bot's cron jobs that are ours: adopted live ones as they are, created/updated ones as wanted.
+fn record_model_cron(c: &Ctx, model_cron: &[CronJob], out: &[Item], lock: &mut Lock) {
+    for j in model_cron {
         let st = out
             .iter()
             .find(|i| i.area == "cron" && i.name == j.name)
@@ -1826,6 +2072,10 @@ pub fn apply(c: &Ctx, adopt: bool, dry: bool) -> Res<Applied> {
             _ => {}
         }
     }
+}
+
+/// Cron jobs through the hermes CLI (which owns jobs.json); skipped off ~/.hermes.
+fn apply_cron(c: &Ctx, p: &Plan, todo: &[&Item], out: &mut [Item]) -> Res<()> {
     for i in todo.iter().filter(|i| i.area == "cron") {
         let j = p
             .want
@@ -1844,91 +2094,98 @@ pub fn apply(c: &Ctx, adopt: bool, dry: bool) -> Res<Applied> {
             }
             continue;
         }
-        // hermes writes its job store itself: every argument passes the write-boundary guard first
-        let mut args: Vec<(&str, &str)> = vec![
-            ("name", &j.name),
-            ("deliver", &j.deliver),
-            ("schedule", &j.schedule),
-            ("prompt", &j.prompt),
-        ];
-        if let Some(r) = &j.paused_reason {
-            args.push(("paused-reason", r));
-        }
-        secrets::guard_args("hermes cron", &args)?;
-        let mut cmd = Command::new(&c.hermes_bin);
-        if let Some(h) = &c.hermes_home {
-            cmd.env("HERMES_HOME", h);
-        }
-        cmd.args(["-p", &c.profile, "cron"]);
-        if i.status == St::Create {
-            cmd.args(["create", "--name", &j.name, "--deliver", &j.deliver]);
-            if j.paused() {
-                cmd.arg("--paused");
-            }
-            if let Some(r) = &j.paused_reason {
-                cmd.args(["--paused-reason", r]);
-            }
-            cmd.args([&j.schedule, &j.prompt]);
-        } else {
-            let id = live_jobs(&c.dest)
-                .into_iter()
-                .find(|x| x["name"].as_str() == Some(&j.name))
-                .and_then(|x| x["id"].as_str().map(String::from))
-                .ok_or("cron job id not found")?;
-            cmd.args([
-                "edit",
-                &id,
-                "--schedule",
-                &j.schedule,
-                "--deliver",
-                &j.deliver,
-                "--prompt",
-                &j.prompt,
-            ]);
-        }
-        let o = cmd.output().map_err(|e| format!("{}: {e}", c.hermes_bin))?;
-        if !o.status.success() {
-            return err(format!(
-                "hermes cron {} failed: {}",
-                i.name,
-                String::from_utf8_lossy(&o.stderr)
-                    .lines()
-                    .last()
-                    .unwrap_or("")
-            ));
-        }
+        run_hermes_cron(c, j, i.status == St::Create)?;
         // Read back: an exit code of 0 is not proof the job exists.
         if live_jobs(&c.dest)
             .iter()
             .any(|x| x["name"].as_str() == Some(&j.name))
         {
-            done(&mut out, "cron", &i.name, "written via hermes cron");
+            mark_done(out, "cron", &i.name, "written via hermes cron");
         } else {
-            done(
-                &mut out,
+            mark_done(
+                out,
                 "cron",
                 &i.name,
                 "hermes cron exited 0 but the job is not in cron/jobs.json; check `hermes cron list`",
             );
         }
     }
+    Ok(())
+}
+
+/// `hermes cron create` (paused unless the job is explicitly enabled) or `hermes cron edit`.
+fn run_hermes_cron(c: &Ctx, j: &CronJob, create: bool) -> Res<()> {
+    // hermes writes its job store itself: every argument passes the write-boundary guard first
+    let mut args: Vec<(&str, &str)> = vec![
+        ("name", &j.name),
+        ("deliver", &j.deliver),
+        ("schedule", &j.schedule),
+        ("prompt", &j.prompt),
+    ];
+    if let Some(r) = &j.paused_reason {
+        args.push(("paused-reason", r));
+    }
+    secrets::guard_args("hermes cron", &args)?;
+    let mut cmd = Command::new(&c.hermes_bin);
+    if let Some(h) = &c.hermes_home {
+        cmd.env("HERMES_HOME", h);
+    }
+    cmd.args(["-p", &c.profile, "cron"]);
+    if create {
+        cmd.args(["create", "--name", &j.name, "--deliver", &j.deliver]);
+        if j.paused() {
+            cmd.arg("--paused");
+        }
+        if let Some(r) = &j.paused_reason {
+            cmd.args(["--paused-reason", r]);
+        }
+        cmd.args([&j.schedule, &j.prompt]);
+    } else {
+        let id = live_jobs(&c.dest)
+            .into_iter()
+            .find(|x| x["name"].as_str() == Some(&j.name))
+            .and_then(|x| x["id"].as_str().map(String::from))
+            .ok_or("cron job id not found")?;
+        cmd.args([
+            "edit",
+            &id,
+            "--schedule",
+            &j.schedule,
+            "--deliver",
+            &j.deliver,
+            "--prompt",
+            &j.prompt,
+        ]);
+    }
+    let o = cmd.output().map_err(|e| format!("{}: {e}", c.hermes_bin))?;
+    if !o.status.success() {
+        return err(format!(
+            "hermes cron {} failed: {}",
+            j.name,
+            String::from_utf8_lossy(&o.stderr)
+                .lines()
+                .last()
+                .unwrap_or("")
+        ));
+    }
+    Ok(())
+}
+
+/// The lock: source digest and files read, written when it changed; the pre-rename lock removed.
+fn write_lock(c: &Ctx, lock: &mut Lock) -> Res<()> {
     lock.version = 1;
     lock.tool_version = crate::bundle::VERSION.into();
-    lock.bundle_digest = c.bundle.digest();
-    lock.grok_excluded.extend(c.bundle.excluded.iter().cloned());
-    lock.files_read = c.bundle.read.clone();
-    let lt = json_sorted(&lock);
+    lock.bundle_digest = c.source.digest();
+    lock.grok_excluded.extend(c.source.excluded.iter().cloned());
+    lock.files_read = c.source.files_read.clone();
+    let lt = json_sorted(&*lock);
     if fs::read_to_string(c.dest.join(LOCK)).ok().as_deref() != Some(lt.as_str()) {
         write_atomic(&c.dest.join(LOCK), lt.as_bytes(), Some(0o644))?;
     }
     if c.dest.join(LEGACY_LOCK).is_file() {
         fs::remove_file(c.dest.join(LEGACY_LOCK)).map_err(|e| e.to_string())?;
     }
-    Ok(Applied {
-        items: out,
-        restore_point: rp,
-        restart_needed: restart,
-    })
+    Ok(())
 }
 
 /// Split a dotted path back into segments, matching keys that themselves contain dots (e.g. model names).
@@ -2004,6 +2261,91 @@ mod tests {
             parse_list(Some(&Y::String("['a', \"b\"]".into()))),
             vec!["a", "b"]
         );
+    }
+
+    /// SOUL.md text with sections `a` and `b`, and a lock that recorded `old` for both and the whole file.
+    fn soul_fixture() -> (String, Lock) {
+        let now = render_soul(
+            None,
+            &[("a".into(), "A\n".into()), ("b".into(), "B\n".into())],
+        );
+        let mut lock = Lock::default();
+        for k in ["__file__", "a", "b"] {
+            lock.soul.insert(k.into(), "old".into());
+        }
+        (now, lock)
+    }
+
+    fn conflict(name: &str, unrecorded: bool) -> Item {
+        Item {
+            unrecorded,
+            ..item("soul", name, St::Conflict, "")
+        }
+    }
+
+    #[test]
+    fn soul_lock_no_conflict_records_file_and_every_section() {
+        let (now, mut lock) = soul_fixture();
+        let items = [
+            item("soul", "a", St::Update, ""),
+            item("soul", "b", St::InSync, ""),
+        ];
+        record_soul(&mut lock, &items, &now, false);
+        assert_eq!(lock.soul["__file__"], sha256_hex(now.as_bytes()));
+        assert_eq!(lock.soul["a"], sha256_hex(b"A\n"));
+        assert_eq!(lock.soul["b"], sha256_hex(b"B\n"));
+    }
+
+    #[test]
+    fn soul_lock_any_section_conflict_removes_file_and_keeps_that_sections_old_record() {
+        let (now, mut lock) = soul_fixture();
+        let items = [item("soul", "a", St::InSync, ""), conflict("b", false)];
+        record_soul(&mut lock, &items, &now, false);
+        assert!(!lock.soul.contains_key("__file__"));
+        assert_eq!(lock.soul["a"], sha256_hex(b"A\n"));
+        assert_eq!(
+            lock.soul["b"], "old",
+            "a conflicting section keeps its old record"
+        );
+    }
+
+    #[test]
+    fn soul_lock_whole_file_conflict_removes_file_and_records_no_section() {
+        let (now, mut lock) = soul_fixture();
+        record_soul(&mut lock, &[conflict("SOUL.md", true)], &now, false);
+        assert!(!lock.soul.contains_key("__file__"));
+        assert_eq!(
+            (lock.soul["a"].as_str(), lock.soul["b"].as_str()),
+            ("old", "old")
+        );
+    }
+
+    #[test]
+    fn soul_lock_adopted_unrecorded_conflict_counts_as_ours() {
+        let (now, mut lock) = soul_fixture();
+        record_soul(&mut lock, &[conflict("b", true)], &now, true);
+        assert_eq!(lock.soul["__file__"], sha256_hex(now.as_bytes()));
+        assert_eq!(lock.soul["b"], sha256_hex(b"B\n"));
+    }
+
+    #[test]
+    fn soul_lock_adopt_never_takes_over_a_recorded_conflict() {
+        let (now, mut lock) = soul_fixture();
+        record_soul(&mut lock, &[conflict("b", false)], &now, true);
+        assert!(!lock.soul.contains_key("__file__"));
+        assert_eq!(lock.soul["b"], "old");
+    }
+
+    #[test]
+    fn soul_lock_ignores_conflicts_in_other_areas() {
+        let (now, mut lock) = soul_fixture();
+        let items = [Item {
+            area: "config".into(),
+            ..conflict("a", false)
+        }];
+        record_soul(&mut lock, &items, &now, false);
+        assert_eq!(lock.soul["__file__"], sha256_hex(now.as_bytes()));
+        assert_eq!(lock.soul["a"], sha256_hex(b"A\n"));
     }
 
     #[test]

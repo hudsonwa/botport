@@ -18,6 +18,7 @@
       "tier": "core"
     }
   ],
+  "memory_text": "# Acme Helper memory\n\n- The office opens at 09:00 and closes at 17:00 (made-up example).\n- Visitors sign in at the front desk.\n- Lost badges are replaced at the front desk (made-up example).\n",
   "skills": [
     {
       "name": "greet-visitors",
