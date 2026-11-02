@@ -140,7 +140,7 @@ Grok side is idle, g2hd wakes it through a Grok routine webhook (debounced, capp
 g2h setup [--hermes-home P] [--profile NAME] [--yes]   # idempotent wizard: config, credentials (key hidden), user service
 g2h setup --check                                       # ok/FAIL per item with the fix command
 g2h selftest [--live]                                   # round trip + dry-run wake; --live fires ONE webhook (asks first)
-g2h uninstall [--keep-logs]                             # reverses setup-manifest.json
+g2h uninstall [--keep-logs]                             # removes the files setup writes (manifest is a hint)
 ```
 The home is `~/.g2h` on every platform, found by CLI, daemon and setup with no env var (`G2H_HOME` overrides;
 `g2h home` prints it; an old-default home is moved there on first run).
