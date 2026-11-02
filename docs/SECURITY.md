@@ -117,9 +117,11 @@ back a partial apply on its own.
 
 **Paths stay confined.** Profile names must be plain names (no `/`, no leading `.`); skill names and skill file paths
 from a bundle must stay below `skills/<category>/<name>/` or the skill goes to the checklist (the library
-adapters' `write` refuses them); `verify` reports every symlink or other non-regular entry anywhere in the bundle,
-listed in the manifest or not, and every listed path that resolves outside it; `plan`/`apply` read an exported
-bundle only through the manifest-listed regular files that `verify` just read and hash-checked (no link followed),
+adapters' `write` refuses them); `verify` reports every symlink or other non-regular entry in the bundle's readable
+directories, listed in the manifest or not, and every listed path that resolves outside it; `plan`/`apply` take an
+exported bundle's skills and memory only from the manifest-listed regular files that `verify` just read and
+hash-checked (no link followed; `profile.json`, `describe.json` and `NOT_CAPTURED.md` are read again afterwards, so a
+bundle someone else changes during the run is out of scope),
 and refuse a legacy hand export that holds any symlink or special file; atomic writes use an unpredictable
 temporary name created exclusively (never through an existing file or symlink); g2h's `service_label` must be a
 reverse-DNS name, or g2h neither writes nor unloads a service for it. A bundle that another user can change while
