@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Event schedules survive a Grok round trip (#14): `describe` reads a schedule line whose time is "on an event"
+  (or "event-triggered") as `kind: event` with no cron, instead of a schedule Hermes cannot accept. Events are still
+  never turned into cron jobs. The NOT_CAPTURED.md botport writes now keeps an event's prompt.
+
 ## [0.1.0] - 2026-11-03
 First public release. The tool was called grok2hermes before release; the old names still work (see
 [REFERENCE.md](docs/REFERENCE.md#compatibility-with-the-old-name)).

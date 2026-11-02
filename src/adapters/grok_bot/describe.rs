@@ -189,6 +189,16 @@ fn prompt_of(t: &str) -> (String, Option<String>) {
     }
 }
 
+/// A `when` that names an event trigger, not a time: "on an event", "on event", "event-triggered" (with "(paused)").
+fn event_when(when: &str) -> bool {
+    static R: OnceLock<Regex> = OnceLock::new();
+    re(
+        &R,
+        r"(?i)^\s*(?:on\s+(?:an\s+)?event|event[- ]triggered)\s*(?:\(paused\))?\s*$",
+    )
+    .is_match(when)
+}
+
 pub fn parse(text: &str) -> Value {
     let lines: Vec<&str> = text.lines().collect();
     // A NOT_CAPTURED.md: only the bot's own description counts, not the export's preamble.
@@ -321,6 +331,15 @@ pub fn parse(text: &str) -> Value {
                     "grok"
                 };
                 let (when, prompt) = prompt_of(&rest);
+                if event_when(&when) {
+                    // an event trigger (what `GrokBot.write` writes): never a cron, no timezone
+                    schedules.push(
+                        json!({"name": name, "when": when, "kind": "event", "schedule": null, "cron": null,
+                        "timezone": null, "prompt": prompt, "paused": t.to_ascii_lowercase().contains("(paused)"),
+                        "side": side, "flags": []}),
+                    );
+                    continue;
+                }
                 let text = schedule_text(&when);
                 let cr = crate::adapters::hermes::schedule::normalize(&text).ok();
                 let mut flags = vec![];
@@ -575,6 +594,20 @@ mod tests {
                 .contains("runs in the Hermes profile's timezone"),
             "{v}"
         );
+    }
+
+    #[test]
+    fn event_lines_are_events_not_crons() {
+        let v = parse("## Schedules\n- **Arrival**: on an event (paused) — prompt: \"Greet\"\n- **Mail**: event-triggered\n- **Ping**: on events at noon\n");
+        let s = v["schedules"].as_array().unwrap();
+        assert_eq!(s[0]["kind"], "event");
+        assert_eq!(s[0]["cron"], Value::Null);
+        assert_eq!(s[0]["paused"], true);
+        assert_eq!(s[0]["prompt"], "Greet");
+        assert_eq!(s[0]["flags"], json!([]));
+        assert_eq!(s[1]["kind"], "event");
+        // only the exact event phrases count: anything else is read as before
+        assert_eq!(s[2]["kind"], Value::Null);
     }
 
     #[test]

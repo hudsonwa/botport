@@ -44,15 +44,22 @@ pub fn from_describe(v: &Value) -> Described {
             d.elsewhere.push(st(&s, "name"));
             continue;
         }
+        let event = s["kind"] == "event";
         d.schedules.push(Schedule {
             name: st(&s, "name"),
-            // a schedule Hermes does not accept travels as its text: the Hermes adapter makes it a manual item
+            // a schedule Hermes does not accept travels as its text: the Hermes adapter makes it a manual item;
+            // an event never gets a cron
             cron: s["cron"]
                 .as_str()
                 .or(s["schedule"].as_str())
+                .filter(|_| !event)
                 .map(String::from),
             tz: st(&s, "timezone"),
-            kind: ScheduleKind::Scheduled,
+            kind: if event {
+                ScheduleKind::Event
+            } else {
+                ScheduleKind::Scheduled
+            },
             action: st(&s, "prompt"),
             enabled: !s["paused"].as_bool().unwrap_or(false),
         });
@@ -208,21 +215,28 @@ fn render_description(m: &BotModel) -> String {
         s += "\n### Schedules\n";
         for x in &m.schedules {
             let paused = if x.enabled { "" } else { " (paused)" };
-            match &x.cron {
+            let prompt = if x.action.is_empty() {
+                String::new()
+            } else {
+                format!(" — prompt: \"{}\"", one(&x.action))
+            };
+            match x
+                .cron
+                .as_ref()
+                .filter(|_| x.kind == ScheduleKind::Scheduled)
+            {
+                None if x.kind == ScheduleKind::Scheduled => {
+                    s += &format!("- **{}**: no schedule given{paused}{prompt}\n", x.name)
+                }
                 Some(c) => {
                     let tz = if x.tz.contains('/') || x.tz.is_empty() {
                         format!(" {}", x.tz)
                     } else {
                         format!(" at {}", x.tz)
                     };
-                    let prompt = if x.action.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" — prompt: \"{}\"", one(&x.action))
-                    };
                     s += &format!("- **{}**: `{c}`{}{paused}{prompt}\n", x.name, tz.trim_end());
                 }
-                None => s += &format!("- **{}**: on an event{paused}\n", x.name),
+                None => s += &format!("- **{}**: on an event{paused}{prompt}\n", x.name),
             }
         }
     }
@@ -384,6 +398,41 @@ impl Adapter for GrokBot {
 #[cfg(test)]
 mod seeded_tests {
     use super::*;
+
+    /// #14: an event schedule written back reads as an event (paused flag and prompt kept, never a cron); a
+    /// timed schedule without a cron does not turn into an event.
+    #[test]
+    fn event_schedules_round_trip_through_the_description() {
+        let sched = |name: &str, kind, cron: Option<&str>, enabled| Schedule {
+            name: name.into(),
+            cron: cron.map(String::from),
+            tz: String::new(),
+            kind,
+            action: "Greet them".into(),
+            enabled,
+        };
+        let m = BotModel {
+            schedules: vec![
+                sched("Arrival", ScheduleKind::Event, None, true),
+                sched("Quiet", ScheduleKind::Event, Some("0 2 * * *"), false),
+                sched("Unknown", ScheduleKind::Scheduled, None, true),
+            ],
+            ..BotModel::from_json(include_str!("../../../tests/fixtures/model/minimal.json"))
+                .unwrap()
+        };
+        let d = from_describe(&describe::parse(&render_description(&m)));
+        assert_eq!(d.unparsed, 0);
+        let got = |n: &str| d.schedules.iter().find(|s| s.name == n).unwrap().clone();
+        assert_eq!(
+            got("Arrival"),
+            sched("Arrival", ScheduleKind::Event, None, true)
+        );
+        assert_eq!(
+            got("Quiet"),
+            sched("Quiet", ScheduleKind::Event, None, false)
+        );
+        assert_eq!(got("Unknown").kind, ScheduleKind::Scheduled);
+    }
 
     /// A describe.json (hand-edited or older) is re-scanned: `where` is dropped and a value-like name is
     /// a manual item without the name.

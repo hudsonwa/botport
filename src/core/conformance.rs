@@ -3,7 +3,7 @@
 //! `UNKNOWN_MARKER` (in data the model has no field for), with at least one schedule with a cron, one without,
 //! one connector with an http url, one without, and one credential name.
 use super::adapter::Adapter;
-use super::model::{check_schema, BotModel};
+use super::model::{check_schema, BotModel, ScheduleKind};
 use std::path::{Path, PathBuf};
 
 pub const FAKE_SECRET: &str = "CONFORMANCE-FAKE-SECRET-0000";
@@ -98,7 +98,25 @@ fn round_trips_schedules_once<A: Adapter>(a: &A, fixture: &Path, bare: bool) {
         "{}: the fixture needs a schedule with a cron",
         a.id()
     );
+    assert!(
+        m.schedules.iter().any(|s| s.kind == ScheduleKind::Event)
+            || !manual_names(&m, "schedule").is_empty(),
+        "{}: the fixture needs an event schedule (or one only listed for a human)",
+        a.id()
+    );
     for s in &m.schedules {
+        if s.kind == ScheduleKind::Event {
+            // an event comes back as an event (never as a cron) or as a manual item
+            let named: Vec<_> = back.schedules.iter().filter(|b| b.name == s.name).collect();
+            assert!(
+                named
+                    .iter()
+                    .all(|b| b.kind == ScheduleKind::Event && b.cron.is_none()),
+                "{} (bare {bare}): event schedule {:?} came back as {named:?}",
+                a.id(),
+                s.name
+            );
+        }
         let kept = match &s.cron {
             Some(c) => back
                 .schedules

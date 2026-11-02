@@ -75,12 +75,14 @@ Write "None" under a heading that has nothing. One bullet per item, name first i
 ```md
 ## Schedules
 - **Sample report**: weekdays 08:00 America/Chicago — prompt: "Summarise the sample log"
+- **New issue triage**: on an event — prompt: "Triage the new GitHub issue"
 ## Connectors
 - **knowledge**: MCP server at https://demo.example.test/mcp (tools: find_items, health)
 - **Web search**: built-in
 ## Credentials
 - `DEMO_TOKEN`
 ```
+A schedule started by an event (mail, a webhook, a GitHub issue) says "on an event" instead of a time.
 Credential lines are the name only, nothing else (no location, no value).
 **This file is copied as text** (into the bundle, then into Hermes cron prompts and checklists), so never put a secret
 value anywhere in it: no passwords, tokens, keys or cookies, and no URLs with `user:pass@`, `?token=` or `#access_token=`.
