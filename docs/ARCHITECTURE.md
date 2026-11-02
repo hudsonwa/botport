@@ -50,7 +50,7 @@ pub trait Target: Adapter {                    // an adapter that keeps a live i
 ```
 
 `Source` is sync bookkeeping, not bot content: the source path, its id, a sha256 per file read (the sync digest)
-and the skills a spec allowlist left out (`retain_skills`). A `plan`/`apply` run is: source `read_source` -> model
+and the skills a spec allowlist left out (`excluded`, filled by `retain_skills`). A `plan`/`apply` run is: source `read_source` -> model
 -> `retain_skills` -> `Target::plan` or `Target::apply`. The two-way path (`twoway`, `export-hermes`) uses the
 same model and `Source`.
 
