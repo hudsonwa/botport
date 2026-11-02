@@ -1,21 +1,13 @@
 // botport (formerly grok2hermes) — export a Grok Bot and import/sync it into a Hermes profile. Deterministic; terse by default:
 // every command prints at most 10 summary lines (or one JSON document with --json) and writes full detail to a file.
-#[cfg(test)]
-mod adapter_tests;
-mod adapters;
-mod battery;
-#[cfg(test)]
-mod conformance_tests;
-mod core;
-mod doctor;
+// The CLI on top of the library (src/lib.rs): argument parsing, reports, and the seam wired end to end.
+use adapters::grok_bot::{bundle, describe, export_json, GrokBot};
+use adapters::hermes::{spec, sync as hermes, twoway, HermesProfile};
+use botport::core::adapter::{retain_skills, Adapter, Item, Source, St, Target};
+use botport::core::util;
+use botport::{adapters, battery, doctor};
 
-// Old module paths kept as aliases so moved code compiles unchanged (see docs/ARCHITECTURE.md).
-use crate::core::adapter::Adapter;
-use crate::core::{util, yaml11};
-use adapters::grok_bot::{bundle, describe, export_json};
-use adapters::hermes::{spec, sync as hermes, twoway};
-
-use hermes::{Ctx, Item, St};
+use hermes::Ctx;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -136,8 +128,8 @@ fn emit(a: &Args, cmd: &str, r: Report) -> ExitCode {
         dir.join("botport").join(name)
     });
     // stdout is an output too: the same guard as every file write
-    if let Err(e) = crate::core::secrets::guard("the report", json_sorted(&r.json).as_bytes())
-        .and_then(|_| crate::core::secrets::guard("the summary", r.lines.join("\n").as_bytes()))
+    if let Err(e) = botport::core::secrets::guard("the report", json_sorted(&r.json).as_bytes())
+        .and_then(|_| botport::core::secrets::guard("the summary", r.lines.join("\n").as_bytes()))
     {
         eprintln!("botport: ERROR: {e}");
         return ExitCode::from(2);
@@ -238,7 +230,7 @@ fn cmd_describe(a: &Args) -> Res<Report> {
         .path("out")
         .unwrap_or_else(|| PathBuf::from("describe.json"));
     if out.as_os_str() == "-" {
-        crate::core::secrets::guard("describe.json", json_sorted(&v).as_bytes())?;
+        botport::core::secrets::guard("describe.json", json_sorted(&v).as_bytes())?;
         print!("{}", json_sorted(&v));
     } else {
         write_atomic(&out, json_sorted(&v).as_bytes(), Some(0o644))?;
@@ -320,18 +312,10 @@ fn verify_export(p: &std::path::Path) -> Res<Report> {
     })
 }
 
-/// A bundle directory, or a grok-bot-export.json file (upstream `hermes migrate grok-bot` input).
-fn load_source(p: &std::path::Path) -> Res<bundle::Bundle> {
-    if export_json::is_export(p) {
-        export_json::load_bundle(p)
-    } else {
-        bundle::load(p)
-    }
-}
-
 fn cmd_profile(a: &Args, cmd: &str) -> Res<Report> {
     let bdir = a.path("bundle").ok_or("--bundle is required")?;
-    let mut b = load_source(&bdir)?;
+    // The seam: the source adapter reads a neutral model; the Hermes target plans and applies it.
+    let (mut m, mut src) = GrokBot.read_source(&bdir)?;
     let sp = match a.path("spec") {
         Some(p) => spec::Spec::load(
             &p,
@@ -374,16 +358,9 @@ fn cmd_profile(a: &Args, cmd: &str) -> Res<Report> {
     let sent = hermes::read_lock(&dest)
         .map(|l| l.h2g_skills)
         .unwrap_or_default();
-    b.retain_skills(|n| sp.skill_allowed(n) || sent.contains_key(n));
-    let c = Ctx {
-        bundle: &b,
-        spec: &sp,
-        profile: profile.clone(),
-        dest: dest.clone(),
-        real_home,
-        hermes_bin: a.get("hermes-bin").unwrap_or("hermes").to_string(),
-        hermes_home: (hh != home().join(".hermes")).then(|| hh.clone()),
-    };
+    retain_skills(&mut m, &mut src, |n| {
+        sp.skill_allowed(n) || sent.contains_key(n)
+    });
     let dir = a.get("direction").unwrap_or(if sp.hermes_export.is_some() {
         "both"
     } else {
@@ -395,6 +372,15 @@ fn cmd_profile(a: &Args, cmd: &str) -> Res<Report> {
     let h2g_out = a
         .path("out")
         .or(sp.hermes_export.as_ref().and_then(|h| h.out.clone()));
+    let o = adapters::hermes::Opts {
+        spec: sp,
+        profile: profile.clone(),
+        real_home,
+        hermes_bin: a.get("hermes-bin").unwrap_or("hermes").to_string(),
+        hermes_home: (hh != home().join(".hermes")).then(|| hh.clone()),
+    };
+    let target = HermesProfile;
+    let c = Ctx::new(&m, &src, &dest, &o);
     if cmd == "export-hermes" || (cmd == "sync" && dir == "h2g") || (cmd == "drift" && dir == "h2g")
     {
         return h2g_report(
@@ -408,7 +394,7 @@ fn cmd_profile(a: &Args, cmd: &str) -> Res<Report> {
     // Pre-flight: the report an apply prints is the plan's items plus paths under `dest`; guard it before
     // anything is written, so a refused report never follows a half-done apply.
     let preflight = || -> Res<()> {
-        let items = hermes::plan(&c)?.items;
+        let items = target.plan(&m, &src, &dest, &o)?.items;
         // cron goes through the hermes CLI: check it starts before the first file is written
         if c.real_home
             && !a.has("dry-run")
@@ -416,43 +402,41 @@ fn cmd_profile(a: &Args, cmd: &str) -> Res<Report> {
                 .iter()
                 .any(|i| i.area == "cron" && matches!(i.status, St::Create | St::Update))
         {
-            crate::doctor::runnable(&c.hermes_bin)
+            doctor::runnable(&c.hermes_bin)
                 .map_err(|e| format!("cron items need hermes: {e} (or pass --no-cron)"))?;
         }
         let r = profile_report(
             cmd,
             &profile,
             &dest,
-            &b,
+            &src,
             items,
             Some(dest.join(hermes::BACKUPS).join("restore.zip")),
             false,
             a.has("dry-run"),
         );
-        crate::core::secrets::guard("the report", json_sorted(&r.json).as_bytes())
-            .and_then(|_| crate::core::secrets::guard("the summary", r.lines.join("\n").as_bytes()))
+        botport::core::secrets::guard("the report", json_sorted(&r.json).as_bytes()).and_then(
+            |_| botport::core::secrets::guard("the summary", r.lines.join("\n").as_bytes()),
+        )
     };
     let (items, rp, restart) = match cmd {
-        "plan" | "drift" => (hermes::plan(&c)?.items, None, false),
+        "plan" | "drift" => (target.plan(&m, &src, &dest, &o)?.items, None, false),
         "sync" => {
-            let p = hermes::plan(&c)?;
+            let p = target.plan(&m, &src, &dest, &o)?;
             let unchanged = !hermes::has_legacy_names(&dest)
-                && p.lock
-                    .as_ref()
-                    .map(|l| l.bundle_digest == b.digest())
-                    .unwrap_or(false)
+                && p.synced_digest == Some(src.digest())
                 && !p.items.iter().any(|i| i.status.is_change());
             if unchanged {
                 (p.items, None, false)
             } else {
                 preflight()?;
-                let r = hermes::apply(&c, a.has("adopt"), a.has("dry-run"))?;
+                let r = target.apply(&m, &src, &dest, &o, a.has("adopt"), a.has("dry-run"))?;
                 (r.items, r.restore_point, r.restart_needed)
             }
         }
         _ => {
             preflight()?;
-            let r = hermes::apply(&c, a.has("adopt"), a.has("dry-run"))?;
+            let r = target.apply(&m, &src, &dest, &o, a.has("adopt"), a.has("dry-run"))?;
             (r.items, r.restore_point, r.restart_needed)
         }
     };
@@ -460,7 +444,7 @@ fn cmd_profile(a: &Args, cmd: &str) -> Res<Report> {
         cmd,
         &profile,
         &dest,
-        &b,
+        &src,
         items,
         rp,
         restart,
@@ -581,7 +565,7 @@ fn profile_report(
     cmd: &str,
     profile: &str,
     dest: &std::path::Path,
-    b: &bundle::Bundle,
+    src: &Source,
     items: Vec<Item>,
     rp: Option<PathBuf>,
     restart: bool,
@@ -602,7 +586,7 @@ fn profile_report(
         format!(
             "{cmd} {profile}: IN SYNC ({} items, source {})",
             items.len(),
-            short(&b.digest())
+            short(&src.digest())
         )
     } else {
         let mut parts = vec![];
@@ -628,7 +612,7 @@ fn profile_report(
             if applied { "applied: " } else { "" },
             parts.join(", "),
             items.len(),
-            short(&b.digest())
+            short(&src.digest())
         )
     };
     // plan/apply/sync say where they write, so a stray HERMES_HOME is visible before anything changes
@@ -699,7 +683,7 @@ fn profile_report(
         code,
         lines,
         json: json!({"command": cmd, "profile": profile, "dest": dest,
-        "bundle": b.root, "agent_id": b.agent_id, "bundle_digest": b.digest(), "in_sync": diffs.is_empty(), "items": items,
+        "bundle": src.path, "agent_id": src.id, "bundle_digest": src.digest(), "in_sync": diffs.is_empty(), "items": items,
         "restore_point": rp, "restart_needed": restart}),
     }
 }

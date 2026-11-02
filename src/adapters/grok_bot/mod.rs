@@ -3,9 +3,9 @@ pub mod bundle;
 pub mod describe;
 pub mod export_json;
 
-use crate::core::adapter::Adapter;
+use crate::core::adapter::{Adapter, Source};
 use crate::core::model::{
-    BotModel, Connector, CredentialRef, Fact, Persona, Schedule, ScheduleKind, Skill,
+    BotModel, Connector, CredentialRef, Fact, ManualItem, Persona, Schedule, ScheduleKind, Skill,
     SCHEMA_FAMILY, SCHEMA_MAJOR,
 };
 use crate::core::secrets;
@@ -16,22 +16,6 @@ use std::path::Path;
 pub const ID: &str = "grok-bot";
 
 pub struct GrokBot;
-
-/// Split skill files into UTF-8 text (model) and binary (returned for `extras`).
-pub(crate) fn split_files(
-    files: &std::collections::BTreeMap<String, Vec<u8>>,
-) -> (std::collections::BTreeMap<String, String>, Vec<String>) {
-    let (mut text, mut bin) = (std::collections::BTreeMap::new(), vec![]);
-    for (k, b) in files {
-        match String::from_utf8(b.clone()) {
-            Ok(s) => {
-                text.insert(k.clone(), s);
-            }
-            Err(_) => bin.push(k.clone()),
-        }
-    }
-    (text, bin)
-}
 
 /// Schedules, connectors and credential names the bot described, plus schedules it said run elsewhere.
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -176,6 +160,33 @@ fn dedup<T>(v: &mut Vec<T>, key: impl Fn(&T) -> String) {
     v.retain(|x| seen.insert(key(x)));
 }
 
+/// What the description names but nothing can import: secret-looking entries, schedules that run on another
+/// machine, apps without an MCP url (names and reasons only).
+fn manual_items(d: &Described) -> Vec<ManualItem> {
+    let mut out: Vec<ManualItem> = d
+        .manual
+        .iter()
+        .map(|(item, todo)| ManualItem {
+            item: item.clone(),
+            todo: todo.clone(),
+        })
+        .collect();
+    for n in &d.elsewhere {
+        out.push(ManualItem {
+            item: format!("schedule {n}"),
+            todo: "runs on another machine, not on Grok: move it by hand if it should".into(),
+        });
+    }
+    for a in &d.apps_without_url {
+        out.push(ManualItem {
+            item: format!("connector {a}"),
+            todo: "app without an MCP url (its login stays on the Grok side): connect it by hand"
+                .into(),
+        });
+    }
+    out
+}
+
 /// The model parts written back as a description `describe::parse` reads (events and paused flags as prose).
 fn render_description(m: &BotModel) -> String {
     let mut s = String::from("# Not captured by the export\n\n## The bot's description\n");
@@ -240,11 +251,26 @@ impl Adapter for GrokBot {
     }
 
     fn read(&self, src: &Path) -> Res<BotModel> {
-        if src.is_file() {
+        self.read_source(src).map(|(m, _)| m)
+    }
+
+    /// A grok-bot-export file, else a bundle directory (exported, or a hand export). Persona instructions come
+    /// only from an export file: a bundle's profile.json is kept verbatim in `extras` (a Grok box's profile carries
+    /// no live instructions, and the import never wrote them to SOUL.md).
+    fn read_source(&self, src: &Path) -> Res<(BotModel, Source)> {
+        if export_json::is_export(src) {
             let mut m = export_json::read_model(src)?;
             let d = described(src)?;
+            m.manual = manual_items(&d);
             (m.schedules, m.connectors, m.credentials) = (d.schedules, d.connectors, d.credentials);
-            return Ok(m);
+            let b = export_json::load_bundle(src)?;
+            let s = Source {
+                path: src.to_path_buf(),
+                id: b.agent_id,
+                files_read: b.read,
+                excluded: b.excluded,
+            };
+            return Ok((m, s));
         }
         let b = bundle::load(src)?;
         let base = if src.join("manifest.json").is_file() {
@@ -271,55 +297,42 @@ impl Adapter for GrokBot {
                 origin_side: None,
             })
             .collect();
-        let mut binary = vec![];
-        let mut bin_hex = serde_json::Map::new();
         let skills = b
             .skills
             .iter()
-            .map(|(n, files)| {
-                let (text, bin) = split_files(files);
-                for f in bin {
-                    let rel = format!("skills/{n}/{f}");
-                    bin_hex.insert(rel.clone(), json!(hex(&files[&f])));
-                    binary.push(rel);
-                }
-                let files = text;
-                Skill {
-                    name: n.clone(),
-                    description: None,
-                    files,
-                }
-            })
+            .map(|(n, files)| Skill::from_bytes(n, files))
             .collect();
         let mut extra = json!({"profile": profile});
         if !b.agent_id.is_empty() {
             extra["agent_id"] = json!(b.agent_id);
         }
-        if !binary.is_empty() {
-            extra["binary_files"] = json!(binary);
-            extra["binary_hex"] = bin_hex.into();
-        }
         let d = described(src)?;
-        if !d.elsewhere.is_empty() {
-            extra["schedules_elsewhere"] = json!(d.elsewhere);
-        }
         if d.unparsed > 0 {
             extra["describe_unparsed"] = json!(d.unparsed);
         }
-        Ok(BotModel {
+        let m = BotModel {
             schema: format!("{SCHEMA_FAMILY}/{SCHEMA_MAJOR}"),
             persona: Persona {
                 name: b.name.clone(),
-                instructions: profile["instructions"].as_str().unwrap_or("").to_string(),
+                instructions: String::new(),
             },
             memory,
+            memory_text: b.memory_md.clone(),
             skills,
+            manual: manual_items(&d),
             schedules: d.schedules,
             connectors: d.connectors,
             credentials: d.credentials,
             history: None,
             extras: [(ID.to_string(), extra)].into_iter().collect(),
-        })
+        };
+        let s = Source {
+            path: src.to_path_buf(),
+            id: b.agent_id,
+            files_read: b.read,
+            excluded: b.excluded,
+        };
+        Ok((m, s))
     }
 
     /// Writes the legacy hand-export layout (profile.json, MEMORY.md, skills/<name>/...), which `read` loads back.
@@ -347,17 +360,8 @@ impl Adapter for GrokBot {
             out.push(("NOT_CAPTURED.md".into(), render_description(m).into_bytes()));
         }
         for s in &m.skills {
-            for (rel, body) in &s.files {
-                out.push((
-                    format!("skills/{}/{rel}", s.name),
-                    body.clone().into_bytes(),
-                ));
-            }
-        }
-        let bins = m.extras.get(ID).and_then(|e| e["binary_hex"].as_object());
-        for (rel, h) in bins.into_iter().flatten() {
-            if let Some(b) = h.as_str().and_then(unhex) {
-                out.push((rel.clone(), b));
+            for (rel, body) in s.bytes() {
+                out.push((format!("skills/{}/{rel}", s.name), body));
             }
         }
         for (rel, b) in &out {
@@ -365,17 +369,6 @@ impl Adapter for GrokBot {
         }
         Ok(out.into_iter().map(|(r, _)| r).collect())
     }
-}
-
-fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02x}")).collect()
-}
-
-fn unhex(s: &str) -> Option<Vec<u8>> {
-    (0..s.len())
-        .step_by(2)
-        .map(|i| s.get(i..i + 2).and_then(|h| u8::from_str_radix(h, 16).ok()))
-        .collect()
 }
 
 #[cfg(test)]

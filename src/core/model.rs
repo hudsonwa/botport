@@ -1,5 +1,4 @@
 //! Platform-neutral bot model (`bot-model/1`). See docs/MODEL.md.
-#![allow(dead_code)] // types only for now; adapters move onto them later
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -10,15 +9,17 @@ pub const SCHEMA_FAMILY: &str = "bot-model";
 pub const SCHEMA_MAJOR: u32 = 1;
 /// `extras` key that holds top-level fields this build does not know (from a newer minor), kept, not dropped.
 pub const UNKNOWN_KEY: &str = "_unknown";
-const KNOWN: [&str; 9] = [
+const KNOWN: [&str; 11] = [
     "schema",
     "persona",
     "memory",
+    "memory_text",
     "skills",
     "schedules",
     "connectors",
     "credentials",
     "history",
+    "manual",
     "extras",
 ];
 
@@ -28,6 +29,10 @@ pub struct BotModel {
     pub persona: Persona,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub memory: Vec<Fact>,
+    /// The origin's memory as one document, verbatim (e.g. a MEMORY.md with its headings), when it keeps one.
+    /// `memory` holds the same facts one by one; a writer that keeps a document prefers this text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_text: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<Skill>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -38,6 +43,10 @@ pub struct BotModel {
     pub credentials: Vec<CredentialRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history: Option<HistoryRef>,
+    /// What the reader saw but could not carry (a schedule that runs elsewhere, an app with no url, an entry
+    /// that looked like it held a secret): names and reasons only, never a value. Writers list them for a human.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub manual: Vec<ManualItem>,
     /// Per-adapter area for data the model cannot express, keyed by adapter
     /// id. Adapters put unmappable input here instead of dropping it.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -75,9 +84,57 @@ pub struct Skill {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// Relative path -> UTF-8 content. Binary files go to `extras`.
+    /// Relative path -> UTF-8 content.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub files: BTreeMap<String, String>,
+    /// Relative path -> lowercase hex of a file that is not UTF-8 (images, archives).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub binary_files: BTreeMap<String, String>,
+}
+
+impl Skill {
+    /// Every file as bytes (text and binary), by relative path.
+    pub fn bytes(&self) -> BTreeMap<String, Vec<u8>> {
+        let mut out: BTreeMap<String, Vec<u8>> = self
+            .files
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone().into_bytes()))
+            .collect();
+        for (k, h) in &self.binary_files {
+            if let Some(b) = super::util::unhex(h) {
+                out.insert(k.clone(), b);
+            }
+        }
+        out
+    }
+
+    /// A skill from raw files: UTF-8 ones as text, the rest hex-encoded.
+    pub fn from_bytes(name: &str, files: &BTreeMap<String, Vec<u8>>) -> Skill {
+        let mut s = Skill {
+            name: name.to_string(),
+            description: None,
+            files: BTreeMap::new(),
+            binary_files: BTreeMap::new(),
+        };
+        for (k, b) in files {
+            match String::from_utf8(b.clone()) {
+                Ok(t) => {
+                    s.files.insert(k.clone(), t);
+                }
+                Err(_) => {
+                    s.binary_files.insert(k.clone(), super::util::hex(b));
+                }
+            }
+        }
+        s
+    }
+}
+
+/// Something only a human can set up; `item` names it (e.g. `schedule Nightly`), `todo` says what to do.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct ManualItem {
+    pub item: String,
+    pub todo: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
