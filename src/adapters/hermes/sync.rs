@@ -2263,6 +2263,91 @@ mod tests {
         );
     }
 
+    /// SOUL.md text with sections `a` and `b`, and a lock that recorded `old` for both and the whole file.
+    fn soul_fixture() -> (String, Lock) {
+        let now = render_soul(
+            None,
+            &[("a".into(), "A\n".into()), ("b".into(), "B\n".into())],
+        );
+        let mut lock = Lock::default();
+        for k in ["__file__", "a", "b"] {
+            lock.soul.insert(k.into(), "old".into());
+        }
+        (now, lock)
+    }
+
+    fn conflict(name: &str, unrecorded: bool) -> Item {
+        Item {
+            unrecorded,
+            ..item("soul", name, St::Conflict, "")
+        }
+    }
+
+    #[test]
+    fn soul_lock_no_conflict_records_file_and_every_section() {
+        let (now, mut lock) = soul_fixture();
+        let items = [
+            item("soul", "a", St::Update, ""),
+            item("soul", "b", St::InSync, ""),
+        ];
+        record_soul(&mut lock, &items, &now, false);
+        assert_eq!(lock.soul["__file__"], sha256_hex(now.as_bytes()));
+        assert_eq!(lock.soul["a"], sha256_hex(b"A\n"));
+        assert_eq!(lock.soul["b"], sha256_hex(b"B\n"));
+    }
+
+    #[test]
+    fn soul_lock_any_section_conflict_removes_file_and_keeps_that_sections_old_record() {
+        let (now, mut lock) = soul_fixture();
+        let items = [item("soul", "a", St::InSync, ""), conflict("b", false)];
+        record_soul(&mut lock, &items, &now, false);
+        assert!(!lock.soul.contains_key("__file__"));
+        assert_eq!(lock.soul["a"], sha256_hex(b"A\n"));
+        assert_eq!(
+            lock.soul["b"], "old",
+            "a conflicting section keeps its old record"
+        );
+    }
+
+    #[test]
+    fn soul_lock_whole_file_conflict_removes_file_and_records_no_section() {
+        let (now, mut lock) = soul_fixture();
+        record_soul(&mut lock, &[conflict("SOUL.md", true)], &now, false);
+        assert!(!lock.soul.contains_key("__file__"));
+        assert_eq!(
+            (lock.soul["a"].as_str(), lock.soul["b"].as_str()),
+            ("old", "old")
+        );
+    }
+
+    #[test]
+    fn soul_lock_adopted_unrecorded_conflict_counts_as_ours() {
+        let (now, mut lock) = soul_fixture();
+        record_soul(&mut lock, &[conflict("b", true)], &now, true);
+        assert_eq!(lock.soul["__file__"], sha256_hex(now.as_bytes()));
+        assert_eq!(lock.soul["b"], sha256_hex(b"B\n"));
+    }
+
+    #[test]
+    fn soul_lock_adopt_never_takes_over_a_recorded_conflict() {
+        let (now, mut lock) = soul_fixture();
+        record_soul(&mut lock, &[conflict("b", false)], &now, true);
+        assert!(!lock.soul.contains_key("__file__"));
+        assert_eq!(lock.soul["b"], "old");
+    }
+
+    #[test]
+    fn soul_lock_ignores_conflicts_in_other_areas() {
+        let (now, mut lock) = soul_fixture();
+        let items = [Item {
+            area: "config".into(),
+            ..conflict("a", false)
+        }];
+        record_soul(&mut lock, &items, &now, false);
+        assert_eq!(lock.soul["__file__"], sha256_hex(now.as_bytes()));
+        assert_eq!(lock.soul["a"], sha256_hex(b"A\n"));
+    }
+
     #[test]
     fn user_entries_split() {
         assert_eq!(entries("a\n§\nb\n"), vec!["a", "b"]);
