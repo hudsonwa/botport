@@ -5,7 +5,7 @@
 1. Tag a release (`v<version>`); `release.yml` publishes the four archives and `SHA256SUMS`.
 2. Fill in the checksums from `SHA256SUMS`:
 
-       v=0.1.1
+       v=0.1.2
        curl -fsSLO "https://github.com/hudsonwa/botport/releases/download/v$v/SHA256SUMS"
        cp packaging/homebrew/botport.rb /path/to/homebrew-tap/Formula/botport.rb
        sed -i '' -e "s/^  version \".*\"/  version \"$v\"/" /path/to/homebrew-tap/Formula/botport.rb

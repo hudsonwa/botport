@@ -3,7 +3,7 @@
 class Botport < Formula
   desc "Port, sync and bridge AI bots between Grok Bot and Hermes"
   homepage "https://github.com/hudsonwa/botport"
-  version "0.1.1"
+  version "0.1.2"
   license "MIT"
 
   on_macos do
