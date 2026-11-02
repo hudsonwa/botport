@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- `tests/e2e-real/run.sh` refuses to start if the throwaway profile name already exists, and its cleanup deletes only a
+  profile the run itself created (a failed create no longer deletes a same-named profile).
+- `g2h uninstall` treats its manifest as a hint: it removes only the exact files setup writes (recomputed under the g2h
+  home and the service dir), never symlinks or directories, and reports anything else in the manifest as skipped.
+- The `shim/` tests say loudly that they skip without the agent-importers source (CI has none); docs no longer imply CI
+  runs them. `SHIM_REQUIRE_SRC=1` makes a missing source fail.
 - Event schedules survive a Grok round trip (#14): `describe` reads a schedule line whose time is "on an event"
   (or "event-triggered") as `kind: event` with no cron, instead of a schedule Hermes cannot accept. Events are still
   never turned into cron jobs. The NOT_CAPTURED.md botport writes now keeps an event's prompt.

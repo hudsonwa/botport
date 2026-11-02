@@ -1,6 +1,10 @@
 """The grok-bot source shim, run inside a patched copy of agent-importers (needs the built binary).
 
-Run: BOTPORT_BIN=target/release/botport python -m pytest shim/ --timeout=60
+Run: BOTPORT_BIN=target/release/botport python -m pytest shim/ --timeout=60 -rs
+
+Needs the agent-importers source (older than 1.2.0) at AGENT_IMPORTERS_SRC or vendor/agent-importers; it is not
+in this repo. Without it every test here SKIPS (CI has no copy, so CI skips them). SHIM_REQUIRE_SRC=1 turns the
+skip into a failure.
 """
 import importlib
 import json
@@ -20,7 +24,11 @@ VENDOR = Path(os.environ.get("AGENT_IMPORTERS_SRC",
 @pytest.fixture()
 def pkg(tmp_path):
     if not VENDOR.is_dir():
-        pytest.skip("agent-importers source not available")
+        msg = (f"agent-importers source not found at {VENDOR} (set AGENT_IMPORTERS_SRC); "
+               "shim integration tests NOT run")
+        if os.environ.get("SHIM_REQUIRE_SRC") == "1":
+            pytest.fail(msg)
+        pytest.skip(msg)
     dst = tmp_path / "pkgs" / "agent_importers"
     shutil.copytree(VENDOR, dst, ignore=shutil.ignore_patterns("tests", "__pycache__"))
     subprocess.run(["patch", "-p1", "-s", "-i", str(HERE / "agent-importers-grok-bot.patch")], cwd=dst, check=True)

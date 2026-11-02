@@ -549,3 +549,51 @@ fn selftest_wake_only_needs_no_gateway() {
     );
     assert_no_secret(&s);
 }
+
+#[test]
+fn uninstall_never_follows_a_corrupted_manifest_outside() {
+    let e = env();
+    assert!(setup(&e).status.success());
+    let outside = e._t.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    let victim = outside.join("precious.txt");
+    let victim_unit = outside.join("other.plist");
+    let link_target = outside.join("linked.txt");
+    for f in [&victim, &victim_unit, &link_target] {
+        std::fs::write(f, "keep me").unwrap();
+    }
+    let mpath = e.home.join("setup-manifest.json");
+    let mut m: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&mpath).unwrap()).unwrap();
+    m["created"].as_array_mut().unwrap().extend([
+        serde_json::json!(victim),
+        serde_json::json!(e.home.join("../outside/precious.txt")),
+        serde_json::json!(outside),
+    ]);
+    m["service"][1] = serde_json::json!(victim_unit);
+    std::fs::write(&mpath, serde_json::to_string(&m).unwrap()).unwrap();
+    // a credentials path that is a symlink to a file outside is not followed or removed
+    std::fs::remove_file(e.home.join("credentials")).unwrap();
+    std::os::unix::fs::symlink(&link_target, e.home.join("credentials")).unwrap();
+    let o = g2h(&e, &["uninstall"], "");
+    assert!(o.status.success(), "{}", all(&o));
+    let s = all(&o);
+    assert!(s.contains("not a file g2h setup writes"), "{s}");
+    assert!(s.contains("a symlink"), "{s}");
+    for f in [&victim, &victim_unit, &link_target] {
+        assert_eq!(
+            std::fs::read_to_string(f).unwrap(),
+            "keep me",
+            "{}",
+            f.display()
+        );
+    }
+    assert!(outside.is_dir());
+    assert!(
+        e.home.join("credentials").symlink_metadata().is_ok(),
+        "symlink left alone"
+    );
+    // the real files setup wrote are still removed
+    assert!(!e.home.join("config.toml").exists());
+    assert!(!service_file(&e).exists());
+}

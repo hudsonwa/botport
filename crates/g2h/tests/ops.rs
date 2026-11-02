@@ -930,8 +930,8 @@ fn inbox_credentials_in_check_manifest_and_uninstall() {
     .unwrap();
     assert!(g2h_out(&home, &["setup", "--check"])
         .contains("[FAIL] inbox.credentials: present, mode 644"));
-    g2h_out(&home, &["uninstall"]);
-    assert!(!p.inbox_credentials().exists());
+    let u = g2h_out(&home, &["uninstall"]);
+    assert!(!p.inbox_credentials().exists(), "{u}");
 }
 
 #[test]

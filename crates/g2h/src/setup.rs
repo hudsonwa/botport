@@ -799,17 +799,35 @@ fn url_allowed(url: &str) -> bool {
 /// files setup created (config.toml only if setup created it), runtime state, logs unless `keep_logs`; print the manual Grok-side step.
 pub fn uninstall(p: &Paths, keep_logs: bool) -> i32 {
     let m = Manifest::load(p);
-    let label = Config::load(&p.config()).unwrap_or_default().service_label;
-    let (label, svc) = m
+    let cfg_label = Config::load(&p.config()).unwrap_or_default().service_label;
+    let label = m
         .service
-        .clone()
-        .unwrap_or_else(|| (label.clone(), service_file(&label).unwrap_or_default()));
+        .as_ref()
+        .map_or(cfg_label.clone(), |(l, _)| l.clone());
     // a label edited into config.yaml never reaches launchctl/systemctl unless it is plain reverse-DNS
     match check_service_label(&label) {
         Ok(()) => service_unload(&label),
         Err(e) => eprintln!("not unloading the service: {e}"),
     }
-    let mut gone: Vec<PathBuf> = vec![svc, p.credentials()];
+    // The manifest is only a hint: a path is removed only if it is one of the exact files setup
+    // writes, recomputed here (g2h home files, and the unit file of a valid label in the service dir).
+    let mut allowed: BTreeSet<PathBuf> = [
+        p.config(),
+        p.credentials(),
+        p.inbox_credentials(),
+        Manifest::path(p),
+    ]
+    .into();
+    allowed.extend(
+        [&cfg_label, &label]
+            .into_iter()
+            .filter_map(|l| service_file(l)),
+    );
+    let mut gone: Vec<PathBuf> = service_file(&label).into_iter().collect();
+    gone.push(p.credentials());
+    if let Some((_, svc)) = &m.service {
+        gone.push(svc.clone());
+    }
     gone.extend(m.created.iter().cloned());
     if !m.created.contains(&p.config()) && p.config().exists() {
         println!(
@@ -817,21 +835,49 @@ pub fn uninstall(p: &Paths, keep_logs: bool) -> i32 {
             p.config().display()
         );
     }
-    gone.extend([
+    let runtime = [
         Manifest::path(p),
         p.state(),
         p.sessions(),
         p.lock(),
         p.socket(),
-    ]);
+    ];
+    allowed.extend(runtime.iter().cloned());
+    gone.extend(runtime);
     if !keep_logs {
         let log = p.log().to_string_lossy().to_string();
-        gone.push(p.log());
-        gone.extend((1..=9).map(|n| PathBuf::from(format!("{log}.{n}"))));
-        gone.push(p.home.join("g2hd.err"));
+        let mut logs = vec![p.log(), p.home.join("g2hd.err")];
+        logs.extend((1..=9).map(|n| PathBuf::from(format!("{log}.{n}"))));
+        allowed.extend(logs.iter().cloned());
+        gone.extend(logs);
     }
+    let allowed: BTreeSet<PathBuf> = allowed.iter().map(|f| real_parent(f)).collect();
     let mut removed = 0;
+    let mut seen = BTreeSet::new();
     for f in gone.iter().filter(|f| !f.as_os_str().is_empty()) {
+        let f = &real_parent(f);
+        if !seen.insert(f.clone()) {
+            continue;
+        }
+        if !allowed.contains(f) {
+            println!(
+                "skipped {} (in the manifest, but not a file g2h setup writes; left alone)",
+                f.display()
+            );
+            continue;
+        }
+        match std::fs::symlink_metadata(f) {
+            Ok(md) if md.file_type().is_symlink() => {
+                println!("skipped {} (a symlink; left alone)", f.display());
+                continue;
+            }
+            Ok(md) if md.is_dir() => {
+                println!("skipped {} (a directory; left alone)", f.display());
+                continue;
+            }
+            Ok(_) => {}
+            Err(_) => continue,
+        }
         if std::fs::remove_file(f).is_ok() {
             println!("removed {}", f.display());
             removed += 1;
@@ -846,6 +892,18 @@ pub fn uninstall(p: &Paths, keep_logs: bool) -> i32 {
     );
     println!("\n{ROUTINE_NOTE}\nHermes side: remove the g2h hermes-send skill/tool text if you added it.");
     0
+}
+
+/// `f` with its parent directory resolved (the final component is kept as is, so a symlink stays
+/// a symlink): `/var/x` and `/private/var/x` compare equal, `home/../elsewhere/f` does not match `home/f`.
+fn real_parent(f: &Path) -> PathBuf {
+    match (
+        f.parent().and_then(|d| d.canonicalize().ok()),
+        f.file_name(),
+    ) {
+        (Some(d), Some(n)) => d.join(n),
+        _ => f.to_path_buf(),
+    }
 }
 
 /// `g2h selftest [--live] [--yes] [--timeout S]`.
