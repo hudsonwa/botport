@@ -6,10 +6,11 @@ the hub; adapters are spokes. Every adapter does two things:
 - **read**: native layout on disk -> `BotModel`
 - **write**: `BotModel` -> native layout on disk (returns the relative paths it wrote)
 
-**What works today.** A new adapter can read its platform into a `BotModel` (and write one back) and pass the
-conformance suite below. It does **not** yet feed `plan`, `apply` or `sync`: those still run on the Grok bundle through
-Hermes-specific code (see [ARCHITECTURE.md](ARCHITECTURE.md)). Routing them through `BotModel` is in progress
-(see the roadmap in [ARCHITECTURE.md](ARCHITECTURE.md#today-vs-target)), so a new adapter on its own does not make `plan` port that platform to Hermes yet.
+**What works today.** `plan`, `apply`, `sync` and `drift` run on the model: a source adapter's `read_source` gives
+a `BotModel` and a `Source`, and the Hermes adapter (the one `Target`) plans and applies it (see
+[ARCHITECTURE.md](ARCHITECTURE.md#the-seam-srccoreadapterrs)). A new source adapter that passes the conformance
+suite can therefore feed Hermes; the CLI only selects the Grok Bot source today (`--bundle`), so wiring a way to
+choose your adapter in `cmd_profile` (`src/main.rs`) is part of adding one.
 
 ## The trait
 
@@ -19,9 +20,15 @@ Hermes-specific code (see [ARCHITECTURE.md](ARCHITECTURE.md)). Routing them thro
 pub trait Adapter {
     fn id(&self) -> &'static str;                               // stable id, also its key in BotModel::extras
     fn read(&self, src: &Path) -> Res<BotModel>;
+    fn read_source(&self, src: &Path) -> Res<(BotModel, Source)>; // default: read, no files recorded
     fn write(&self, m: &BotModel, dest: &Path) -> Res<Vec<String>>;
 }
 ```
+
+Implement `read_source` too if your adapter is a sync source: `Source.files_read` (relative path -> sha256) is
+what the sync digest covers, so `sync` notices when the source changed. Only an adapter that keeps a live install
+in step implements `Target` (`plan`/`apply`); Hermes does today. The trait is public API of the `botport` library
+(`src/lib.rs`).
 
 ## Where files go and naming
 
@@ -62,6 +69,11 @@ pub trait Adapter {
 | `has_schema_version` | `schema` is a supported version |
 | `check` | all of the above |
 
+The suite also has `round_trips_schedules` (a schedule with a cron keeps its cron and action; an event or manual
+`schedule X` item keeps at least its name), `round_trips_connectors` (a connector with a url keeps it; others, or
+manual `connector X` items, keep their name) and `round_trips_credential_names`. Each one fails for an adapter
+that drops that part (`src/conformance_tests.rs` proves it with deliberately lossy wrappers).
+
 ### Adding your fixture
 
 Create `tests/fixtures/conformance/<id>/` with a minimal native layout that contains:
@@ -69,12 +81,14 @@ Create `tests/fixtures/conformance/<id>/` with a minimal native layout that cont
 1. a persona/instructions, at least two memory facts and one skill (if the platform has them);
 2. the string `CONFORMANCE-FAKE-SECRET-0000` where a real credential would live (e.g. `.env`, a token field);
 3. the string `CONFORMANCE-UNKNOWN-MARKER` in a field or file your mapping has no model field for.
+4. at least one schedule with a cron, one connector with an http url and one credential name.
 
 Use made-up content only. Then add one line to `src/conformance_tests.rs`:
 
 ```rust
 suite!(open_claw, OpenClaw, "open-claw", [read_is_deterministic, round_trips_portable_fields,
-    never_leaks_credentials, has_no_absolute_paths, keeps_unknown_data_in_extras, has_schema_version]);
+    round_trips_schedules, round_trips_connectors, round_trips_credential_names, never_leaks_credentials,
+    has_no_absolute_paths, keeps_unknown_data_in_extras, has_schema_version]);
 ```
 
 A check that cannot pass yet may be marked `name #[ignore = "fails: <reason>"]` in that list, with an issue to fix it.
@@ -90,7 +104,8 @@ cargo clippy --all-targets -- -D warnings && cargo fmt --check
 ## Checklist for a new adapter PR
 
 - [ ] `src/adapters/<id>/` with `read` + `write`, registered in `src/adapters/mod.rs`
-- [ ] fixture under `tests/fixtures/conformance/<id>/`, made-up data, seeded secret + unknown marker
+- [ ] fixture under `tests/fixtures/conformance/<id>/`, made-up data, seeded secret + unknown marker, a cron
+  schedule, an http connector and a credential name
 - [ ] conformance suite line, all checks passing (or ignored with a reason and an issue)
 - [ ] MODEL.md mapping-table section for the platform
 - [ ] no secrets, no machine paths, no platform names in `src/core/`

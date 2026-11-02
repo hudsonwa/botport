@@ -32,13 +32,13 @@ Platform changes we hit and how the brief or tool adapted are logged in
 ## Where it's going (roadmap)
 | Item | Status |
 |---|---|
-| Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | in progress (lands in v0.1.0) |
+| Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | done (v0.1.0) |
 | OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |
 | `g2hd` running as a separate OS user | planned |
 
-The OpenClaw and OpenBot adapters are what the `BotModel` seam is for: once it lands, each new platform needs one
-adapter that reads into and writes from the neutral model, and it can then port to and from every other adapter.
+The OpenClaw and OpenBot adapters are what the `BotModel` seam is for: plan/apply/sync/drift now run on the neutral
+model, so each new platform needs one adapter that reads into (and writes from) that model. Neither adapter has code yet.
 
 Details in [ROADMAP.md](ROADMAP.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#today-vs-target).
 
@@ -127,8 +127,8 @@ the repo. The history was squashed into one commit for the public release.
 
 ## Docs and contributing
 - [docs/README.md](docs/README.md): every guide, in one list.
-- [CONTRIBUTING.md](CONTRIBUTING.md): build, test, and send a pull request. Rust help with adapters is welcome
-  once the adapter seam lands (see the roadmap above).
+- [CONTRIBUTING.md](CONTRIBUTING.md): build, test, and send a pull request. Rust help with adapters is welcome:
+  OpenClaw and OpenBot are the next ones (see the roadmap above).
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License and credits

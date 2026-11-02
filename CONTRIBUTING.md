@@ -5,9 +5,10 @@ would matter most:
 1. **A co-maintainer who runs Grok Bots daily**, to own the export brief ([docs/AGENT-EXPORT.md](docs/AGENT-EXPORT.md))
    and the Grok side. The brief is a contract with a closed platform that changes without notice; it needs someone
    who notices first. Changes go in [docs/PLATFORM-CHANGES.md](docs/PLATFORM-CHANGES.md).
-2. **Rust contributors for adapters, once the adapter seam lands** (plan/apply/sync/drift routed through `BotModel` +
-   `Adapter`; status in [ROADMAP.md](ROADMAP.md)). The next adapters are OpenClaw (formerly Moltbot/Clawdbot) and
-   OpenBot; both issues are labelled `blocked` until the seam lands.
+2. **Rust contributors for adapters.** plan/apply/sync/drift run through `BotModel` + `Adapter` since v0.1.0, so an
+   adapter that reads its platform into the model can be ported to Hermes. The next adapters are OpenClaw (formerly
+   Moltbot/Clawdbot), [#1](https://github.com/hudsonwa/botport/issues/1), and OpenBot,
+   [#2](https://github.com/hudsonwa/botport/issues/2).
 
 You don't need to be a Rust expert for everything else: docs, test cases and bug reports with the `--json` output
 attached all help.
@@ -28,6 +29,9 @@ cargo test --workspace           # unit, conformance and CLI tests; no network, 
 scripts/ci.sh                    # what CI runs: fmt, build, clippy -D warnings, tests, cargo-deny if installed
 ```
 Run `scripts/ci.sh` before you open a pull request. If it passes locally, CI should pass too.
+For a refactor that should not change behaviour (e.g. of `src/adapters/hermes/sync.rs`), run
+`scripts/golden.sh BIN OUTDIR` with a binary built before and one built after, then `diff -r` the two output dirs;
+it should be empty.
 
 Tests never touch your real `~/.hermes` or `~/.g2h`: they use temp directories. Please keep it that way in new tests.
 `tests/e2e-real/` talks to real bots and is skipped unless you opt in; you don't need it for a normal PR.
@@ -50,9 +54,10 @@ separate Claude agent acting as auditor (a fresh session with its own checklist)
 three fresh-context Claude critique passes reviewed the repo. The history was squashed into one commit for the public release.
 
 ## Adding a platform
-New platforms are added as adapters. Today an adapter reads its platform into the neutral model, writes it back and
-passes the conformance tests; `plan`/`apply`/`sync`/`drift` do not go through adapters yet (in progress), so a new
-adapter cannot port a platform end to end until that lands. Read [docs/ADAPTERS.md](docs/ADAPTERS.md) (the trait, mapping rules and the
+New platforms are added as adapters. An adapter reads its platform into the neutral model and writes it back, and
+`plan`/`apply`/`sync`/`drift` port that model to Hermes. To be merged it must pass the whole conformance suite,
+including the schedule, connector and credential-name round trips, which fail for an adapter that drops them;
+the CLI also needs a way to select it as a source (today only `--bundle`, the Grok Bot source). Read [docs/ADAPTERS.md](docs/ADAPTERS.md) (the trait, mapping rules and the
 conformance tests every adapter must pass) and [docs/MODEL.md](docs/MODEL.md) (the neutral model and the planned
 OpenClaw and OpenBot mappings).
 
