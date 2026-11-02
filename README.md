@@ -1,8 +1,7 @@
 # botport
 
-**botport connects a Grok Bot (a custom bot on xAI's [Grok](https://grok.com)) with a
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) bot (Nous Research's open-source agent that runs on
-your own machine).**
+**botport connects a bot in xAI's [Grok Bot](https://grok.com) with a bot in open-source Nous Research's
+[Hermes Agent](https://github.com/NousResearch/hermes-agent).**
 
 ## What works today, between a Grok Bot and a Hermes bot
 1. **Export and import, both directions.** The Grok Bot exports itself into a bundle and `botport apply` turns it
