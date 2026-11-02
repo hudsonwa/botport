@@ -698,3 +698,26 @@ fn allowlist_two_way_excluded_grok_skill_never_sent_back_but_hermes_made_still_i
     assert_eq!(x.run("sync", &[]).0, 0);
     assert!(!prof.join("skills/sample-skills/shared-lib").exists());
 }
+
+/// A spec cron job whose schedule Hermes' parse_schedule would reject stops the plan, naming the job.
+#[test]
+fn spec_cron_schedule_outside_hermes_grammar_stops_the_plan() {
+    let wd = World::new("spec-cron-grammar");
+    assert_eq!(wd.export_grok().0, 0);
+    w(
+        &wd.p("repo/tpl/cron.yaml"),
+        "jobs:\n  - name: digest\n    schedule: hourly\n    deliver: local\n    prompt: go\n",
+    );
+    let (rc, out) = wd.run("plan", &[]);
+    assert_ne!(rc, 0, "{out}");
+    assert!(
+        out.contains("job digest: not imported: 'hourly' is not a schedule Hermes accepts"),
+        "{out}"
+    );
+    w(
+        &wd.p("repo/tpl/cron.yaml"),
+        "jobs:\n  - name: digest\n    schedule: every 2h\n    deliver: local\n    prompt: go\n",
+    );
+    let (rc, out) = wd.run("plan", &[]);
+    assert!(rc == 0 || rc == 1, "{out}");
+}

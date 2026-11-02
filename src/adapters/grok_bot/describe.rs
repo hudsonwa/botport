@@ -97,10 +97,15 @@ fn none_line(t: &str) -> bool {
 
 /// `Some(Err(()))` = an ambiguous abbreviation (CST): reported, never guessed.
 fn timezone(t: &str) -> Option<Result<String, ()>> {
+    timezone_at(t).map(|(z, _)| z)
+}
+
+/// The timezone and the byte range of its token in `t`.
+fn timezone_at(t: &str) -> Option<(Result<String, ()>, std::ops::Range<usize>)> {
     static I: OnceLock<Regex> = OnceLock::new();
     static A: OnceLock<Regex> = OnceLock::new();
     if let Some(m) = re(&I, r"\b(?:Africa|America|Antarctica|Asia|Atlantic|Australia|Europe|Indian|Pacific|Etc)/[A-Za-z_]+(?:/[A-Za-z_]+)?\b").find(t) {
-        return Some(Ok(m.as_str().into()));
+        return Some((Ok(m.as_str().into()), m.range()));
     }
     let a = re(
         &A,
@@ -108,99 +113,48 @@ fn timezone(t: &str) -> Option<Result<String, ()>> {
         r"(?:\d(?:\s*[aApP][mM])?\s*|\b[aA][tT]\s+|\d\s*(?:mins?|minutes?|hours?|hrs?)\s+)(UTC|GMT|Z|AWST|AEST|AEDT|ACST|ACDT|JST|SGT|CET|CEST|BST|EST|EDT|CST|CDT|PST|PDT)\b",
     )
     .captures(t)?;
+    let at = a.get(1).unwrap().range();
     if &a[1] == "CST" {
-        return Some(Err(()));
+        return Some((Err(()), at));
     }
-    Some(Ok(match &a[1] {
-        "UTC" | "GMT" | "Z" => "UTC",
-        "AWST" => "Etc/GMT-8",
-        "AEST" | "AEDT" => "Australia/Sydney",
-        "ACST" | "ACDT" => "Australia/Adelaide",
-        "JST" => "Asia/Tokyo",
-        "SGT" => "Asia/Singapore",
-        "CET" | "CEST" => "Europe/Paris",
-        "BST" => "Europe/London",
-        "EST" | "EDT" => "America/New_York",
-        "CDT" => "America/Chicago",
-        _ => "America/Los_Angeles",
-    }
-    .into()))
+    Some((
+        Ok(match &a[1] {
+            "UTC" | "GMT" | "Z" => "UTC",
+            "AWST" => "Etc/GMT-8",
+            "AEST" | "AEDT" => "Australia/Sydney",
+            "ACST" | "ACDT" => "Australia/Adelaide",
+            "JST" => "Asia/Tokyo",
+            "SGT" => "Asia/Singapore",
+            "CET" | "CEST" => "Europe/Paris",
+            "BST" => "Europe/London",
+            "EST" | "EDT" => "America/New_York",
+            "CDT" => "America/Chicago",
+            _ => "America/Los_Angeles",
+        }
+        .into()),
+        at,
+    ))
 }
 
-fn clock(t: &str) -> Option<(u32, u32)> {
-    static R: OnceLock<Regex> = OnceLock::new();
-    let c = re(
-        &R,
-        r"(?i)\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\b(\d{1,2}):(\d{2})\b",
-    )
-    .captures(t)?;
-    let (h, m) = if c.get(1).is_some() {
-        let h: u32 = c[1].parse().ok()?;
-        let m: u32 = c.get(2).map_or(Some(0), |m| m.as_str().parse().ok())?;
-        let pm = c[3].eq_ignore_ascii_case("pm");
-        (
-            match (h, pm) {
-                (12, false) => 0,
-                (12, true) => 12,
-                (h, true) => h + 12,
-                (h, false) => h,
-            },
-            m,
-        )
-    } else {
-        (c[4].parse().ok()?, c[5].parse().ok()?)
-    };
-    (h < 24 && m < 60).then_some((h, m))
-}
-
-/// Recognised time phrases -> 5-field cron. Anything else -> None (the caller reports it, it never guesses).
-fn cron(t: &str) -> Option<String> {
-    static LIT: OnceLock<Regex> = OnceLock::new();
-    static EVERY: OnceLock<Regex> = OnceLock::new();
-    static HOURLY: OnceLock<Regex> = OnceLock::new();
-    static DAYS: OnceLock<Regex> = OnceLock::new();
-    if let Some(c) = re(&LIT, r"`([\d*/,\-]+(?:\s+[\d*/,\-A-Za-z]+){4})`").captures(t) {
-        return Some(c[1].split_whitespace().collect::<Vec<_>>().join(" "));
+/// The schedule text of a `when`: the timezone token, "(paused)" and backticks around a cron literal removed.
+/// What is left must be a string Hermes accepts (`hermes::schedule`); nothing else is interpreted. An ambiguous
+/// timezone stays in, so the schedule is refused rather than run in a guessed zone.
+fn schedule_text(when: &str) -> String {
+    let mut t = when.to_string();
+    if let Some((Ok(_), r)) = timezone_at(&t) {
+        t.replace_range(r, " ");
     }
-    if let Some(c) = re(
-        &EVERY,
-        r"(?i)\bevery\s+(\d+)\s*(min|minute|minutes|mins|m|h|hr|hrs|hour|hours)\b",
-    )
-    .captures(t)
-    {
-        let n: u32 = c[1].parse().ok()?;
-        return if c[2].to_ascii_lowercase().starts_with('m') {
-            (1..60).contains(&n).then(|| format!("*/{n} * * * *"))
-        } else {
-            (1..24).contains(&n).then(|| format!("0 */{n} * * *"))
-        };
+    static P: OnceLock<Regex> = OnceLock::new();
+    let t = re(&P, r"(?i)\(paused\)")
+        .replace_all(&t, " ")
+        .replace('`', " ");
+    let mut t = t.split_whitespace().collect::<Vec<_>>().join(" ");
+    for tail in [" at", " in"] {
+        if t.to_ascii_lowercase().ends_with(tail) {
+            t.truncate(t.len() - tail.len());
+        }
     }
-    if let Some(c) = re(
-        &HOURLY,
-        r"(?i)\b(?:hourly|every hour)\b(?:\s+at\s+:?(\d{1,2})\b)?",
-    )
-    .captures(t)
-    {
-        let m: u32 = c.get(1).map_or(Some(0), |m| m.as_str().parse().ok())?;
-        return (m < 60).then(|| format!("{m} * * * *"));
-    }
-    let d = re(&DAYS, r"(?i)\b(daily|every day|nightly|weekdays|weekends|mondays|tuesdays|wednesdays|thursdays|fridays|saturdays|sundays)\b").captures(t)?;
-    let dow = match d[1].to_ascii_lowercase().as_str() {
-        "weekdays" => "1-5",
-        "weekends" => "0,6",
-        "mondays" => "1",
-        "tuesdays" => "2",
-        "wednesdays" => "3",
-        "thursdays" => "4",
-        "fridays" => "5",
-        "saturdays" => "6",
-        "sundays" => "0",
-        _ => "*",
-    };
-    // "weekdays 7am" or "7am weekdays"
-    let (h, m) =
-        clock(&t[d.get(0).unwrap().end()..]).or_else(|| clock(&t[..d.get(0).unwrap().start()]))?;
-    Some(format!("{m} {h} * * {dow}"))
+    t
 }
 
 fn other_side(t: &str) -> bool {
@@ -367,12 +321,15 @@ pub fn parse(text: &str) -> Value {
                     "grok"
                 };
                 let (when, prompt) = prompt_of(&rest);
-                let cr = cron(&when);
-                if cr.is_none() && side == "grok" {
-                    unp(&mut unparsed, &mut warnings, &sec_name, n, t);
-                    continue;
-                }
+                let text = schedule_text(&when);
+                let cr = crate::adapters::hermes::schedule::normalize(&text).ok();
                 let mut flags = vec![];
+                if cr.is_none() && side == "grok" {
+                    flags.push("not a Hermes schedule");
+                    warnings.push(format!(
+                        "schedule {name:?}: '{text}' is not a schedule Hermes accepts: not imported, on the manual checklist"
+                    ));
+                }
                 let tz = match timezone(&when) {
                     Some(Ok(z)) => Some(z),
                     Some(Err(())) => {
@@ -384,10 +341,12 @@ pub fn parse(text: &str) -> Value {
                 };
                 if side == "grok" && tz.is_none() && flags.is_empty() {
                     flags.push("no timezone");
-                    warnings.push(format!("schedule {name:?} has no timezone"));
+                    warnings.push(format!(
+                        "schedule {name:?} has no timezone: it runs in the Hermes profile's timezone"
+                    ));
                 }
                 schedules.push(
-                    json!({"name": name, "when": when, "cron": cr, "timezone": tz, "prompt": prompt,
+                    json!({"name": name, "when": when, "schedule": text, "cron": cr, "timezone": tz, "prompt": prompt,
                     "paused": t.to_ascii_lowercase().contains("(paused)"), "side": side, "flags": flags}),
                 );
             }
@@ -533,11 +492,11 @@ mod tests {
             "{c:?}"
         );
         assert!(
-            c.contains(&("Ping check".into(), json!("*/15 * * * *"), json!("UTC"))),
+            c.contains(&("Ping check".into(), json!("every 15m"), json!("UTC"))),
             "{c:?}"
         );
         assert!(
-            c.contains(&("Totals".into(), json!("20 * * * *"), json!("Europe/London"))),
+            c.contains(&("Totals".into(), Value::Null, json!("Europe/London"))), // "hourly at :20" is not Hermes grammar
             "{c:?}"
         );
         assert!(
@@ -582,34 +541,40 @@ mod tests {
     }
 
     #[test]
-    fn messy_text_goes_to_unparsed_and_missing_timezone_is_flagged() {
+    fn messy_schedules_are_flagged_not_guessed_and_missing_timezone_is_flagged() {
         let v = parse(MESSY);
         let c = crons(&v);
-        assert!(
-            c.contains(&("Ping".into(), json!("0 * * * *"), Value::Null)),
-            "{c:?}"
-        );
+        // "hourly", "whenever it feels right", "on every full lunar phase": none is Hermes grammar
+        for n in ["Ping", "Mood check", "Tide report"] {
+            assert!(c.contains(&(n.into(), Value::Null, Value::Null)), "{c:?}");
+        }
         let ping = v["schedules"]
             .as_array()
             .unwrap()
             .iter()
             .find(|s| s["name"] == "Ping")
             .unwrap();
-        assert_eq!(ping["flags"], json!(["no timezone"]));
+        assert_eq!(ping["flags"], json!(["not a Hermes schedule"]));
+        assert_eq!(ping["schedule"], "hourly");
         let un = v["unparsed"].as_array().unwrap();
         let texts: Vec<&str> = un.iter().map(|u| u["text"].as_str().unwrap()).collect();
-        assert!(
-            texts.iter().any(|t| t.contains("whenever it feels right")),
-            "{texts:?}"
-        );
         assert!(
             texts.iter().any(|t| t.contains("random preamble")),
             "{texts:?}"
         );
-        assert!(texts.iter().any(|t| t.contains("lunar phase")), "{texts:?}");
         assert!(un
             .iter()
             .all(|u| u["line"].as_u64().unwrap() > 0 && u["section"].is_string()));
+        let v = parse("## Schedules\n- **Ping**: every hour — prompt: \"ping\"\n");
+        let ping = &v["schedules"][0];
+        assert_eq!(ping["cron"], "every 60m");
+        assert_eq!(ping["flags"], json!(["no timezone"]));
+        assert!(
+            v["warnings"]
+                .to_string()
+                .contains("runs in the Hermes profile's timezone"),
+            "{v}"
+        );
     }
 
     #[test]
@@ -739,9 +704,37 @@ mod tests {
     }
 
     #[test]
-    fn time_before_day_word() {
-        assert_eq!(cron("7am weekdays").as_deref(), Some("0 7 * * 1-5"));
-        assert_eq!(cron("weekdays 7am").as_deref(), Some("0 7 * * 1-5"));
+    fn only_what_hermes_accepts_becomes_a_schedule() {
+        let v = parse("## Schedules\n- **A**: weekdays 7am America/Chicago\n- **B**: 7am weekdays\n- **C**: `0 2 * * *` at UTC (paused)\n- **D**: every 15 min CDT\n- **E**: nightly 2am UTC\n- **F**: daily at 9am CST\n");
+        let by = |n: &str| {
+            v["schedules"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|x| x["name"] == n)
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(by("A")["cron"], "0 7 * * 1-5");
+        assert_eq!(by("C")["cron"], "0 2 * * *");
+        assert_eq!(by("C")["timezone"], "UTC");
+        assert_eq!(by("D")["cron"], "every 15m");
+        assert_eq!(by("D")["timezone"], "America/Chicago");
+        // English Hermes does not accept is kept as text and flagged, never guessed into cron
+        for (n, text) in [
+            ("B", "7am weekdays"),
+            ("E", "nightly 2am"),
+            ("F", "daily at 9am CST"),
+        ] {
+            let s = by(n);
+            assert_eq!(s["cron"], Value::Null, "{s}");
+            assert_eq!(s["schedule"], text, "{s}");
+            assert!(
+                s["flags"].to_string().contains("not a Hermes schedule"),
+                "{s}"
+            );
+        }
+        assert!(v["unparsed"].as_array().unwrap().is_empty(), "{v}");
     }
 
     #[test]

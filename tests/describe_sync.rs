@@ -11,7 +11,7 @@ use std::process::Command;
 const DESCRIPTION: &str = "# Not captured by the export\n\n## The bot's description\n\n\
 ### Schedules\n\
 - **Sample report**: weekdays 08:00 America/Chicago — prompt: \"Summarise the sample log\"\n\
-- **Ping check**: every 15 min — prompt: \"Check the pings\"\n\
+- **Ping check**: hourly — prompt: \"Check the pings\"\n\
 - **Nightly export**: runs on another machine (the main server), not on Grok\n\n\
 ### Connectors\n\
 - **knowledge**: MCP server at https://demo.example.test/mcp (tools: find_items, health)\n\
@@ -116,6 +116,11 @@ fn describe_items_plan_apply_and_stay_in_sync() {
     }
     let text = p.to_string();
     assert!(!text.contains("pa55w0rdXYZ"), "{text}");
+    // English Hermes' parse_schedule rejects is a manual item with its text, never a guessed cron line
+    assert!(
+        text.contains("not imported: 'hourly' is not a schedule Hermes accepts; set it by hand"),
+        "{text}"
+    );
     // deterministic
     assert_eq!(run("plan", &g, &hh, &fake, &[]).1, p);
 

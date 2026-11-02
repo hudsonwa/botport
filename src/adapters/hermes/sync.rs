@@ -239,43 +239,53 @@ fn schedules_to_cron(
             ));
             continue;
         }
-        let missing: Vec<&str> = [
-            (x.cron.is_none(), "schedule"),
-            (x.tz.is_empty(), "timezone"),
-            (x.action.trim().is_empty(), "prompt"),
-        ]
-        .iter()
-        .filter(|(m, _)| *m)
-        .map(|(_, w)| *w)
-        .collect();
         if x.kind == crate::core::model::ScheduleKind::Event {
             manual.push((key, "event-triggered on the Grok side: Hermes cron cannot subscribe to it; set up a trigger by hand".into()));
-        } else if !missing.is_empty() {
-            manual.push((
-                key,
-                format!(
-                    "no {} in the description: create the Hermes cron job by hand",
-                    missing.join("/")
-                ),
-            ));
-        } else {
-            let name = format!("{}: {}", bot_name(m), x.name);
-            if spec_cron.iter().any(|j| j.name == name) {
+            continue;
+        }
+        // Only a string Hermes' own parse_schedule accepts becomes a job; anything else is a manual item, never a guess.
+        let schedule = match x.cron.as_deref().map(super::schedule::normalize) {
+            None => {
+                manual.push((
+                    key,
+                    "no schedule in the description: create the Hermes cron job by hand".into(),
+                ));
                 continue;
             }
-            jobs.push(CronJob {
-                name,
-                schedule: x.cron.clone().unwrap_or_default(),
-                deliver: "local".into(),
-                // a clean prompt is copied byte-identical
-                prompt: x.action.clone(),
-                paused_reason: Some(format!(
-                    "Imported by botport from the Grok bot; schedule is in {} (check the host timezone), resume once the Grok routine is off",
-                    x.tz
-                )),
-                enabled: None,
-            });
+            Some(Err(why)) => {
+                manual.push((key, why));
+                continue;
+            }
+            Some(Ok(s)) => s,
+        };
+        if x.action.trim().is_empty() {
+            manual.push((
+                key,
+                "no prompt in the description: create the Hermes cron job by hand".into(),
+            ));
+            continue;
         }
+        let name = format!("{}: {}", bot_name(m), x.name);
+        if spec_cron.iter().any(|j| j.name == name) {
+            continue;
+        }
+        // Hermes cron has no per-job timezone: a zone the routine carries is named, otherwise the profile's zone applies.
+        let tz = if x.tz.is_empty() {
+            "the Hermes profile's timezone (the routine named none)".to_string()
+        } else {
+            format!("{} (check the host timezone)", x.tz)
+        };
+        jobs.push(CronJob {
+            name,
+            schedule,
+            deliver: "local".into(),
+            // a clean prompt is copied byte-identical
+            prompt: x.action.clone(),
+            paused_reason: Some(format!(
+                "Imported by botport from the Grok bot; schedule is in {tz}, resume once the Grok routine is off"
+            )),
+            enabled: None,
+        });
     }
     jobs
 }
@@ -645,6 +655,12 @@ fn want_spec_cron(c: &Ctx) -> Res<Vec<CronJob>> {
         jobs: Vec<CronJob>,
     }
     let f: F = serde_yaml::from_str(&read_str(&cr.file)?).map_err(|e| format!("cron file: {e}"))?;
+    for j in &f.jobs {
+        // the spec is the owner's own file: a schedule Hermes would reject stops the plan instead of failing at apply
+        if let Err(why) = super::schedule::normalize(&j.schedule) {
+            return err(format!("cron file: job {}: {why}", j.name));
+        }
+    }
     Ok(f.jobs)
 }
 
@@ -2201,6 +2217,72 @@ fn split_dotted(dotted: &str, v: &Y) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn schedules_become_paused_jobs_only_when_hermes_accepts_them() {
+        use crate::core::model::{Schedule, ScheduleKind};
+        let mut m = BotModel::from_json(
+            r#"{"schema":"bot-model/1","persona":{"name":"Nova","instructions":""}}"#,
+        )
+        .unwrap();
+        let sch = |name: &str, cron: Option<&str>, tz: &str| Schedule {
+            name: name.into(),
+            cron: cron.map(String::from),
+            tz: tz.into(),
+            kind: ScheduleKind::Scheduled,
+            action: "go".into(),
+            enabled: true,
+        };
+        m.schedules = vec![
+            sch("Cron", Some("0 7 * * 1-5"), "America/Chicago"),
+            sch("Phrase", Some("every monday 9am"), ""),
+            sch("Every", Some("every 15 min"), "UTC"),
+            sch("Hourly", Some("hourly"), "UTC"),
+            sch("Fridays", Some("fridays 16:00"), "UTC"),
+            sch("Seconds", Some("0 0 9 * * *"), "UTC"),
+            sch("Once", Some("in 30m"), "UTC"),
+            sch("None", None, "UTC"),
+        ];
+        let mut manual = vec![];
+        let jobs = schedules_to_cron(&m, &[], &mut manual);
+        let got: Vec<(&str, &str)> = jobs
+            .iter()
+            .map(|j| (j.name.as_str(), j.schedule.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("Nova: Cron", "0 7 * * 1-5"),
+                ("Nova: Phrase", "0 9 * * 1"),
+                ("Nova: Every", "every 15m")
+            ]
+        );
+        assert!(jobs.iter().all(|j| j.paused()));
+        // a zone is named only when the routine carried one; otherwise the profile's zone is stated
+        assert!(jobs[0]
+            .paused_reason
+            .as_ref()
+            .unwrap()
+            .contains("schedule is in America/Chicago (check the host timezone)"));
+        assert!(jobs[1]
+            .paused_reason
+            .as_ref()
+            .unwrap()
+            .contains("the Hermes profile's timezone"));
+        let m: BTreeMap<_, _> = manual.into_iter().collect();
+        for (n, t) in [
+            ("Hourly", "hourly"),
+            ("Fridays", "fridays 16:00"),
+            ("Seconds", "0 0 9 * * *"),
+        ] {
+            assert_eq!(
+                m[&format!("schedule {n}")],
+                format!("not imported: '{t}' is not a schedule Hermes accepts; set it by hand")
+            );
+        }
+        assert!(m["schedule Once"].contains("runs once"));
+        assert!(m["schedule None"].starts_with("no schedule"));
+    }
 
     #[test]
     fn soul_sections_roundtrip_keeps_outside_text() {
