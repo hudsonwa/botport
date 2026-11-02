@@ -1,0 +1,1 @@
+{“format”: “grok-bot-export”, “version”: 1, “bots”: [{“name”: “Nova”, “memories”: [“I said “a”, “b” and “c””]}]}

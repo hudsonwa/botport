@@ -163,11 +163,10 @@ fn pasted_export(a: &Args, raw: &[String]) -> Res<Option<(Vec<String>, PasteDir)
             export_json::FORMAT
         ));
     }
-    export_json::document(&text).map_err(|e| format!("{from}: {e}"))?;
+    let (doc, _) = export_json::document(&text).map_err(|e| format!("{from}: {e}"))?;
     botport::core::secrets::guard(from, text.as_bytes())?;
     // and on the repaired document, so a token split across fragments is caught once joined
-    let joined = serde_json::to_string(&export_json::document(&text).map_err(|e| e.to_string())?.0)
-        .map_err(|e| e.to_string())?;
+    let joined = serde_json::to_string(&doc).map_err(|e| e.to_string())?;
     botport::core::secrets::guard(from, joined.as_bytes())?;
     let state = std::env::var_os("XDG_STATE_HOME")
         .filter(|v| !v.is_empty())

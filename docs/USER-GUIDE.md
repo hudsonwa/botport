@@ -218,12 +218,15 @@ Upstream Hermes ships its own Grok Bot importer (`hermes migrate grok-bot` / `he
     are joined in order with nothing between them, so a split inside a text value or a number joins up; the result
     must parse. If two or more blocks are each a complete export (an object with `format` or `bots`), it is refused as
     ambiguous; if exactly one is, that one is taken. Paste the parts in the order the bot sent them;
-  - curly quotes (“ ” ‘ ’) used as JSON quotes, and trailing commas before `}` or `]`; both only outside string
-    values (quotes and commas inside text are kept). A value opened with a double curly quote ends only at a double
-    quote, one opened with ‘ only at a single quote, so `“I like ‘cats’, ‘dogs’”` stays one value. If a curly-quoted value also contains a curly double quote (“ or ”),
-    as in `“Prefers “Nova”, “Sol””`, botport can't tell where the string ends, so it refuses the paste rather than
-    guess: ask the bot to resend it inside a code block (```` ```json ````) with straight quotes. Curly quotes inside
-    straight-quoted values (`"say “hi” now"`) are fine.
+  - trailing commas before `}` or `]`, outside string values (commas inside text are kept).
+
+  Smart quotes are refused, not repaired. If a chat app curled the JSON quotes (“ ” ‘ ’), botport can't tell
+  for sure where each value ends, so a paste that still does not parse and holds a curly quote is refused with
+  "the export was mangled by the chat app (smart quotes); ask the bot to re-send it as a file or a plain code
+  block". Do that: a file, or a plain code block, keeps the straight quotes. Curly quotes inside straight-quoted
+  values (`"say “hi” now"`) are ordinary text and are read as they are. After any repair, botport also counts the
+  memories, user facts, skills and routines in the pasted text and refuses the paste if the parsed export holds a
+  different number.
 
   The secret-key check runs on the repaired document, so a credential inside a fenced block is still refused (and
   nothing is saved). The token check runs on the pasted text and again on the repaired document, so a token split

@@ -187,8 +187,11 @@ fn check(v: &Value) -> Res<()> {
 ///    between them, so a split inside a string or a number joins up; the join must parse. If two or more blocks
 ///    are each a complete export (an object with `format` or `bots`), the input is ambiguous and refused. Without
 ///    fences, the text from the first `{` to the last `}` is taken. An unclosed last fence runs to the end.
-/// 2. Curly quotes (“ ” ‘ ’) used as JSON quotes, outside string values only; quotes inside strings stay.
-/// 3. Trailing commas before `}` or `]`, outside string values.
+/// 2. Trailing commas before `}` or `]`, outside string values.
+///
+/// Curly quotes are never repaired: if the text still does not parse and holds one (“ ” ‘ ’), it is refused with
+/// [`SMART_QUOTES`]. Curly quotes inside straight-quoted strings are text and parse strictly. After any repair the
+/// item counts under memories/user_facts/skills/routines/schedules must match a structural count of the text.
 pub fn parse(raw: &str) -> Res<(Value, Vec<String>)> {
     let strict = serde_json::from_str::<Value>(raw.trim());
     let first_err = match strict {
@@ -245,7 +248,7 @@ pub fn parse(raw: &str) -> Res<(Value, Vec<String>)> {
             }
         }
     };
-    let (v, more) = repair(&body).map_err(|e| format!("not valid JSON even after repairs: {e}"))?;
+    let (v, more) = repair(&body)?;
     repairs.extend(more);
     Ok((v, repairs))
 }
@@ -298,59 +301,36 @@ fn is_whole_export(b: &str) -> bool {
     repair(b).is_ok_and(|(v, _)| v.get("format").is_some() || v.get("bots").is_some())
 }
 
-const NESTED: &str = "this export uses curly quotes and a value also contains curly quotes, so botport can't tell where strings end; ask the bot to resend it inside a code block (```json) with straight quotes";
+/// The refusal for a paste that only parses if its curly quotes were guessed back into JSON quotes.
+pub const SMART_QUOTES: &str = "the export was mangled by the chat app (smart quotes); ask the bot to re-send it as a file or a plain code block";
 
-/// Rewrite curly quotes used as JSON quotes and drop trailing commas, outside string values only; then parse.
+/// Keys whose arrays are counted before and after a repair (memories, skills, routines/schedules).
+const COUNTED: [&str; 5] = ["memories", "user_facts", "skills", "routines", "schedules"];
+
+/// Drop trailing commas before `}` or `]` outside (straight-quoted) strings; then parse. Curly quotes are never
+/// rewritten: a text that still fails to parse and holds one is refused with [`SMART_QUOTES`]. The parsed result
+/// must hold as many items under each counted key as a structural count of the text, else it is refused.
 fn repair(s: &str) -> Res<(Value, Vec<String>)> {
-    let (mut curly, mut commas) = (0usize, 0usize);
+    let mut commas = 0usize;
     let mut out = String::with_capacity(s.len());
-    let mut close: Option<char> = None; // the quote that ends the current string
-    let mut esc = false;
+    let (mut in_str, mut esc) = (false, false);
     let cs: Vec<char> = s.trim().chars().collect();
     for (i, &c) in cs.iter().enumerate() {
-        if let Some(q) = close {
+        if in_str {
             if esc {
                 esc = false;
-                out.push(c);
             } else if c == '\\' {
                 esc = true;
-                out.push(c);
-            } else if (q == '"' && c == '"')
-                || (q == '”' && matches!(c, '"' | '“' | '”') && ends_value(&cs[i + 1..]))
-                || (q == '’' && matches!(c, '‘' | '’') && ends_value(&cs[i + 1..]))
-            {
-                // a curly-quoted string closes with a quote of its own kind (double: “ ” or ", single: ‘ ’)
-                // that is followed by `:` `,` `}` `]` or the end; any other quote inside it is text
-                close = None;
-                if c != '"' {
-                    curly += 1;
-                }
-                out.push('"');
-            } else if q != '"' && matches!(c, '“' | '”') {
-                // a curly double quote inside a curly-quoted string: where the string ends is a guess, so refuse
-                return Err(NESTED.into());
             } else if c == '"' {
-                // a straight quote inside a curly-quoted string is text
-                out.push_str("\\\"");
-            } else {
-                out.push(c);
+                in_str = false;
             }
+            out.push(c);
             continue;
         }
         match c {
             '"' => {
-                close = Some('"');
-                out.push('"');
-            }
-            '“' | '”' => {
-                close = Some('”');
-                curly += 1;
-                out.push('"');
-            }
-            '‘' | '’' => {
-                close = Some('’');
-                curly += 1;
-                out.push('"');
+                in_str = true;
+                out.push(c);
             }
             ',' if cs[i + 1..]
                 .iter()
@@ -362,21 +342,110 @@ fn repair(s: &str) -> Res<(Value, Vec<String>)> {
             _ => out.push(c),
         }
     }
-    let v: Value = serde_json::from_str(&out).map_err(|e| e.to_string())?;
-    let mut r = vec![];
-    if curly > 0 {
-        r.push(format!("replaced {curly} curly quotes used as JSON quotes"));
+    let v: Value = match serde_json::from_str(&out) {
+        Ok(v) => v,
+        Err(_) if s.contains(['“', '”', '‘', '’']) => return Err(SMART_QUOTES.into()),
+        Err(e) => return Err(format!("not valid JSON even after repairs: {e}")),
+    };
+    let (want, got) = (pre_count(s), parsed_count(&v));
+    if want != got {
+        return Err(format!(
+            "the repaired export does not hold what the pasted text does (items per list, pasted {want:?}, read {got:?}); \
+             nothing was read: ask the bot to re-send it as a file or a plain code block"
+        ));
     }
+    let mut r = vec![];
     if commas > 0 {
         r.push(format!("removed {commas} trailing commas"));
     }
     Ok((v, r))
 }
 
-fn ends_value(rest: &[char]) -> bool {
-    rest.iter()
-        .find(|x| !x.is_whitespace())
-        .is_none_or(|x| matches!(x, ':' | ',' | '}' | ']'))
+/// Items in every array under a counted key, from the raw text: one per value that starts in that array (so a
+/// trailing comma adds none). It tracks only brackets, commas and straight-quoted strings, never the repair.
+fn pre_count(s: &str) -> BTreeMap<String, usize> {
+    let mut n: BTreeMap<String, usize> = BTreeMap::new();
+    // per open container: (is array, counted key name, waiting for a value)
+    let mut stack: Vec<(bool, Option<String>, bool)> = vec![];
+    let (mut key, mut last) = (None::<String>, String::new());
+    let cs: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    while i < cs.len() {
+        let c = cs[i];
+        if c.is_whitespace() {
+            i += 1;
+            continue;
+        }
+        if let Some((true, Some(k), want @ true)) = stack.last_mut() {
+            if c != ']' && c != ',' {
+                *want = false;
+                *n.entry(k.clone()).or_default() += 1;
+            }
+        }
+        match c {
+            '"' => {
+                let mut j = i + 1;
+                let mut t = String::new();
+                while j < cs.len() && cs[j] != '"' {
+                    if cs[j] == '\\' {
+                        j += 1;
+                    }
+                    if let Some(&x) = cs.get(j) {
+                        t.push(x);
+                    }
+                    j += 1;
+                }
+                last = t;
+                i = j;
+            }
+            ':' => key = Some(std::mem::take(&mut last)),
+            '[' => {
+                let k = key.take().filter(|k| COUNTED.contains(&k.as_str()));
+                if let Some(k) = &k {
+                    n.entry(k.clone()).or_default();
+                }
+                stack.push((true, k, true));
+            }
+            '{' => {
+                key = None;
+                stack.push((false, None, false));
+            }
+            ']' | '}' => {
+                stack.pop();
+                key = None;
+            }
+            ',' => {
+                key = None;
+                if let Some((true, _, want)) = stack.last_mut() {
+                    *want = true;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    n
+}
+
+/// The same count from the parsed document.
+fn parsed_count(v: &Value) -> BTreeMap<String, usize> {
+    fn walk(v: &Value, n: &mut BTreeMap<String, usize>) {
+        match v {
+            Value::Object(m) => {
+                for (k, c) in m {
+                    if let (true, Some(a)) = (COUNTED.contains(&k.as_str()), c.as_array()) {
+                        *n.entry(k.clone()).or_default() += a.len();
+                    }
+                    walk(c, n);
+                }
+            }
+            Value::Array(a) => a.iter().for_each(|c| walk(c, n)),
+            _ => {}
+        }
+    }
+    let mut n = BTreeMap::new();
+    walk(v, &mut n);
+    n
 }
 
 /// One stderr line per repair, once per process (the export is read several times per command).
@@ -658,17 +727,143 @@ mod tests {
     }
 
     #[test]
-    fn curly_quotes_as_json_quotes() {
-        let raw = r#"{“format”: “grok-bot-export”, ‘version’: 1, “bots”: [{“name”: “Nova”, “memories”: [“it’s a "test"”, “ok”]}]}"#;
-        let (v, r) = ok(raw);
-        assert_eq!(v["bots"][0]["memories"][0], json!("it’s a \"test\""));
-        assert_eq!(v["version"], json!(1));
-        assert!(
-            r[0].starts_with("replaced") && r[0].contains("curly quotes"),
-            "{r:?}"
-        );
-        // curly quotes inside straight-quoted strings are text and untouched
+    fn curly_quotes_are_refused_not_repaired() {
+        let raw =
+            r#"{“format”: “grok-bot-export”, “bots”: [{“name”: “Nova”, “memories”: [“a”, “b”]}]}"#;
+        assert_eq!(document(raw).unwrap_err(), SMART_QUOTES);
+        // even inside a fenced block with a trailing comma: the message is the plain refusal, not a JSON error
+        let raw = format!("Here:\n```json\n{}\n```\n", raw.replace("]}]}", "],}]}"));
+        assert_eq!(document(&raw).unwrap_err(), SMART_QUOTES);
+        // curly quotes inside straight-quoted strings are text and untouched, also after a repair
         assert_eq!(ok(DOC).0["bots"][0]["memories"][0], json!("it’s “quoted”"));
+        let (v, r) = ok(&DOC.replace("]}]}", "],}]}"));
+        assert_eq!(v, ok(DOC).0);
+        assert_eq!(r, ["removed 1 trailing commas"]);
+    }
+
+    #[test]
+    fn structural_count_matches_the_parsed_document() {
+        let raw = r#"{"bots": [{"memories": ["a, ]", "b",], "skills": [{"name": "x", "routines": []},], "user_facts": [[1, 2], "c"]}]}"#;
+        let want: BTreeMap<String, usize> = [
+            ("memories", 2),
+            ("skills", 1),
+            ("routines", 0),
+            ("user_facts", 2),
+        ]
+        .map(|(k, n)| (k.to_string(), n))
+        .into();
+        assert_eq!(pre_count(raw), want);
+        let (v, _) = ok(raw);
+        assert_eq!(parsed_count(&v), want);
+        // a value that starts in the list but is lost would show as a mismatch
+        assert_ne!(
+            pre_count(r#"{"memories": ["a", "b"]}"#),
+            parsed_count(&json!({"memories": ["ab"]}))
+        );
+    }
+
+    /// Every input the audits of rounds 1-3 used against the tolerant parser (tests/fixtures/paste-cases;
+    /// the token cases are in tests/cli.rs): each is refused, or read with exactly its values.
+    #[test]
+    fn audit_counterexamples_refuse_or_parse_exactly() {
+        const NOVA: &str = "a long memory that the bot cut in the middle of";
+        let refused: &[(&str, &str)] = &[
+            ("05-pretty-fence-line", "not valid JSON"),
+            ("10-secret-key-split", "not valid JSON"),
+            ("13-two", "ambiguous"),
+            ("20-chatter-braces", "not valid JSON"),
+            ("24-key-in-frag2", "credential-looking"),
+            ("38-key-split-mid", "credential-looking"),
+        ];
+        let smart = [
+            "01-smart-array",
+            "02-curly-commabrace",
+            "11-secret-curly",
+            "17-smart-obj",
+            "19-mixed",
+            "27-curly-escaped",
+            "28-straight-in-curly",
+            "29-curly-inner-pair-comma",
+            "30-curly-inner-comma",
+            "31-curly-commas",
+            "35-single-apostrophe",
+            "36-curly-double-close",
+            "37-curly-plain",
+            "39-curly-list-in-value",
+            "40-escaped-straight-in-curly",
+            "41-curly-sep-comma",
+            "42-curly-sep-trailing",
+            "43-user-guide-example",
+            "44-singles-in-double",
+            "45-single-nested",
+            "46-single-plural-possessive",
+            "47-mixed-straight-in-curly",
+            "48-mixed-key-mangle",
+            "50-apostrophes",
+            "51-escaped-straight-in-curly",
+            "52-double-in-single",
+            "53-curly-trailing",
+            "63-mixed-key-swallows-memories",
+            "64-skills-split",
+        ];
+        let read: &[(&str, Value)] = &[
+            (
+                "03-escapes",
+                json!(["say \"hi\",}", "back\\", "x ,]", "q\\\""]),
+            ),
+            (
+                "04-fence-in-string",
+                json!(["use ```json\n{}\n``` blocks", "```"]),
+            ),
+            ("06-crlf", json!(["a\r\nb", "c"])),
+            ("07-split-midstring", json!([NOVA, "b"])),
+            ("08-split-between", json!([NOVA, "b"])),
+            ("12-whole-plus-fragment", json!([NOVA, "b"])),
+            ("14-doc-plus-scalar", json!([NOVA, "b"])),
+            ("15-four-backticks", json!([NOVA, "b"])),
+            ("16-oneline-fence", json!([NOVA, "b"])),
+            (
+                "18-straight-with-curly",
+                json!(["it’s “quoted”, ok”", "‘x’,"]),
+            ),
+            ("21-backslash", json!(["C:\\dir\\", ",}"])),
+            (
+                "32-crlf-split",
+                json!(["a long memory that the bot cut in the middle", "b"]),
+            ),
+            ("33-fence-split-ambig", json!(["see ```jsonhere", "b"])),
+            ("34-whole-plus-object", json!(["ok"])),
+            (
+                "49-curly-in-straight",
+                json!(["it’s “quoted”, ok", "‘x’, ”y“", "don’t"]),
+            ),
+            ("54-nested-fence", json!(["use ```json fences", "~~~ too"])),
+            ("55-fence-chars-in-value", json!(["a ``` b", "c"])),
+            ("56-split-after-fence-in-value", json!(["ends ```", "x"])),
+        ];
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/paste-cases");
+        let case = |n: &str| std::fs::read_to_string(dir.join(format!("{n}.txt"))).unwrap();
+        for (n, want) in refused {
+            let e = document(&case(n)).unwrap_err();
+            assert!(e.contains(want), "{n}: {e}");
+        }
+        for n in smart {
+            assert_eq!(document(&case(n)).unwrap_err(), SMART_QUOTES, "{n}");
+        }
+        for (n, want) in read {
+            let (v, _) = document(&case(n)).unwrap_or_else(|e| panic!("{n}: {e}"));
+            assert_eq!(v["bots"].as_array().unwrap().len(), 1, "{n}");
+            assert_eq!(v["bots"][0]["name"], json!("Nova"), "{n}");
+            assert_eq!(v["bots"][0]["memories"], *want, "{n}");
+        }
+        let (v, _) = document(&case("09-split-midnumber")).unwrap();
+        assert_eq!(v["bots"][0]["n"], json!(12345));
+        let n = std::fs::read_dir(&dir).unwrap().count();
+        assert_eq!(
+            n,
+            refused.len() + smart.len() + read.len() + 1,
+            "a case file without an expectation"
+        );
     }
 
     #[test]
@@ -703,38 +898,7 @@ mod tests {
             "```json\n{}\n```",
             doc.replace("“quoted”", "quoted").replace('"', "“")
         );
-        let e = document(&raw).unwrap_err();
-        assert!(e.contains("credential-looking"), "{e}");
-    }
-
-    #[test]
-    fn curly_closer_matches_its_opener() {
-        // smart punctuation inside a “…” value: the ’ after cats is text, not the end of the string
-        let raw = "{“format”: “grok-bot-export”, “version”: 1, “bots”: [{“name”: “Nova”, “memories”: [“I like ‘cats’, ‘dogs’”, “ok”]}]}";
-        let (v, _) = ok(raw);
-        assert_eq!(
-            v["bots"][0]["memories"],
-            json!(["I like ‘cats’, ‘dogs’", "ok"])
-        );
-        // a straight-quoted value with curly quotes needs no repair and is kept as is
-        let raw = r#"{"format": "grok-bot-export", "bots": [{"name": "say “hi” now"}]}"#;
-        assert_eq!(ok(raw).0["bots"][0]["name"], json!("say “hi” now"));
-    }
-
-    #[test]
-    fn curly_double_quote_inside_a_curly_string_is_refused() {
-        for v in [
-            "[“I said “a”, “b” and “c””]",
-            "[“tags: “a”, “b””, “c”]",
-            "[“say “hi” now”]",
-            "[‘a ”, b’]",
-        ] {
-            let raw = format!(
-                "{{“format”: “grok-bot-export”, “bots”: [{{“name”: “Nova”, “memories”: {v}}}]}}"
-            );
-            let e = document(&raw).unwrap_err();
-            assert!(e.contains("resend it inside a code block"), "{v}: {e}");
-        }
+        assert_eq!(document(&raw).unwrap_err(), SMART_QUOTES);
     }
 
     #[test]

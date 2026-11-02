@@ -1,0 +1,8 @@
+Part 1
+```json
+{"format": "grok-bot-export", "version": 1, "bots": [{"name": "Nova", "memories": ["a long memory that the bot 
+```
+(continued)
+```json
+cut in the middle of", "b"]}]}
+```

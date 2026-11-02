@@ -1,0 +1,1 @@
+{“format”: “grok-bot-export”, “version”: 1, “bots”: [{“name”: “Nova”, “memories”: [“Calls it the “,” key”], “skills”: [{“name”: “s1”, “instructions”: “Split on “, ” then trim”}, {“name”: “s2”, “instructions”: “go”}]}]}

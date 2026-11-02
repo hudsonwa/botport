@@ -1390,20 +1390,15 @@ fn pasted_export_on_stdin_is_repaired_reported_and_verified() {
     let (rc, strict) = run(&["verify", "--bundle", s(&exp)]);
     assert_eq!(rc, 0, "{strict}");
     assert!(!strict.contains("repaired"), "{strict}");
-    // a chat reply: chatter, a fenced block, curly quotes around the keys, a trailing comma
+    // a chat reply: chatter, a fenced block, a trailing comma
     let pasted = format!(
         "Here is my export:\n```json\n{}\n```\nAnything else?\n",
-        doc.replacen("\"format\"", "“format”", 1)
-            .replacen("\n  ]\n}", "\n  ],\n}", 1)
+        doc.replacen("\n  ]\n}", "\n  ],\n}", 1)
     );
     let (rc, out) = run_stdin(&t.0, &["verify", "--bundle", "-"], &pasted);
     assert_eq!(rc, 0, "{out}");
     assert!(
         out.contains("repaired export: took the JSON out of a fenced code block"),
-        "{out}"
-    );
-    assert!(
-        out.contains("repaired export: replaced 2 curly quotes"),
         "{out}"
     );
     assert!(
@@ -1432,7 +1427,7 @@ fn pasted_export_on_stdin_is_repaired_reported_and_verified() {
     let t2 = Tmp::new("paste-secret");
     let bad = pasted.replacen(
         "\"name\": \"Nova\"",
-        "\"name\": \"Nova\", “password”: “x”",
+        "\"name\": \"Nova\", \"password\": \"x\"",
         1,
     );
     let (rc, out) = run_stdin(&t2.0, &["verify", "--bundle", "-"], &bad);
@@ -1519,14 +1514,62 @@ fn clipboard_without_a_clipboard_tool_is_a_clear_error() {
 }
 
 #[test]
-fn token_split_across_pasted_fragments_is_refused_once_joined() {
-    let t = Tmp::new("paste-split-token");
-    let doc = r#"{"format": "grok-bot-export", "version": 1, "bots": [{"name": "Nova", "memories": ["key xai-ABCDEFGHIJKLMNOPQRSTUVWX", "ok"]}]}"#;
-    let (a, b) = doc.split_at(doc.find("xai-ABC").unwrap() + 7);
-    let pasted = format!("```json\n{a}\n```\n(more)\n```\n{b}\n```\n");
-    let (rc, out) = run_stdin(&t.0, &["verify", "--bundle", "-"], &pasted);
+fn smart_quoted_paste_is_refused_with_plain_advice() {
+    let t = Tmp::new("paste-smart");
+    let pasted = "```json\n{“format”: “grok-bot-export”, “bots”: [{“name”: “Nova”, “memories”: [“Use “,” here”]}]}\n```\n";
+    let (rc, out) = run_stdin(&t.0, &["verify", "--bundle", "-"], pasted);
     assert_eq!(rc, 2, "{out}");
-    assert!(fs::read_dir(t.0.join("botport")).map_or(true, |d| d
-        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
-        .all(|n| !n.starts_with("paste"))));
+    assert!(
+        out.contains("stdin: the export was mangled by the chat app (smart quotes); ask the bot to re-send it as a file or a plain code block"),
+        "{out}"
+    );
+    assert!(!out.contains("not valid JSON"), "{out}");
+}
+
+/// The audits' token cases (rounds 2-3): a token whole, split across fragments at any point, behind a `\u`
+/// escape or in a smart-quoted paste is refused and nothing is saved.
+#[test]
+fn token_split_across_pasted_fragments_is_refused_once_joined() {
+    let xai = "xai-A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0U1v2W3x4Y5z6";
+    let ant = format!(
+        "sk-ant-api03-{}-AbCdEf",
+        "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789".repeat(2)
+    );
+    let ghp = format!("ghp_{}", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8");
+    let doc = |m: &str, q: char| {
+        format!(r#"{{"format": "grok-bot-export", "version": 1, "bots": [{{"name": "Nova", "memories": ["k {m}"]}}]}}"#)
+            .replace('"', &q.to_string())
+    };
+    let split = |m: &str, at: usize| {
+        let d = doc(m, '"');
+        let (a, b) = d.split_at(d.find(m).unwrap() + at);
+        format!("```json\n{a}\n```\n(more)\n```json\n{b}\n```\n")
+    };
+    let cases = [
+        ("22", split(xai, 20)),
+        ("23", format!("```json\n{}\n```\n", doc(xai, '"'))),
+        ("25", doc(xai, '“')),
+        ("26", split(xai, 7)),
+        ("57", split(xai, 5)),
+        ("58", split(xai, 2)),
+        ("60", doc(&xai.replacen('x', "\\u0078", 1), '"')),
+        ("61", split(&ant, 14)),
+        ("62", split(&ghp, 4)),
+        ("short", {
+            let d = r#"{"format": "grok-bot-export", "version": 1, "bots": [{"name": "Nova", "memories": ["key xai-ABCDEFGHIJKLMNOPQRSTUVWX", "ok"]}]}"#;
+            let (a, b) = d.split_at(d.find("xai-ABC").unwrap() + 7);
+            format!("```json\n{a}\n```\n(more)\n```\n{b}\n```\n")
+        }),
+    ];
+    for (n, pasted) in cases {
+        let t = Tmp::new(&format!("paste-token-{n}"));
+        let (rc, out) = run_stdin(&t.0, &["verify", "--bundle", "-"], &pasted);
+        assert_eq!(rc, 2, "{n}: {out}");
+        assert!(
+            fs::read_dir(t.0.join("botport")).map_or(true, |d| d
+                .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+                .all(|n| !n.starts_with("paste"))),
+            "{n}"
+        );
+    }
 }
