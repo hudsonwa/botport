@@ -20,7 +20,7 @@ step; it is not in `release.yml` and nothing is uploaded to PyPI yet.
     # check with: unzip -p dist/wheels/botport-*.whl '*/scripts/botport' | strings | grep -c "$HOME"   (must be 0)
     # Linux (manylinux/musllinux): run maturin in its Docker image, or add --zig
 
-Wheel names look like `botport-0.1.0-py3-none-macosx_11_0_arm64.whl`; the version comes from `Cargo.toml`.
+Wheel names look like `botport-0.1.1-py3-none-macosx_11_0_arm64.whl`; the version comes from `Cargo.toml`.
 Check one before uploading:
 
     python3 -m venv /tmp/wt && /tmp/wt/bin/pip install dist/wheels/botport-*.whl && /tmp/wt/bin/botport --version
