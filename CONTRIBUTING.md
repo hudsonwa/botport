@@ -6,7 +6,8 @@ would matter most:
    and the Grok side. The brief is a contract with a closed platform that changes without notice; it needs someone
    who notices first. Changes go in [docs/PLATFORM-CHANGES.md](docs/PLATFORM-CHANGES.md).
 2. **Rust contributors for adapters, once the adapter seam lands** (plan/apply/sync/drift routed through `BotModel` +
-   `Adapter`; status in [ROADMAP.md](ROADMAP.md)).
+   `Adapter`; status in [ROADMAP.md](ROADMAP.md)). The next adapters are OpenClaw (formerly Moltbot/Clawdbot) and
+   OpenBot; both issues are labelled `blocked` until the seam lands.
 
 You don't need to be a Rust expert for everything else: docs, test cases and bug reports with the `--json` output
 attached all help.

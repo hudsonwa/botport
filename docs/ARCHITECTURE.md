@@ -21,7 +21,7 @@ commands still call the Hermes modules directly with a Grok bundle (see below).
 | Grok Bot ↔ Hermes export/import, sync and drift (Hermes modules called directly) | done |
 | g2h talk bridge (`g2h` + `g2hd`, running as your user) | done |
 | Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | in progress (lands in v0.1.0) |
-| OpenClaw adapter | planned |
+| OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |
 | `g2hd` running as a separate OS user | planned |
 

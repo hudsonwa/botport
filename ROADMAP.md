@@ -8,8 +8,8 @@ would matter most.
 |---|---|
 | Grok Bot ↔ Hermes export/import, sync and drift | done |
 | g2h talk bridge, running as your user | done |
-| Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | in progress |
-| OpenClaw adapter | planned |
+| Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | in progress (lands in v0.1.0) |
+| OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |
 | `g2hd` running as a separate OS user | planned |
 
@@ -27,8 +27,12 @@ Smaller open work: keep data the model can't place yet instead of dropping it; f
 g2h systemd user unit on more Linux distributions; an answer for Windows (g2h uses Unix sockets today).
 
 ## Next platforms
-- **OpenClaw** and **OpenBot** adapters (planned, after the seam). Their mappings are written up in
-  [docs/MODEL.md](docs/MODEL.md); no code yet.
+- **OpenClaw (formerly Moltbot/Clawdbot)** adapter: planned.
+- **OpenBot** adapter: planned.
+
+These two are what the `BotModel` seam is for. Once plan/apply/sync/drift go through it, an adapter that reads a
+platform into the model and writes it back can port that bot to and from every other adapter. Their mappings are
+written up in [docs/MODEL.md](docs/MODEL.md); no code yet.
 - **`g2hd` as a separate OS user** (planned). Today g2h runs as your user and is not a security boundary against a
   bot with a shell as that user; see [docs/SECURITY.md](docs/SECURITY.md).
 
