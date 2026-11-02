@@ -58,8 +58,10 @@ The schema file is versioned by major: `docs/schema/botmodel-v1.json` describes 
 changes additively (a new optional field, together with the types). A breaking change gets a new major,
 `bot-model/2`, and a new file `botmodel-v2.json`; the v1 file stays.
 
-- Minor (`bot-model/1.N`): additive only — new optional fields. Readers of major 1 accept any 1.x and ignore
-  nothing silently: unknown top-level data from a newer minor is kept in `extras["_unknown"]` (one entry per field) by `BotModel::from_json`.
+- Minor (`bot-model/1.N`): additive only — new optional fields. Readers of major 1 accept any 1.x. Unknown
+  **top-level** data from a newer minor is kept in `extras["_unknown"]` (one entry per field) by `BotModel::from_json`;
+  unknown fields **inside** nested objects (a persona, skill, schedule …) are not kept today, so a newer minor should
+  add new data at the top level or in `extras` until that changes.
 - Major (`bot-model/2`): anything breaking (rename, removal, type or meaning change). Readers reject any major
   they do not know with `unsupported major version N`.
 - Other schema families are rejected.
