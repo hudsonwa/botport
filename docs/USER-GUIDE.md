@@ -210,7 +210,7 @@ Upstream Hermes ships its own Grok Bot importer (`hermes migrate grok-bot` / `he
   `--clipboard` from the clipboard (`pbpaste` on macOS; `wl-paste` or `xclip` on Linux, else an error). Give only
   one input: `--bundle` with another value, or twice, is refused. For the run it is saved as
   `pasted-grok-bot-export.json` (mode 0600) in a new `paste-<random>` dir (mode 0700) under botport's state dir
-  (`$XDG_STATE_HOME/botport`, default `~/.local/state/botport`), read from there, and removed when the command ends. Strict JSON is read exactly as before; otherwise botport tolerates, and
+  (`$XDG_STATE_HOME/botport`, default `~/.local/state/botport`), read from there, and removed when the command ends. A run killed by Ctrl-C, SIGTERM or a crash skips that cleanup and can leave its `paste-<random>` dir (holding the bot's memories) under that state dir; later runs never read it, and it is safe to delete by hand when no botport command is running. Strict JSON is read exactly as before; otherwise botport tolerates, and
   reports on stderr one line per repair:
   - the JSON inside a fenced code block (```` ```json ````, ```` ``` ````, `~~~` or a longer fence, also all on one
     line) with chat text around it, or with no fence the text from the first `{` to the last `}`;
@@ -220,10 +220,14 @@ Upstream Hermes ships its own Grok Bot importer (`hermes migrate grok-bot` / `he
     ambiguous; if exactly one is, that one is taken. Paste the parts in the order the bot sent them;
   - curly quotes (“ ” ‘ ’) used as JSON quotes, and trailing commas before `}` or `]`; both only outside string
     values (quotes and commas inside text are kept). A value opened with a double curly quote ends only at a double
-    quote, one opened with ‘ only at a single quote, so `“I like ‘cats’, ‘dogs’”` stays one value.
+    quote, one opened with ‘ only at a single quote, so `“I like ‘cats’, ‘dogs’”` stays one value. If a curly-quoted value also contains a curly double quote (“ or ”),
+    as in `“Prefers “Nova”, “Sol””`, botport can't tell where the string ends, so it refuses the paste rather than
+    guess: ask the bot to resend it inside a code block (```` ```json ````) with straight quotes. Curly quotes inside
+    straight-quoted values (`"say “hi” now"`) are fine.
 
   The secret-key check runs on the repaired document, so a credential inside a fenced block is still refused (and
-  nothing is saved).
+  nothing is saved). The token check runs on the pasted text and again on the repaired document, so a token split
+  across two fragments is refused once joined.
 - **Shared skills.** Grok Bot skills come from a library shared by all your Bots, so every export carries all of them.
   Pick the ones this profile takes with `skills_include = [...]` in the spec (`skills_include = []` takes none).
 - **Its output.** On a profile the upstream importer already filled, `plan`/`drift`/`apply` treat its work as present:

@@ -1517,3 +1517,16 @@ fn clipboard_without_a_clipboard_tool_is_a_clear_error() {
         "{e}"
     );
 }
+
+#[test]
+fn token_split_across_pasted_fragments_is_refused_once_joined() {
+    let t = Tmp::new("paste-split-token");
+    let doc = r#"{"format": "grok-bot-export", "version": 1, "bots": [{"name": "Nova", "memories": ["key xai-ABCDEFGHIJKLMNOPQRSTUVWX", "ok"]}]}"#;
+    let (a, b) = doc.split_at(doc.find("xai-ABC").unwrap() + 7);
+    let pasted = format!("```json\n{a}\n```\n(more)\n```\n{b}\n```\n");
+    let (rc, out) = run_stdin(&t.0, &["verify", "--bundle", "-"], &pasted);
+    assert_eq!(rc, 2, "{out}");
+    assert!(fs::read_dir(t.0.join("botport")).map_or(true, |d| d
+        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+        .all(|n| !n.starts_with("paste"))));
+}

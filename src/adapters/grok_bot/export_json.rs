@@ -298,6 +298,8 @@ fn is_whole_export(b: &str) -> bool {
     repair(b).is_ok_and(|(v, _)| v.get("format").is_some() || v.get("bots").is_some())
 }
 
+const NESTED: &str = "this export uses curly quotes and a value also contains curly quotes, so botport can't tell where strings end; ask the bot to resend it inside a code block (```json) with straight quotes";
+
 /// Rewrite curly quotes used as JSON quotes and drop trailing commas, outside string values only; then parse.
 fn repair(s: &str) -> Res<(Value, Vec<String>)> {
     let (mut curly, mut commas) = (0usize, 0usize);
@@ -324,6 +326,9 @@ fn repair(s: &str) -> Res<(Value, Vec<String>)> {
                     curly += 1;
                 }
                 out.push('"');
+            } else if q != '"' && matches!(c, '“' | '”') {
+                // a curly double quote inside a curly-quoted string: where the string ends is a guess, so refuse
+                return Err(NESTED.into());
             } else if c == '"' {
                 // a straight quote inside a curly-quoted string is text
                 out.push_str("\\\"");
@@ -694,7 +699,10 @@ mod tests {
             e.contains("credential-looking") && e.contains("api_key"),
             "{e}"
         );
-        let raw = format!("```json\n{}\n```", doc.replace('"', "“"));
+        let raw = format!(
+            "```json\n{}\n```",
+            doc.replace("“quoted”", "quoted").replace('"', "“")
+        );
         let e = document(&raw).unwrap_err();
         assert!(e.contains("credential-looking"), "{e}");
     }
@@ -708,12 +716,25 @@ mod tests {
             v["bots"][0]["memories"],
             json!(["I like ‘cats’, ‘dogs’", "ok"])
         );
-        // a ” inside a “…” value that does not end it stays text
-        let raw = "{“format”: “grok-bot-export”, “bots”: [{“name”: “say “hi” now”}]}";
+        // a straight-quoted value with curly quotes needs no repair and is kept as is
+        let raw = r#"{"format": "grok-bot-export", "bots": [{"name": "say “hi” now"}]}"#;
         assert_eq!(ok(raw).0["bots"][0]["name"], json!("say “hi” now"));
-        // a ‘…’ string ends only on a single quote
-        let raw = "{‘format’: ‘grok-bot-export’, ‘bots’: [{‘name’: ‘a ”, b’}]}";
-        assert_eq!(ok(raw).0["bots"][0]["name"], json!("a ”, b"));
+    }
+
+    #[test]
+    fn curly_double_quote_inside_a_curly_string_is_refused() {
+        for v in [
+            "[“I said “a”, “b” and “c””]",
+            "[“tags: “a”, “b””, “c”]",
+            "[“say “hi” now”]",
+            "[‘a ”, b’]",
+        ] {
+            let raw = format!(
+                "{{“format”: “grok-bot-export”, “bots”: [{{“name”: “Nova”, “memories”: {v}}}]}}"
+            );
+            let e = document(&raw).unwrap_err();
+            assert!(e.contains("resend it inside a code block"), "{v}: {e}");
+        }
     }
 
     #[test]
