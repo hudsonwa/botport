@@ -46,7 +46,11 @@ pub fn from_describe(v: &Value) -> Described {
         }
         d.schedules.push(Schedule {
             name: st(&s, "name"),
-            cron: s["cron"].as_str().map(String::from),
+            // a schedule Hermes does not accept travels as its text: the Hermes adapter makes it a manual item
+            cron: s["cron"]
+                .as_str()
+                .or(s["schedule"].as_str())
+                .map(String::from),
             tz: st(&s, "timezone"),
             kind: ScheduleKind::Scheduled,
             action: st(&s, "prompt"),

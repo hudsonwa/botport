@@ -1,4 +1,5 @@
 //! Hermes adapter: port spec, plan/apply/sync (`sync`), two-way export/drift (`twoway`), and the `Adapter` impl.
+pub mod schedule;
 pub mod spec;
 pub mod sync;
 pub mod twoway;
@@ -214,7 +215,7 @@ impl Adapter for HermesProfile {
                 .map(|j| {
                     let name = j.name.strip_prefix(&prefix).unwrap_or(&j.name);
                     json!({"name": name, "prompt": j.prompt, "deliver": j.deliver, "enabled": false,
-                    "schedule": {"kind": "cron", "expr": j.schedule}, "paused_reason": j.paused_reason})
+                    "schedule": schedule::stored(&j.schedule), "paused_reason": j.paused_reason})
                 })
                 .collect();
             out.push((

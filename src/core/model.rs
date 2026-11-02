@@ -197,7 +197,8 @@ pub enum ScheduleKind {
 pub struct Schedule {
     /// Job name.
     pub name: String,
-    /// Five-field cron; absent for `event` schedules.
+    /// Five-field cron or an interval (`every 30m`); absent for `event` schedules. Text a reader could not
+    /// read as a schedule is carried as is; the target adapter decides whether it accepts it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cron: Option<String>,
     /// IANA timezone; empty when the origin gave none.

@@ -1491,3 +1491,103 @@ fn test_profile_name_must_be_plain() {
     assert_ne!(rc, 0, "{out}");
     assert!(out.contains("plain name"), "{out}");
 }
+
+/// A stand-in `hermes` that stores jobs the way `create_job` does: an interval keeps `every <minutes>m` as its
+/// display, a day/time phrase is kept as its cron expression. `edit` is only logged.
+fn storing_hermes(dir: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let p = dir.join("storing-hermes");
+    w(
+        &p,
+        r#"#!/bin/sh
+[ "$1" = --version ] && { echo 'Hermes Agent v0.22.5'; exit 0; }
+prof=$2; shift 3; sub=$1; shift
+d="$HERMES_HOME/profiles/$prof/cron"; mkdir -p "$d/j"
+echo "$sub $*" >> "$d/calls.log"
+[ "$sub" = create ] || exit 0
+en=true
+while :; do case $1 in --name) name=$2; shift 2;; --deliver) shift 2;; --paused) en=false; shift;;
+  --paused-reason) shift 2;; *) break;; esac; done
+case $1 in
+  'every 2h'|'every 120m') sch='{"kind":"interval","minutes":120,"display":"every 120m"}'; disp='every 120m';;
+  'every friday 16:00'|'0 16 * * 5') sch='{"kind":"cron","expr":"0 16 * * 5"}'; disp='0 16 * * 5';;
+  *) echo "unexpected schedule $1" >&2; exit 1;;
+esac
+n=$(ls "$d/j" | wc -l | tr -d ' ')
+printf '{"id":"j%s","name":"%s","prompt":"%s","deliver":"local","enabled":%s,"schedule":%s,"schedule_display":"%s"}' \
+  "$n" "$name" "$2" "$en" "$sch" "$disp" > "$d/j/$n.json"
+{ printf '{"jobs":['; first=1; for f in "$d"/j/*.json; do [ $first = 1 ] || printf ','; first=0; cat "$f"; done
+  printf ']}'; } > "$d/jobs.json"
+"#,
+    );
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+    p
+}
+
+/// A spec job written as `every 2h` or a phrase is compared in Hermes' stored form: apply, plan, apply, plan
+/// leaves it in sync and the second apply edits nothing.
+#[test]
+fn spec_cron_in_a_non_canonical_form_settles_after_one_apply() {
+    let t = Tmp::new("spec-cron-settles");
+    let acme = t.0.join("acme");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/acme");
+    assert!(Command::new("cp")
+        .arg("-R")
+        .arg(&src)
+        .arg(&acme)
+        .status()
+        .unwrap()
+        .success());
+    let cron = acme.join("template/cron.yaml");
+    let y = fs::read_to_string(&cron)
+        .unwrap()
+        .replace("\"0 9 * * 1-5\"", "every 2h")
+        .replace("\"0 16 * * 5\"", "every friday 16:00");
+    w(&cron, &y);
+    let hb = storing_hermes(&t.0);
+    let hh = t.0.join("hermes-home");
+    let go = |cmd: &str| {
+        let o = bin()
+            .args([cmd, "--bundle", s(&acme.join("grok")), "--spec"])
+            .arg(acme.join("botport.toml"))
+            .arg("--hermes-home")
+            .arg(&hh)
+            .arg("--hermes-bin")
+            .arg(&hb)
+            .arg("--json")
+            .env_remove("HERMES_HOME")
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr)
+    };
+    let cron_items = |out: &str| -> Vec<(String, String)> {
+        let v: serde_json::Value = serde_json::from_str(out).unwrap_or_else(|_| panic!("{out}"));
+        v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|i| i["area"] == "cron" && i["name"].as_str().unwrap().starts_with("acme-"))
+            .map(|i| {
+                (
+                    i["name"].as_str().unwrap().into(),
+                    i["status"].as_str().unwrap().into(),
+                )
+            })
+            .collect()
+    };
+    for round in 0..2 {
+        go("apply");
+        let items = cron_items(&go("plan"));
+        assert_eq!(items.len(), 2, "round {round}: {items:?}");
+        assert!(
+            items.iter().all(|(_, st)| st == "in-sync"),
+            "round {round}: {items:?}"
+        );
+    }
+    let log = fs::read_to_string(hh.join("profiles/acme-helper/cron/calls.log")).unwrap();
+    assert!(
+        log.contains("every 120m") && log.contains("0 16 * * 5"),
+        "{log}"
+    );
+    assert!(!log.contains("edit "), "{log}");
+}

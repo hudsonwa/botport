@@ -239,46 +239,61 @@ fn schedules_to_cron(
             ));
             continue;
         }
-        let missing: Vec<&str> = [
-            (x.cron.is_none(), "schedule"),
-            (x.tz.is_empty(), "timezone"),
-            (x.action.trim().is_empty(), "prompt"),
-        ]
-        .iter()
-        .filter(|(m, _)| *m)
-        .map(|(_, w)| *w)
-        .collect();
         if x.kind == crate::core::model::ScheduleKind::Event {
             manual.push((key, "event-triggered on the Grok side: Hermes cron cannot subscribe to it; set up a trigger by hand".into()));
-        } else if !missing.is_empty() {
-            manual.push((
-                key,
-                format!(
-                    "no {} in the description: create the Hermes cron job by hand",
-                    missing.join("/")
-                ),
-            ));
-        } else {
-            let name = format!("{}: {}", bot_name(m), x.name);
-            if spec_cron.iter().any(|j| j.name == name) {
+            continue;
+        }
+        // Only a string Hermes' own parse_schedule accepts becomes a job; anything else is a manual item, never a guess.
+        let schedule = match x.cron.as_deref().map(super::schedule::normalize) {
+            None => {
+                manual.push((
+                    key,
+                    "no schedule in the description: create the Hermes cron job by hand".into(),
+                ));
                 continue;
             }
-            jobs.push(CronJob {
-                name,
-                schedule: x.cron.clone().unwrap_or_default(),
-                deliver: "local".into(),
-                // a clean prompt is copied byte-identical
-                prompt: x.action.clone(),
-                paused_reason: Some(format!(
-                    "Imported by botport from the Grok bot; schedule is in {} (check the host timezone), resume once the Grok routine is off",
-                    x.tz
-                )),
-                enabled: None,
-            });
+            Some(Err(why)) => {
+                manual.push((key, why));
+                continue;
+            }
+            Some(Ok(s)) => s,
+        };
+        if x.action.trim().is_empty() {
+            manual.push((
+                key,
+                "no prompt in the description: create the Hermes cron job by hand".into(),
+            ));
+            continue;
         }
+        let name = format!("{}: {}", bot_name(m), x.name);
+        if spec_cron.iter().any(|j| j.name == name) {
+            continue;
+        }
+        // Hermes cron has no per-job timezone: a zone the routine carries is named, otherwise the profile's zone applies.
+        let tz = if x.tz.is_empty() {
+            NO_ZONE.to_string()
+        } else {
+            format!("{} (check the host timezone)", x.tz)
+        };
+        jobs.push(CronJob {
+            name,
+            schedule,
+            deliver: "local".into(),
+            // a clean prompt is copied byte-identical
+            prompt: x.action.clone(),
+            paused_reason: Some(format!(
+                "Imported by botport from the Grok bot; schedule is in {tz}, resume once the Grok routine is off"
+            )),
+            enabled: None,
+        });
     }
     jobs
 }
+
+/// The paused-reason wording for a routine that named no timezone.
+const NO_ZONE: &str = "the Hermes profile's timezone (the routine named none)";
+/// The plan/--json/--details note on such a job.
+pub const PROFILE_TZ: &str = "runs in the Hermes profile's timezone";
 
 /// MCP connectors with an http(s) url -> owned `mcp_servers.<id>` entries (unless the config template owns
 /// them); other connectors -> manual items.
@@ -648,7 +663,16 @@ fn want_spec_cron(c: &Ctx) -> Res<Vec<CronJob>> {
         jobs: Vec<CronJob>,
     }
     let f: F = serde_yaml::from_str(&read_str(&cr.file)?).map_err(|e| format!("cron file: {e}"))?;
-    Ok(f.jobs)
+    let mut jobs = f.jobs;
+    for j in &mut jobs {
+        // the spec is the owner's own file: a schedule Hermes would reject stops the plan instead of failing at apply.
+        // Kept in Hermes' stored form (`every 2h` -> `every 120m`, a phrase -> its cron) so it compares with `cron_expr`.
+        match super::schedule::normalize(&j.schedule) {
+            Ok(s) => j.schedule = s,
+            Err(why) => return err(format!("cron file: job {}: {why}", j.name)),
+        }
+    }
+    Ok(jobs)
 }
 
 /// Upstream's skill category for imported skills.
@@ -1559,6 +1583,19 @@ fn plan_model_cron(
             ),
         });
     }
+    // one item per job: a job whose routine named no zone says so in the plan, --json and --details
+    for (it, j) in items.iter_mut().zip(model_cron) {
+        if j.paused_reason
+            .as_deref()
+            .is_some_and(|r| r.contains(NO_ZONE))
+        {
+            it.detail = if it.detail.is_empty() {
+                PROFILE_TZ.into()
+            } else {
+                format!("{}; {PROFILE_TZ}", it.detail)
+            };
+        }
+    }
     items
 }
 
@@ -2219,6 +2256,117 @@ fn split_dotted(dotted: &str, v: &Y) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn schedules_become_paused_jobs_only_when_hermes_accepts_them() {
+        use crate::core::model::{Schedule, ScheduleKind};
+        let mut m = BotModel::from_json(
+            r#"{"schema":"bot-model/1","persona":{"name":"Nova","instructions":""}}"#,
+        )
+        .unwrap();
+        let sch = |name: &str, cron: Option<&str>, tz: &str| Schedule {
+            name: name.into(),
+            cron: cron.map(String::from),
+            tz: tz.into(),
+            kind: ScheduleKind::Scheduled,
+            action: "go".into(),
+            enabled: true,
+        };
+        m.schedules = vec![
+            sch("Cron", Some("0 7 * * 1-5"), "America/Chicago"),
+            sch("Phrase", Some("every monday 9am"), ""),
+            sch("Every", Some("every 15 min"), "UTC"),
+            sch("Hourly", Some("hourly"), "UTC"),
+            sch("Fridays", Some("fridays 16:00"), "UTC"),
+            sch("Seconds", Some("0 0 9 * * *"), "UTC"),
+            sch("Once", Some("in 30m"), "UTC"),
+            sch("None", None, "UTC"),
+        ];
+        let mut manual = vec![];
+        let jobs = schedules_to_cron(&m, &[], &mut manual);
+        let got: Vec<(&str, &str)> = jobs
+            .iter()
+            .map(|j| (j.name.as_str(), j.schedule.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("Nova: Cron", "0 7 * * 1-5"),
+                ("Nova: Phrase", "0 9 * * 1"),
+                ("Nova: Every", "every 15m")
+            ]
+        );
+        assert!(jobs.iter().all(|j| j.paused()));
+        // a zone is named only when the routine carried one; otherwise the profile's zone is stated
+        assert!(jobs[0]
+            .paused_reason
+            .as_ref()
+            .unwrap()
+            .contains("schedule is in America/Chicago (check the host timezone)"));
+        assert!(jobs[1]
+            .paused_reason
+            .as_ref()
+            .unwrap()
+            .contains("the Hermes profile's timezone"));
+        let m: BTreeMap<_, _> = manual.into_iter().collect();
+        for (n, t) in [
+            ("Hourly", "hourly"),
+            ("Fridays", "fridays 16:00"),
+            ("Seconds", "0 0 9 * * *"),
+        ] {
+            assert_eq!(
+                m[&format!("schedule {n}")],
+                format!("not imported: '{t}' is not a schedule Hermes accepts; set it by hand")
+            );
+        }
+        assert!(m["schedule Once"].contains("runs once"));
+        assert!(m["schedule None"].starts_with("no schedule"));
+    }
+
+    #[test]
+    fn a_schedule_with_no_zone_says_it_runs_in_the_profiles_zone() {
+        use crate::core::model::{Schedule, ScheduleKind};
+        let mut m = BotModel::from_json(
+            r#"{"schema":"bot-model/1","persona":{"name":"Nova","instructions":""}}"#,
+        )
+        .unwrap();
+        m.schedules = ["", "UTC"]
+            .iter()
+            .map(|tz| Schedule {
+                name: format!("z{tz}"),
+                cron: Some("every friday 16:00".into()),
+                tz: tz.to_string(),
+                kind: ScheduleKind::Scheduled,
+                action: "go".into(),
+                enabled: true,
+            })
+            .collect();
+        let jobs = schedules_to_cron(&m, &[], &mut vec![]);
+        let d = std::env::temp_dir().join(format!("botport-tz-{}", std::process::id()));
+        let src = Source {
+            path: d.clone(),
+            id: "t".into(),
+            files_read: BTreeMap::new(),
+            excluded: BTreeSet::new(),
+        };
+        let o = super::super::Opts {
+            spec: Spec::default(),
+            profile: "t".into(),
+            real_home: false,
+            hermes_bin: "hermes".into(),
+            hermes_home: None,
+        };
+        let c = Ctx::new(&m, &src, &d, &o);
+        let items = plan_model_cron(&c, &jobs, &[], &Lock::default());
+        let details: Vec<&str> = items.iter().map(|i| i.detail.as_str()).collect();
+        assert_eq!(
+            details,
+            [
+                "not managed here (--no-cron or not ~/.hermes); runs in the Hermes profile's timezone",
+                "not managed here (--no-cron or not ~/.hermes)"
+            ]
+        );
+    }
 
     #[test]
     fn unsafe_skill_names_and_paths_are_neither_read_nor_written() {

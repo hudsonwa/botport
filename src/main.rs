@@ -709,6 +709,14 @@ fn profile_report(
         if !parts.is_empty() {
             lines.push(format!("  {area}: {}", parts.join("; ")));
         }
+        // a job whose routine named no zone: the owner sees which clock it will run on
+        for i in diffs.iter().filter(|i| {
+            i.area == area
+                && matches!(i.status, St::Create | St::Update | St::Retire)
+                && i.detail.ends_with(sync::PROFILE_TZ)
+        }) {
+            lines.push(format!("  {area} {}: {}", i.name, sync::PROFILE_TZ));
+        }
         for i in diffs.iter().filter(|i| {
             i.area == area && matches!(i.status, St::Conflict | St::Duplicate | St::Skip)
         }) {
