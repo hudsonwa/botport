@@ -29,6 +29,26 @@ see [SECURITY.md](docs/SECURITY.md).
 Platform changes we hit and how the brief or tool adapted are logged in
 [docs/PLATFORM-CHANGES.md](docs/PLATFORM-CHANGES.md).
 
+## botport or `hermes migrate grok-bot`?
+Hermes has an official Grok Bot importer in the agent-importers plugin, v1.2.0 or later
+([NousResearch/hermes-official-plugins#248](https://github.com/NousResearch/hermes-official-plugins/pull/248)). The
+bot writes a `grok-bot-export.json` about itself, and `hermes import-agent grok-bot` turns its scheduled routines into
+paused cron jobs (event-triggered routines become notes), plus skills, memories, its role and remote MCP apps. On
+Hermes newer than v0.22.5 (its main branch today), `hermes migrate grok-bot` installs that plugin and runs it
+([NousResearch/hermes-agent#147724](https://github.com/NousResearch/hermes-agent/pull/147724)); on v0.22.5 and older,
+install agent-importers 1.2.0 or later yourself and run `hermes import-agent grok-bot`. **For a one-off move, use
+that.**
+
+botport is for when you keep both bots:
+- **Ongoing two-way sync** with ownership records: a re-run updates what botport wrote and never overwrites an edit
+  made on the Hermes side (that shows up as a conflict in `drift`).
+- **Drift reports** in both directions, a **restore point** before every apply, and **export back** to the Grok Bot
+  (`export-hermes`).
+- **The g2h bridge**, so the two bots can talk to each other.
+
+botport reads the same `grok-bot-export` v1 format as the upstream importer, as well as its own in-box bundle. Its
+mapping follows agent-importers, and credit goes to that project (see [NOTICE](NOTICE)).
+
 ## Where it's going (roadmap)
 | Item | Status |
 |---|---|

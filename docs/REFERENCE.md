@@ -82,7 +82,8 @@ state back, and skills that came from Hermes are never installed back as copies.
 flow from the repo.
 
 ## agent-importers source
-`shim/` adds a `grok-bot` source to NousResearch agent-importers: `shim/agent-importers-grok-bot.patch` (4 small
+`shim/` adds a `grok-bot` source to NousResearch agent-importers **older than 1.2.0** (1.2.0 and later have their own
+official `grok-bot` importer, and installing the shim there would replace it; don't): `shim/agent-importers-grok-bot.patch` (4 small
 edits) + `shim/grok_bot.py`, which calls this binary. Then `hermes import-agent grok-bot --source BUNDLE`
 and `hermes import-agent --sync` work. Test: `uv run --with pytest --with pyyaml python -m pytest shim/`.
 
