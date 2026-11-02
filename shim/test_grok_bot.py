@@ -3,8 +3,8 @@
 Run: BOTPORT_BIN=target/release/botport python -m pytest shim/ --timeout=60 -rs
 
 Needs the agent-importers source (older than 1.2.0) at AGENT_IMPORTERS_SRC or vendor/agent-importers; it is not
-in this repo. Without it every test here SKIPS (CI has no copy, so CI skips them). SHIM_REQUIRE_SRC=1 turns the
-skip into a failure.
+in this repo. Without it the integration test (test_import_and_sync_digest) SKIPS (CI has no copy, so CI skips
+it); the two unit tests of grok_bot.py still run. SHIM_REQUIRE_SRC=1 turns the skip into a failure.
 """
 import importlib
 import json

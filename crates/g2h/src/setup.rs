@@ -804,13 +804,9 @@ pub fn uninstall(p: &Paths, keep_logs: bool) -> i32 {
         .service
         .as_ref()
         .map_or(cfg_label.clone(), |(l, _)| l.clone());
-    // a label edited into config.yaml never reaches launchctl/systemctl unless it is plain reverse-DNS
-    match check_service_label(&label) {
-        Ok(()) => service_unload(&label),
-        Err(e) => eprintln!("not unloading the service: {e}"),
-    }
     // The manifest is only a hint: a path is removed only if it is one of the exact files setup
-    // writes, recomputed here (g2h home files, and the unit file of a valid label in the service dir).
+    // writes, recomputed here (g2h home files, and the unit file of a valid label in the service dir
+    // whose content is a g2h unit for this install). A label is unloaded only if its unit is ours.
     let mut allowed: BTreeSet<PathBuf> = [
         p.config(),
         p.credentials(),
@@ -818,18 +814,41 @@ pub fn uninstall(p: &Paths, keep_logs: bool) -> i32 {
         Manifest::path(p),
     ]
     .into();
-    allowed.extend(
-        [&cfg_label, &label]
-            .into_iter()
-            .filter_map(|l| service_file(l)),
-    );
+    let g2hd = g2hd_path();
+    let mut labels: Vec<&String> = vec![&cfg_label];
+    if label != cfg_label {
+        labels.push(&label);
+    }
+    for l in labels {
+        if let Err(e) = check_service_label(l) {
+            eprintln!("not unloading the service: {e}");
+            continue;
+        }
+        let Some(f) = service_file(l) else { continue };
+        match std::fs::read_to_string(&f) {
+            Ok(t) if is_g2h_unit(&t, l, &g2hd, &p.home) => {
+                service_unload(l);
+                println!("[ok] service {l} stopped");
+                allowed.insert(f);
+            }
+            Ok(_) => println!(
+                "skipped {} and did not stop {l} (not a g2h unit for this install; left alone)",
+                f.display()
+            ),
+            Err(_) => println!(
+                "not stopping {l}: no unit file {} (nothing to unload)",
+                f.display()
+            ),
+        }
+    }
     let mut gone: Vec<PathBuf> = service_file(&label).into_iter().collect();
     gone.push(p.credentials());
     if let Some((_, svc)) = &m.service {
         gone.push(svc.clone());
     }
     gone.extend(m.created.iter().cloned());
-    if !m.created.contains(&p.config()) && p.config().exists() {
+    let cfg_real = real_parent(&p.config());
+    if !m.created.iter().any(|c| real_parent(c) == cfg_real) && p.config().exists() {
         println!(
             "kept {} (it existed before g2h setup)",
             p.config().display()
@@ -887,11 +906,28 @@ pub fn uninstall(p: &Paths, keep_logs: bool) -> i32 {
         println!("removed {}", p.home.display());
     }
     println!(
-        "[ok] service {label} stopped; {removed} file(s) removed{}",
+        "[ok] uninstalled; {removed} file(s) removed{}",
         if keep_logs { " (logs kept)" } else { "" }
     );
     println!("\n{ROUTINE_NOTE}\nHermes side: remove the g2h hermes-send skill/tool text if you added it.");
     0
+}
+
+/// True when `text` is the unit setup writes for `label`, or at least a unit for `label` that runs
+/// this install's `g2hd` (an older g2h's layout). Anything else belongs to another app.
+fn is_g2h_unit(text: &str, label: &str, g2hd: &Path, home: &Path) -> bool {
+    if text == service_text(label, g2hd, home) {
+        return true;
+    }
+    let (g, l) = if cfg!(target_os = "macos") {
+        (
+            format!("<string>{}</string>", xml(&g2hd.to_string_lossy())),
+            format!("<string>{}</string>", xml(label)),
+        )
+    } else {
+        (format!("ExecStart=\"{}\"", g2hd.display()), String::new())
+    };
+    text.contains(&g) && text.contains(&l)
 }
 
 /// `f` with its parent directory resolved (the final component is kept as is, so a symlink stays
