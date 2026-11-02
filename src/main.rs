@@ -28,6 +28,8 @@ const USAGE: &str = "botport <command> [options]   (v{V}; --version prints it)
   test    --profile NAME --battery FILE [--only id,id] [--out DIR]
   doctor  [--profile NAME | --profile-dir DIR] [--spec FILE]   check hermes (on PATH, version), profile dir, write access, spec; exit 1 on a failure
   battery init PATH|--bundle PATH [--spec FILE] --out FILE  starter battery (PATH: bundle dir or grok-bot-export file) (docs/USER-GUIDE.md §6)
+  --check-routines PATH|auto  (verify/plan/apply/sync/drift; EXPERIMENTAL) warn about routines the Grok desktop
+          app's cache knows that the export left out; reads only that cache's transcript-replica files (docs/REFERENCE.md)
 common: --hermes-home DIR (default $HERMES_HOME, else ~/.hermes) | --profile-dir DIR  --hermes-bin PATH  --json  --details FILE";
 
 const VALUED: &[&str] = &[
@@ -50,6 +52,7 @@ const VALUED: &[&str] = &[
     "details",
     "battery",
     "only",
+    "check-routines",
 ];
 const FLAGS: &[&str] = &[
     "strict", "json", "adopt", "dry-run", "help", "no-cron", "version",
@@ -98,10 +101,29 @@ fn main() -> ExitCode {
         "battery" if a.pos.get(1).map(String::as_str) == Some("init") => cmd_battery_init(&a),
         _ => Err(format!("unknown command {cmd:?} (try --help)")),
     };
+    let r = match (r, a.get("check-routines")) {
+        (Ok(r), Some(spec))
+            if matches!(cmd.as_str(), "verify" | "plan" | "apply" | "sync" | "drift") =>
+        {
+            check_routines(&a, spec, r)
+        }
+        (r, _) => r,
+    };
     match r {
         Ok(r) => emit(&a, &cmd, r),
         Err(e) => fail(&e),
     }
+}
+
+/// Opt-in `--check-routines`: append the routine check's lines and JSON to the report (never changes the exit code).
+fn check_routines(a: &Args, spec: &str, mut r: Report) -> Res<Report> {
+    let bdir = a.path("bundle").ok_or("--bundle is required")?;
+    let m = GrokBot.read(&bdir)?;
+    let names: Vec<String> = m.schedules.iter().map(|s| s.name.clone()).collect();
+    let c = adapters::grok_bot::routines_check::check(spec, &names);
+    r.lines.extend(c.lines);
+    r.json["routine_check"] = c.json;
+    Ok(r)
 }
 
 fn fail(e: &str) -> ExitCode {

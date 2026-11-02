@@ -1358,3 +1358,35 @@ fn drift_does_not_flag_spec_jobs_created_paused() {
     assert!(!out.contains("conflict"), "{out}");
     assert!(out.contains(" 1 create "), "{out}");
 }
+
+#[test]
+fn verify_check_routines_warns_on_missing_and_never_fails() {
+    let exp = "tests/fixtures/grok-export/grok-bot-export.json";
+    let out = bin()
+        .args([
+            "verify",
+            "--bundle",
+            exp,
+            "--check-routines",
+            "tests/fixtures/routines-cache/replica.json",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let so = String::from_utf8_lossy(&out.stdout);
+    assert!(so.contains("WARN routine \"Weekly Review\""), "{so}");
+    assert!(!so.contains("Sample Report\" is in"), "{so}");
+    // absent cache: a note, exit 0
+    let out = bin()
+        .args([
+            "verify",
+            "--bundle",
+            exp,
+            "--check-routines",
+            "tests/fixtures/routines-cache/absent",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("no Grok desktop cache found; skipped"));
+}

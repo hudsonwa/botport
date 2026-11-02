@@ -22,6 +22,29 @@ Common: `--profile NAME` / `--hermes-home DIR` (default `~/.hermes`) or `--profi
 Exit codes: 0 ok, 1 drift/verify/test failure, 2 error (also bare `botport` with no command), 3 apply/sync left conflicts.
 `plan`, `apply` and `sync` name the destination profile dir on their first summary line.
 
+### Routine check (`--check-routines PATH|auto`, experimental)
+Opt-in on `verify`, `plan`, `apply`, `sync` and `drift`. It compares the routine names in the export with the routines
+the Grok desktop app's local cache has seen (its automation-changed events) and prints a `WARN` line naming each
+routine the cache knows but the export left out. It never changes the exit code: a missing cache is a one-line note,
+and a cache file that isn't JSON is a `WARN` and is skipped.
+
+What is read, and nothing else:
+- `PATH` a file: that one file. `PATH` a directory: only its `*.blob` files whose base32-encoded name decodes to a
+  key containing `.transcript.replicas.`.
+- `auto`: that directory at the app's default location, `<app data>/Grok Bot/sand-client-persistence`, where
+  `<app data>` is `~/Library/Application Support` (macOS), `%APPDATA%` (Windows) or `$XDG_CONFIG_HOME`/`~/.config`
+  (Linux).
+
+Nothing else in the app directory is opened: not `sand-secrets.json`, cookies, webhook keys or any other file. Only
+routine names are taken from the events; nothing is copied, and cache file names (they carry an account key) are
+never printed. The report JSON gets a `routine_check` block (counts and the missing names).
+
+Experimental because the event format is assumed, not confirmed against a real cache: each file is JSON or JSON
+lines, and any object whose `type`, `event` or `kind` is `automation-changed` (or `automation_changed`,
+`automationChanged`) names a routine at `automation.name`, `payload.name` or `name`; a change with `deleted: true`
+or `action`/`change` of `deleted`/`removed` forgets it. Names match ignoring case and punctuation. If your cache
+looks different, the check finds nothing rather than guessing.
+
 ## The bundle (`export`, run inside the Grok box)
 | Path | What |
 |---|---|

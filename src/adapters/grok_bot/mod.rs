@@ -2,6 +2,7 @@
 pub mod bundle;
 pub mod describe;
 pub mod export_json;
+pub mod routines_check;
 
 use crate::core::adapter::{Adapter, Source};
 use crate::core::model::{

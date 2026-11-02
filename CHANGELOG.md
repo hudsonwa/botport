@@ -9,6 +9,8 @@ First public release. The tool was called grok2hermes before release; the old na
 [REFERENCE.md](docs/REFERENCE.md#compatibility-with-the-old-name)).
 
 ### Added
+- `--check-routines PATH|auto` (experimental, opt-in): warn about routines the Grok desktop app's cache knows
+  that the export left out; reads only the cache's transcript-replica files ([REFERENCE.md](docs/REFERENCE.md)).
 - `botport` binary: `export`, `verify`, `describe`, `plan`, `apply`, `sync`, `drift`, `export-hermes`, `test`
   and `battery init`. `grok2hermes` stays as an alias.
 - Grok Bot adapter: botport bundles and grok-bot-export v1 files.
