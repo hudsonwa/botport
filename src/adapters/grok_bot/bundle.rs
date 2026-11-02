@@ -2,13 +2,13 @@
 //!
 //! Layout (every file listed with its SHA-256 in manifest.json; no timestamps in any hashed file):
 //!   raw/...                  source files verbatim (secrets excluded)
-//!   normalized/profile.json  settings.json  MEMORY.md  skills/<name>/...   (skill bodies with literal "\n" unescaped)
+//!   normalized/profile.json  settings.json  MEMORY.md  `skills/<name>/...`   (skill bodies with literal "\n" unescaped)
 //!   memory/memory.jsonl      memory-status.json        (memory-drop contract, ported from grok-bot-backup)
-//!   history/messages.jsonl   read-only snapshot of the history DB, or history/<file>.sqlite copied verbatim
+//!   history/messages.jsonl   read-only snapshot of the history DB, or `history/<file>.sqlite` copied verbatim
 //!   NOT_CAPTURED.md          what the export cannot carry, with the bot's own description of it
 //!
 //! A directory without manifest.json is read as a legacy hand export (profile.json, settings.json, MEMORY.md,
-//! skills/<name>/SKILL.md at its top level, like `examples/acme/grok/`) and normalized in memory.
+//! `skills/<name>/SKILL.md` at its top level, like `examples/acme/grok/`) and normalized in memory.
 use crate::core::util::*;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;

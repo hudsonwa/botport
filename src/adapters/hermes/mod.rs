@@ -124,7 +124,7 @@ impl Adapter for HermesProfile {
     }
 
     /// The plain model mapping into a fresh profile directory: SOUL.md; memories/MEMORY.md and USER.md
-    /// (§-separated; user-scope or `profile`-tier facts go to USER.md); skills/<name>/...; the bot's schedules as
+    /// (§-separated; user-scope or `profile`-tier facts go to USER.md); `skills/<name>/...`; the bot's schedules as
     /// cron/jobs.json entries (always paused); MCP connectors under config.yaml `mcp_servers` (on top of the
     /// profile config kept in `extras`); and botport-manual.md for credential names and everything else that
     /// needs a human. Live profiles go through `Target::plan`/`apply` instead (cron via the hermes CLI).

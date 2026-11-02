@@ -2,6 +2,9 @@
 
 Every adapter reads a platform's export **into** this model and writes a platform's import **from** it
 (hub and spoke). The core knows no platform. Rust types: `src/core/model.rs`. Fixtures: `tests/fixtures/model/`.
+JSON Schema: [`schema/botmodel-v1.json`](schema/botmodel-v1.json) (draft 2020-12). `tests/schema.rs` validates
+every model fixture and every model the adapters read against it, and fails when the types have a field the schema
+lacks. The crate API (`cargo doc --no-deps --open`) documents the same types.
 
 ## Document
 
@@ -18,7 +21,9 @@ map keys sorted. Empty lists/maps and absent optionals are omitted. A canonical 
 | `schedules[]` | Schedule | no | timed or event-triggered jobs |
 | `connectors[]` | Connector | no | tool servers (MCP etc.) |
 | `credentials[]` | CredentialRef | no | names of secrets the bot needs — **never values** |
+| `memory_text` | string | no | the origin's memory as one document, verbatim |
 | `history` | HistoryRef | no | pointer to conversation history stored beside the model |
+| `manual[]` | ManualItem | no | what the reader could not carry, for a human (names and reasons only) |
 | `extras` | map adapter-id → any JSON | no | data an adapter could not map; never drop silently |
 
 **Fact** — `text` (required); optional `tier` (`core` = always in context, `recall` = searchable), `scope`
@@ -38,12 +43,19 @@ written. Other unknown fields are rejected, so a document carrying a `value`/`se
 
 **HistoryRef** — `kind` (e.g. `jsonl`, `sqlite`), `path` (relative to the model file).
 
-Two more optional top-level fields, omitted when empty (so older documents round-trip byte-identically and the
-schema stays `bot-model/1`): `memory_text`, the origin's memory as one document, verbatim (e.g. a Grok bundle's
-MEMORY.md); and `manual[]`, items `{item, todo}` the reader saw but could not carry (names and reasons only:
-schedules that run elsewhere, apps without an MCP url, entries that looked like secrets).
+**ManualItem** — `item` (e.g. `schedule Nightly`), `todo` (what to do by hand), optional `done` (bool, ticked off
+by a human; omitted when false). Written to the target's checklist (e.g. `botport-manual.md`).
+
+`memory_text` and `manual[]` were added after the first documents were written; both are optional and omitted when
+empty, so older documents round-trip byte-identically and the schema stays `bot-model/1`. `memory_text` is e.g. a
+Grok bundle's MEMORY.md; `manual[]` holds schedules that run elsewhere, apps without an MCP url and entries that
+looked like secrets.
 
 ## Versioning
+
+The schema file is versioned by major: `docs/schema/botmodel-v1.json` describes `bot-model/1` and only ever
+changes additively (a new optional field, together with the types). A breaking change gets a new major,
+`bot-model/2`, and a new file `botmodel-v2.json`; the v1 file stays.
 
 - Minor (`bot-model/1.N`): additive only — new optional fields. Readers of major 1 accept any 1.x and ignore
   nothing silently: unknown top-level data from a newer minor is kept in `extras["_unknown"]` (one entry per field) by `BotModel::from_json`.
@@ -61,7 +73,8 @@ schedules that run elsewhere, apps without an MCP url, entries that looked like 
 | agent instructions / role text | `persona.instructions` | — |
 | `memory-agent.jsonl` rows | `memory[]` (`source` = file, `date` from row) | tier not recorded → omitted |
 | `MEMORY.md` facts | `memory[]` `tier: core` | free-form prose split per entry |
-| `skills/<name>/**` | `skills[]` `files` | binary files → `extras` |
+| `MEMORY.md` as a whole | `memory_text` | verbatim |
+| `skills/<name>/**` | `skills[]` `files`, `binary_files` (hex) | — |
 | scheduled tasks | `schedules[]` | — |
 | `describe.md` sections (what can't be copied) | `extras["grok-bot"]` | human prose, not structured |
 | history export | `history` | stays a separate file |
@@ -75,12 +88,12 @@ grok-bot-export file: a `describe.json` beside it). Merged with the export's rou
 | describe.json | Model | Lossy notes |
 |---|---|---|
 | `schedules[]` `name`/`cron`/`timezone`/`prompt` (`side: grok`) | `schedules[]` `kind: scheduled`, `tz` (empty when not given), `action`, `enabled` (false when `paused`, set when the line says "(paused)") | suspicious schedules are in `manual[]`, not here |
-| `schedules[]` `side: other` | `extras["grok-bot"].schedules_elsewhere` | runs off Grok |
+| `schedules[]` `side: other` | `manual[]` `schedule <name>` | runs off Grok: moved by hand |
 | `connectors[]` `kind: mcp` + http(s) `url` | `connectors[]` `kind: mcp-http`, `tools` | suspicious connectors are in `manual[]`, not here |
 | `connectors[]` other kinds (`builtin`, `url`, `unknown`, `mcp` without URL) | `connectors[]` with that kind | not set up automatically |
 | `credentials[]` `name` | `credentials[]` `name` | names only; re-checked on load (a name that may hold a value goes to `manual`) |
 | `unparsed[]` | `extras["grok-bot"].describe_unparsed` (count) | needs a human |
-| `manual[]` `kind`/`name`/`line`/`reason` | manual checklist items (not part of the model) | looked like it holds a secret: text not copied |
+| `manual[]` `kind`/`name`/`line`/`reason` | `manual[]` `item` (kind and name), `todo` (reason) | looked like it holds a secret: text not copied |
 
 describe.json keeps structured fields only (no `raw` line text). Text is never rewritten (`src/core/secrets.rs`,
 see USER-GUIDE and SECURITY): schedule and connector lines and credential names go through rule (A), keyword routing,
@@ -109,7 +122,7 @@ Input: one JSON document `{"format": "grok-bot-export", "version": 1, "bots": [.
 | `routines[].paused` | `enabled = !paused` | — |
 | `routines[]` `trigger`, `schedule_text`, `trigger_details`, `paused_reason`, `skills` | `extras["grok-bot"].routines[<name>]` | — |
 | `apps[]` with http(s) `mcp_url` | `connectors[]` `kind: mcp-http`; name = short id (`id` if given, else the app name before `(`/`;`/` - `, slugged, ≤32 chars) | — |
-| `apps[]` without URL | `extras["grok-bot"].apps_without_url` | logins stay on origin |
+| `apps[]` without URL | `extras["grok-bot"].apps_without_url` and `manual[]` `connector <name>` | logins stay on origin |
 | secret-looking keys (`token`, `password`, `api_key`, …) | refused | never carried |
 
 ### 3. OpenBot (upstream agent-importers `openbot.py`, SQLite projections)
@@ -141,5 +154,5 @@ Input: one JSON document `{"format": "grok-bot-export", "version": 1, "bots": [.
 - Model/provider choice, reasoning settings, TTS voice, gateway/channel bindings, approval policies, hooks, plugins.
 - Event triggers whose source platform the target cannot subscribe to (kept as `kind: event`, possibly disabled).
 - Non-cron schedules (intervals anchored to a time, "every N months on weekday") → `extras`.
-- Logins/OAuth sessions of hosted apps; binary skill assets (→ `extras`); conversation history content
+- Logins/OAuth sessions of hosted apps; conversation history content
   (referenced, not embedded).

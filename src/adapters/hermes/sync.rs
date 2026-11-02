@@ -2,8 +2,8 @@
 //! and apply it (apply / sync) behind a restore point.
 //!
 //! Ownership rules (ported from agent-importers sync.py and an earlier hand-made renderer):
-//! - skills: one unit per skill dir under <profile>/skills/<category>/; a unit's tree digest is recorded in
-//!   <profile>/botport.lock.json when written (grok2hermes.lock.json still read). A live unit that differs from both the wanted and the recorded
+//! - skills: one unit per skill dir under `<profile>/skills/<category>/`; a unit's tree digest is recorded in
+//!   `<profile>/botport.lock.json` when written (grok2hermes.lock.json still read). A live unit that differs from both the wanted and the recorded
 //!   digest was edited on the Hermes side: CONFLICT, never overwritten.
 //! - SOUL.md: owned sections between `<!-- botport:begin NAME -->` / `end` markers (old `grok2hermes:` markers still read); text outside them is the
 //!   Hermes side's. A legacy SOUL.md without markers that equals the template exactly counts as in sync.
@@ -160,7 +160,7 @@ pub struct Want {
     pub cron: Vec<CronJob>,
     /// unit holding the bundle's MEMORY.md, if any
     pub memory_unit: Option<String>,
-    /// cron jobs made from the bot's own schedules ("<Bot>: <routine>", created paused)
+    /// cron jobs made from the bot's own schedules (`"<Bot>: <routine>"`, created paused)
     pub model_cron: Vec<CronJob>,
     /// MCP connectors with an http(s) url: (server id, owned `mcp_servers.<id>` entry)
     pub mcp: Vec<(String, Y)>,

@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hudsonwa/botport/blob/main/docs/schema/botmodel-v1.json",
+  "title": "bot-model/1",
+  "description": "Platform-neutral bot model, major version 1, as botport writes it (docs/MODEL.md; Rust types in src/core/model.rs). Canonical form: 2-space pretty JSON, trailing newline, empty lists/maps and absent optionals omitted. Readers of major 1 also accept a newer minor (bot-model/1.N) and keep its unknown top-level fields in extras[\"_unknown\"]; this schema describes the fields of 1.0 only.",
+  "type": "object",
+  "required": ["schema", "persona"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "description": "bot-model/MAJOR[.MINOR]; currently bot-model/1.",
+      "type": "string",
+      "pattern": "^bot-model/1(\\.[0-9]+)?$"
+    },
+    "persona": { "$ref": "#/$defs/Persona" },
+    "memory": {
+      "description": "Remembered facts, in origin order.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/Fact" }
+    },
+    "memory_text": {
+      "description": "The origin's memory as one document, verbatim (e.g. a MEMORY.md with its headings), when it keeps one. memory[] holds the same facts one by one.",
+      "type": "string"
+    },
+    "skills": {
+      "description": "Reusable instruction packs.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/Skill" }
+    },
+    "schedules": {
+      "description": "Timed or event-triggered jobs.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/Schedule" }
+    },
+    "connectors": {
+      "description": "Tool servers (MCP etc.).",
+      "type": "array",
+      "items": { "$ref": "#/$defs/Connector" }
+    },
+    "credentials": {
+      "description": "Names of secrets the bot needs, never values.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/CredentialRef" }
+    },
+    "history": { "$ref": "#/$defs/HistoryRef" },
+    "manual": {
+      "description": "What the reader saw but could not carry: names and reasons only, never a value. Writers list them for a human.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/ManualItem" }
+    },
+    "extras": {
+      "description": "Per-adapter data the model cannot express, keyed by adapter id (any JSON). \"_unknown\" holds top-level fields from a newer minor.",
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "Persona": {
+      "type": "object",
+      "required": ["name", "instructions"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "description": "Display name of the bot.", "type": "string" },
+        "instructions": { "description": "Role / system prompt / persona text (may be empty).", "type": "string" }
+      }
+    },
+    "Fact": {
+      "type": "object",
+      "required": ["text"],
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string" },
+        "tier": { "description": "e.g. core (always loaded) or recall (searchable).", "type": "string" },
+        "scope": { "description": "e.g. user, agent, project.", "type": "string" },
+        "source": { "description": "Where on the origin platform the fact came from.", "type": "string" },
+        "date": { "description": "ISO-8601 date or timestamp.", "type": "string" },
+        "origin_side": { "description": "Which side of a two-way sync first wrote it (opaque adapter id).", "type": "string" }
+      }
+    },
+    "Skill": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "files": {
+          "description": "Relative path -> UTF-8 content.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "binary_files": {
+          "description": "Relative path -> lowercase hex of a file that is not UTF-8 (images, archives).",
+          "type": "object",
+          "additionalProperties": { "type": "string", "pattern": "^([0-9a-f]{2})*$" }
+        }
+      }
+    },
+    "Schedule": {
+      "type": "object",
+      "required": ["name", "tz", "kind", "action", "enabled"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "cron": { "description": "Five-field cron; absent for event schedules.", "type": "string" },
+        "tz": { "description": "IANA timezone (empty when the origin gave none).", "type": "string" },
+        "kind": { "type": "string", "enum": ["scheduled", "event"] },
+        "action": { "description": "Natural-language prompt to run.", "type": "string" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "Connector": {
+      "type": "object",
+      "required": ["name", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "kind": { "description": "e.g. mcp-http, mcp-stdio.", "type": "string" },
+        "url": { "type": "string" },
+        "tools": { "description": "Allowed tool names.", "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "CredentialRef": {
+      "description": "A credential by name only. Any other field (value, secret, ...) is rejected. Readers also accept and drop a legacy \"where\" field from older documents; it is never written, so it is not part of this schema.",
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" }
+      }
+    },
+    "HistoryRef": {
+      "description": "Pointer to conversation history stored beside the model.",
+      "type": "object",
+      "required": ["kind", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "description": "e.g. jsonl, sqlite.", "type": "string" },
+        "path": { "description": "Relative to the model file.", "type": "string" }
+      }
+    },
+    "ManualItem": {
+      "description": "Something only a human can set up.",
+      "type": "object",
+      "required": ["item", "todo"],
+      "additionalProperties": false,
+      "properties": {
+        "item": { "description": "What it is, e.g. \"schedule Nightly\".", "type": "string" },
+        "todo": { "description": "What to do by hand.", "type": "string" },
+        "done": { "description": "Ticked off by a human; omitted when false.", "type": "boolean" }
+      }
+    }
+  }
+}

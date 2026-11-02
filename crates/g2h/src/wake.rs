@@ -92,7 +92,7 @@ pub fn load_creds(path: &Path) -> Result<Option<WebhookCreds>, String> {
     }))
 }
 
-/// "set" / "missing" / "bad: <why>" — never the values.
+/// "set" / "missing" / `"bad: <why>"` — never the values.
 pub fn creds_state(path: &Path) -> String {
     match load_creds(path) {
         Ok(Some(_)) => "set".into(),

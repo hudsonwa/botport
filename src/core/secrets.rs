@@ -883,7 +883,7 @@ fn blank(t: &str) -> String {
     t.into_owned()
 }
 
-/// Rule (B) on one string (after [`blank`]): a token shape (private key, JWT, bearer, high entropy in a value
+/// Rule (B) on one string (after `blank`): a token shape (private key, JWT, bearer, high entropy in a value
 /// position), a url with userinfo or a credential query/fragment/matrix part, or an explicit `key=value` /
 /// `key: value` whose key names a secret and whose value is real (not empty, a prose word or a pure template).
 pub fn guard_str(t: &str) -> Option<Reason> {
