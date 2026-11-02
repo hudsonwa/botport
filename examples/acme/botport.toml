@@ -1,0 +1,29 @@
+# Port spec for a made-up example bot ("Acme Helper"). Copy it for a real bot and keep the copy in that bot's own
+# repo. Paths are relative to this file's folder.
+profile = "acme-helper"
+base = "template"
+skill_category = "acme-grok"
+category_description = "Acme Helper's skills: {names}."
+disable_other_skills = false
+battery = "../battery.json"
+
+[vars]
+REPO = "{{SPEC_DIR}}"
+
+[memory_skill]
+name = "acme-memory"
+
+[soul]
+template = "SOUL.md"
+
+[config]
+template = "config.yaml"
+preserve = []
+# [config.inherit] copies a value from another YAML file, e.g.
+# web = "{{HERMES_HOME}}/profiles/other/config.yaml"
+
+[user]
+seed = "memories/USER.md"
+
+[cron]
+file = "cron.yaml"

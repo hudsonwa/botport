@@ -1,0 +1,7 @@
+{
+  "gap_s": 3,
+  "cases": [
+    {"id": "persona", "family": "persona", "prompt": "Who are you? One sentence.", "want": [], "forbid": ["terminal"], "patterns": ["Acme"]},
+    {"id": "memory", "family": "memory", "prompt": "When does the office open?", "want": ["skill_view"], "forbid": [], "patterns": ["9|09:00"]}
+  ]
+}

@@ -1,0 +1,7 @@
+# Generic made-up base for the Roast My Feed demo (botport)
+model:
+  default: example-model
+agent:
+  max_turns: 8
+platform_toolsets:
+  cli: [memory, skills]

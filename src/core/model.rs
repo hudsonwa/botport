@@ -1,0 +1,262 @@
+//! Platform-neutral bot model (`bot-model/1`). See docs/MODEL.md.
+#![allow(dead_code)] // types only for now; adapters move onto them later
+
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+/// Schema family; the version after `/` is `MAJOR[.MINOR]`.
+pub const SCHEMA_FAMILY: &str = "bot-model";
+/// Major version this build understands. Minors are additive and accepted.
+pub const SCHEMA_MAJOR: u32 = 1;
+/// `extras` key that holds top-level fields this build does not know (from a newer minor), kept, not dropped.
+pub const UNKNOWN_KEY: &str = "_unknown";
+const KNOWN: [&str; 9] = [
+    "schema",
+    "persona",
+    "memory",
+    "skills",
+    "schedules",
+    "connectors",
+    "credentials",
+    "history",
+    "extras",
+];
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BotModel {
+    pub schema: String,
+    pub persona: Persona,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub memory: Vec<Fact>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<Skill>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub schedules: Vec<Schedule>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub connectors: Vec<Connector>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub credentials: Vec<CredentialRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history: Option<HistoryRef>,
+    /// Per-adapter area for data the model cannot express, keyed by adapter
+    /// id. Adapters put unmappable input here instead of dropping it.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub extras: BTreeMap<String, serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Persona {
+    pub name: String,
+    pub instructions: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Fact {
+    pub text: String,
+    /// e.g. `core` (always loaded) or `recall` (searchable).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<String>,
+    /// e.g. `user`, `agent`, `project`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    /// Where on the origin platform the fact came from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// ISO-8601 date or timestamp.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+    /// Which side of a two-way sync first wrote it (opaque adapter id).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_side: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Skill {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Relative path -> UTF-8 content. Binary files go to `extras`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub files: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScheduleKind {
+    Scheduled,
+    Event,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Schedule {
+    pub name: String,
+    /// Five-field cron; absent for `event` schedules.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cron: Option<String>,
+    /// IANA timezone.
+    pub tz: String,
+    pub kind: ScheduleKind,
+    /// Natural-language prompt to run.
+    pub action: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Connector {
+    pub name: String,
+    /// e.g. `mcp-http`, `mcp-stdio`.
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<String>,
+}
+
+/// A credential by NAME only. `deny_unknown_fields` makes any attempt to
+/// carry a value (`value`, `secret`, ...) a parse error.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CredentialRef {
+    pub name: String,
+    /// `where` from older documents: accepted and dropped, never written (a location phrase can hold a value).
+    #[serde(rename = "where", default, skip_serializing)]
+    pub legacy_where: serde::de::IgnoredAny,
+}
+
+impl CredentialRef {
+    pub fn new(name: impl Into<String>) -> Self {
+        CredentialRef {
+            name: name.into(),
+            legacy_where: serde::de::IgnoredAny,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HistoryRef {
+    pub kind: String,
+    pub path: String,
+}
+
+/// Parse `bot-model/MAJOR[.MINOR]` and reject other families/majors.
+pub fn check_schema(schema: &str) -> Result<(), String> {
+    let ver = schema
+        .strip_prefix(SCHEMA_FAMILY)
+        .and_then(|r| r.strip_prefix('/'))
+        .ok_or_else(|| format!("not a {SCHEMA_FAMILY} document: schema {schema:?}"))?;
+    let major: u32 = ver
+        .split('.')
+        .next()
+        .and_then(|m| m.parse().ok())
+        .ok_or_else(|| format!("bad schema version {schema:?}"))?;
+    if major != SCHEMA_MAJOR {
+        return Err(format!(
+            "unsupported major version {major} in {schema:?} (this build reads {SCHEMA_FAMILY}/{SCHEMA_MAJOR})"
+        ));
+    }
+    Ok(())
+}
+
+impl BotModel {
+    pub fn from_json(s: &str) -> Result<Self, String> {
+        let v: serde_json::Value = serde_json::from_str(s).map_err(|e| e.to_string())?;
+        let schema = v
+            .get("schema")
+            .and_then(|x| x.as_str())
+            .ok_or("missing \"schema\" field")?;
+        check_schema(schema)?;
+        let mut v = v;
+        let obj = v.as_object_mut().ok_or("model is not a JSON object")?;
+        let unknown: serde_json::Map<String, serde_json::Value> = obj
+            .keys()
+            .filter(|k| !KNOWN.contains(&k.as_str()))
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter_map(|k| obj.remove(&k).map(|x| (k, x)))
+            .collect();
+        let mut m: BotModel = serde_json::from_value(v).map_err(|e| e.to_string())?;
+        if !unknown.is_empty() {
+            match m
+                .extras
+                .get_mut(UNKNOWN_KEY)
+                .and_then(|x| x.as_object_mut())
+            {
+                Some(have) => have.extend(unknown),
+                None => {
+                    m.extras.insert(UNKNOWN_KEY.into(), unknown.into());
+                }
+            }
+        }
+        Ok(m)
+    }
+
+    /// Canonical form: 2-space pretty JSON, trailing newline.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).expect("model serialises") + "\n"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture(name: &str) -> String {
+        let p = format!("{}/tests/fixtures/model/{name}", env!("CARGO_MANIFEST_DIR"));
+        std::fs::read_to_string(p).unwrap()
+    }
+
+    #[test]
+    fn fixtures_round_trip_byte_identical() {
+        for name in ["full.json", "minimal.json"] {
+            let src = fixture(name);
+            let m = BotModel::from_json(&src).unwrap();
+            assert_eq!(m.to_json(), src, "{name}");
+        }
+    }
+
+    #[test]
+    fn unknown_major_version_rejected() {
+        let src = fixture("minimal.json").replace("bot-model/1", "bot-model/2");
+        let err = BotModel::from_json(&src).unwrap_err();
+        assert!(err.contains("unsupported major version 2"), "{err}");
+        let src = fixture("minimal.json").replace("bot-model/1", "other/1");
+        assert!(BotModel::from_json(&src).is_err());
+    }
+
+    #[test]
+    fn newer_minor_version_accepted() {
+        let src = fixture("minimal.json").replace("bot-model/1", "bot-model/1.3");
+        assert!(BotModel::from_json(&src).is_ok());
+    }
+
+    #[test]
+    fn newer_minor_unknown_fields_kept_in_extras() {
+        let src = fixture("minimal.json")
+            .replace("bot-model/1", "bot-model/1.3")
+            .replace("\"persona\"", "\"mood\": \"sunny\",\n  \"persona\"");
+        let m = BotModel::from_json(&src).unwrap();
+        assert_eq!(m.extras[UNKNOWN_KEY]["mood"], "sunny");
+        assert!(m.to_json().contains("sunny"));
+    }
+
+    #[test]
+    fn credential_cannot_hold_a_value() {
+        let src = fixture("full.json").replace(
+            "\"name\": \"DEMO_TOKEN\"",
+            "\"name\": \"DEMO_TOKEN\", \"value\": \"s3cret\"",
+        );
+        let err = BotModel::from_json(&src).unwrap_err();
+        assert!(err.contains("value"), "{err}");
+    }
+
+    #[test]
+    fn a_legacy_credential_where_is_accepted_and_never_written() {
+        let src = fixture("full.json").replace(
+            "\"name\": \"DEMO_TOKEN\"",
+            "\"name\": \"DEMO_TOKEN\", \"where\": \"connector:demo\"",
+        );
+        let m = BotModel::from_json(&src).unwrap();
+        assert_eq!(m.to_json(), fixture("full.json"));
+    }
+}

@@ -1,0 +1,36 @@
+{
+  "format": "grok-bot-export",
+  "version": 1,
+  "bots": [
+    {
+      "name": "Nova",
+      "title": "Research helper",
+      "instructions": "You are Nova, a research helper.\nCite every source.",
+      "memories": [
+        "The team wiki lives at wiki.example.test",
+        "Weekly report goes out on Fridays",
+        "Project Lark deadline is in March [truncated in memory recall]",
+        "  "
+      ],
+      "user_facts": ["The user is called Robin Example", "Time zone: Europe/Lisbon"],
+      "skills": [
+        {"name": "Cite Sources", "description": "When answering with facts",
+         "instructions": "# Steps\n1. Find a source.\n2. Quote it."},
+        {"name": "Daily Totals", "description": "Morning summary",
+         "instructions": "Collect data.\\nSummarise in five bullets.\\n\\tKeep it short."}
+      ],
+      "routines": [
+        {"name": "Sample report", "instruction": "Run the Daily Totals skill.", "trigger": "schedule",
+         "schedule_cron": "0 8 * * 1-5", "schedule_text": "Weekdays at 8am", "timezone": "Europe/Lisbon",
+         "paused": false, "skills": ["Daily Totals"], "trigger_details": ""},
+        {"name": "Inbox watch", "instruction": "Summarise new mail from the boss.", "trigger": "email",
+         "schedule_cron": "", "schedule_text": "", "timezone": "Europe/Lisbon", "paused": true,
+         "skills": [], "trigger_details": "from boss@example.test"}
+      ],
+      "apps": [
+        {"name": "Notes Service MCP (lookup_documents, find_items; reached through the local proxy)", "mcp_url": "https://demo.example.test/mcp"},
+        {"name": "Calendar", "mcp_url": ""}
+      ]
+    }
+  ]
+}

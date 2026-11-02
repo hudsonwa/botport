@@ -1,0 +1,43 @@
+[package]
+name = "botport"
+version = "0.1.0"
+edition = "2021"
+description = "Port, sync and bridge AI bots between Grok Bot and Hermes"
+repository = "https://github.com/hudsonwa/botport"
+readme = "README.md"
+rust-version = "1.89"
+default-run = "botport"
+license = "MIT"
+
+# `grok2hermes` is the former name, kept as an alias binary on the same main.
+[[bin]]
+name = "botport"
+path = "src/main.rs"
+
+[[bin]]
+name = "grok2hermes"
+path = "src/bin/grok2hermes.rs"
+# Same main as `botport`: its unit tests already run there.
+test = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+sha2 = "0.10"
+regex = { version = "1", default-features = false, features = ["std", "unicode-case", "unicode-perl"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
+toml = "0.8"
+unicode-normalization = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[workspace]
+members = ["crates/g2h"]
+# plain `cargo build --release` builds botport, grok2hermes, g2h and g2hd
+default-members = [".", "crates/g2h"]

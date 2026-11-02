@@ -1,0 +1,50 @@
+name: release
+# On a v* tag: build botport, grok2hermes, g2h and g2hd for macOS (arm64, x86_64) and static Linux musl
+# (x86_64, aarch64), then publish the archives, per-archive and per-binary .sha256 files and SHA256SUMS as a GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            targets: aarch64-apple-darwin x86_64-apple-darwin
+          - os: ubuntu-latest
+            targets: x86_64-unknown-linux-musl aarch64-unknown-linux-musl
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - name: add targets
+        run: rustup target add ${{ matrix.targets }}
+      - name: build
+        run: scripts/build-release.sh ${{ matrix.targets }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist-${{ matrix.os }}
+          path: |
+            dist/release/*.tar.gz
+            dist/release/*.sha256
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: SHA256SUMS
+        run: cd dist && sha256sum ./*.tar.gz | sed 's| \./| |' > SHA256SUMS && cat SHA256SUMS
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

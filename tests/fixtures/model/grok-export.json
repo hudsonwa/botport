@@ -1,0 +1,95 @@
+{
+  "schema": "bot-model/1",
+  "persona": {
+    "name": "Nova",
+    "instructions": "You are Nova, a research helper.\nCite every source."
+  },
+  "memory": [
+    {
+      "text": "The team wiki lives at wiki.example.test",
+      "tier": "core",
+      "scope": "agent"
+    },
+    {
+      "text": "Weekly report goes out on Fridays",
+      "tier": "core",
+      "scope": "agent"
+    },
+    {
+      "text": "Project Lark deadline is in March [truncated in memory recall]",
+      "tier": "core",
+      "scope": "agent"
+    },
+    {
+      "text": "The user is called Robin Example",
+      "tier": "core",
+      "scope": "user"
+    },
+    {
+      "text": "Time zone: Europe/Lisbon",
+      "tier": "core",
+      "scope": "user"
+    }
+  ],
+  "skills": [
+    {
+      "name": "cite-sources",
+      "files": {
+        "SKILL.md": "---\nname: cite-sources\ndescription: \"When answering with facts\"\n---\n\n# Cite Sources\n\n# Steps\n1. Find a source.\n2. Quote it.\n"
+      }
+    },
+    {
+      "name": "daily-totals",
+      "files": {
+        "SKILL.md": "---\nname: daily-totals\ndescription: \"Morning summary\"\n---\n\n# Daily Totals\n\nCollect data.\nSummarise in five bullets.\n\tKeep it short.\n"
+      }
+    }
+  ],
+  "schedules": [
+    {
+      "name": "Sample report",
+      "cron": "0 8 * * 1-5",
+      "tz": "Europe/Lisbon",
+      "kind": "scheduled",
+      "action": "Run the Daily Totals skill.",
+      "enabled": true
+    },
+    {
+      "name": "Inbox watch",
+      "tz": "Europe/Lisbon",
+      "kind": "event",
+      "action": "Summarise new mail from the boss.",
+      "enabled": false
+    }
+  ],
+  "connectors": [
+    {
+      "name": "notes-service-mcp",
+      "kind": "mcp-http",
+      "url": "https://demo.example.test/mcp"
+    }
+  ],
+  "extras": {
+    "grok-bot": {
+      "apps_without_url": [
+        "Calendar"
+      ],
+      "format": "grok-bot-export",
+      "routines": {
+        "Inbox watch": {
+          "trigger": "email",
+          "trigger_details": "from boss@example.test"
+        },
+        "Sample report": {
+          "schedule_text": "Weekdays at 8am",
+          "skills": [
+            "Daily Totals"
+          ],
+          "trigger": "schedule"
+        }
+      },
+      "title": "Research helper",
+      "truncated_memories": 1
+    }
+  }
+}

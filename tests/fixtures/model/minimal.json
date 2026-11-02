@@ -1,0 +1,7 @@
+{
+  "schema": "bot-model/1",
+  "persona": {
+    "name": "min",
+    "instructions": ""
+  }
+}

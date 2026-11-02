@@ -1,0 +1,49 @@
+# Repository labels: name / color / description.
+- name: bug
+  color: d73a4a
+  description: Something isn't working
+- name: enhancement
+  color: a2eeef
+  description: New feature or request
+- name: good first issue
+  color: 7057ff
+  description: Well scoped, with pointers; good for a first contribution
+- name: help wanted
+  color: 008672
+  description: Extra attention or an owner is wanted
+- name: adapter
+  color: 1d76db
+  description: A new or existing platform adapter
+- name: area/grok
+  color: fbca04
+  description: The Grok Bot side (export/import briefs, grok-bot-export)
+- name: area/hermes
+  color: 0e8a16
+  description: The Hermes adapter and agent-importers shim
+- name: area/g2h
+  color: 5319e7
+  description: The g2h talk bridge (g2h, g2hd)
+- name: area/battery
+  color: c5def5
+  description: Parity tests and battery cases
+- name: docs
+  color: 0075ca
+  description: Documentation
+- name: platform/linux
+  color: bfdadc
+  description: Linux-specific
+- name: platform/windows
+  color: bfdadc
+  description: Windows-specific
+- name: security
+  color: b60205
+  description: Security-related
+- name: question
+  color: d876e3
+  description: Further information is requested
+- name: refactor
+  color: c5def5
+  description: Restructuring without behaviour change
+- name: area/release
+  color: 0e8a16
+  description: Release builds, installer and checksums

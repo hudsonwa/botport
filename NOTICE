@@ -1,0 +1,22 @@
+botport (formerly grok2hermes)
+Copyright (c) 2026 Joshua Hudson. Licensed under the MIT License.
+
+This tool ports logic (re-implemented in Rust, not copied verbatim) from:
+
+1. grok-bot-backup — https://github.com/company-notes/grok-bot-backup
+   Copyright (c) 2026 company-notes. MIT License.
+   Ported: the memory-drop contract (bot-written JSONL + memory-status.json, freshness gate, markdown
+   rendering by tier), the read-only history snapshot (sqlite backup API -> rows ordered by time, seq),
+   manifest hashing and `verify`, the managed-skills/plugin-skills exclusion for workflows.
+   Deliberately not ported: its include-secrets-by-default behaviour (grok2hermes never exports secrets).
+
+2. hermes-official-plugins / agent-importers — https://github.com/NousResearch/hermes-official-plugins
+   Copyright (c) 2026 Nous Research. MIT License.
+   Ported: preview-before-apply with item states, restore points that keep the last 5, the sync digest
+   over exactly the files read, per-skill tree digests, and the rule that a skill edited on the Hermes
+   side is reported as a conflict and never overwritten. shim/ adds a `grok-bot` source to that plugin.
+
+3. An earlier hand-made renderer, drift checker and battery by the same author (not published) served as the
+   reference implementation and test oracle.
+
+The MIT License text for (1) and (2) is reproduced in LICENSES/.

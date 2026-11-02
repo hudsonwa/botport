@@ -1,0 +1,3 @@
+{"jobs": [{"id": "a1b2c3", "name": "Nova: Sample report", "prompt": "Run the Daily Totals skill.", "skills": ["daily-totals"],
+  "schedule": {"kind": "cron", "expr": "0 8 * * 1-5", "display": "0 8 * * 1-5"}, "enabled": false, "state": "paused",
+  "paused_reason": "Imported from Grok Bot: resume once the Grok Bot routine is off"}]}

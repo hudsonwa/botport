@@ -1,0 +1,15 @@
+# The secret guard's own tests and fixtures contain FAKE secrets on purpose (made-up values, example.test hosts).
+# Only those exact fake values are allowlisted; every default rule stays on.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "fake secrets used by the secret-guard tests"
+regexTarget = "secret"
+regexes = [
+  '''^AKIAIOSFODNN7EXAMPL3$''',
+  '''^AUDprivkey12$''',
+  '''^Zq7Wv3Xk9Lm2Np8Rt4Yb$''',
+  '''^abc123def456$''',
+  '''^sk-ABCDEFGHIJKLMNOPQRSTUVWX123$''',
+]

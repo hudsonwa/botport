@@ -1,0 +1,44 @@
+--- a/importer.py	2026-10-30 12:57:06
++++ b/importer.py	2026-10-30 12:57:16
+@@ -21,10 +21,11 @@
+ ENTRY_DELIMITER = "\n§\n"
+ # Character budget for merged memory files.
+ MEMORY_CHAR_LIMIT = 20_000
+-SUPPORTED_AGENTS = ("claude-code", "codex", "cursor")
+-AGENT_DEFAULT_DIRS = {"claude-code": ".claude", "codex": ".codex", "cursor": ".cursor"}
++SUPPORTED_AGENTS = ("claude-code", "codex", "cursor", "grok-bot")
++AGENT_DEFAULT_DIRS = {"claude-code": ".claude", "codex": ".codex", "cursor": ".cursor",
++                      "grok-bot": "grok-bot-export"}
+ _SKILL_CATEGORY = {"claude-code": "claude-code-imports", "codex": "codex-imports",
+-                   "cursor": "cursor-imports"}
++                   "cursor": "cursor-imports", "grok-bot": "grok-imports"}
+ # Leading YAML frontmatter block (Cursor .mdc rules carry one).
+ _FRONTMATTER_RE = re.compile(r"\A---[ \t]*\r?\n.*?\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
+ 
+@@ -337,8 +338,12 @@
+                         "Source directory does not exist")
+         else:
+             {"claude-code": self._run_claude_code, "codex": self._run_codex,
+-             "cursor": self._run_cursor}[self.agent]()
++             "cursor": self._run_cursor, "grok-bot": self._run_grok_bot}[self.agent]()
+         return self.build_report()
++
++    def _run_grok_bot(self) -> None:
++        from .grok_bot import run  # the grok2hermes binary does the work
++        run(self)
+ 
+     def _run_claude_code(self) -> None:
+         settings = self._load_source_mapping(
+--- a/sync.py	2026-10-30 12:57:06
++++ b/sync.py	2026-10-30 12:57:16
+@@ -33,6 +33,10 @@
+ def _iter_sync_files(agent: str, source_root: Path) -> Iterator[Path]:
+     """Yield the source files whose content determines the sync digest — exactly what
+     :class:`~.importer.AgentImporter` reads for ``agent``."""
++    if agent == "grok-bot":
++        from .grok_bot import sync_files
++        yield from sync_files(source_root)
++        return
+     if agent == "claude-code":
+         # ~/.claude.json lives NEXT TO ~/.claude/ (see AgentImporter._run_claude_code)
+         paths = [source_root / "CLAUDE.md", source_root / "settings.json",

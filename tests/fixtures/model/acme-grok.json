@@ -1,0 +1,67 @@
+{
+  "schema": "bot-model/1",
+  "persona": {
+    "name": "Acme Helper",
+    "instructions": ""
+  },
+  "memory": [
+    {
+      "text": "The office opens at 09:00 and closes at 17:00 (made-up example).",
+      "tier": "core"
+    },
+    {
+      "text": "Visitors sign in at the front desk.",
+      "tier": "core"
+    },
+    {
+      "text": "Lost badges are replaced at the front desk (made-up example).",
+      "tier": "core"
+    }
+  ],
+  "skills": [
+    {
+      "name": "greet-visitors",
+      "files": {
+        "SKILL.md": "---\nname: Greet visitors\ndescription: use this when a visitor arrives\n---\n# Greet visitors\n\nSay hello, ask their name, point them to the front desk.\n"
+      }
+    }
+  ],
+  "schedules": [
+    {
+      "name": "Weekly summary",
+      "cron": "0 16 * * 5",
+      "tz": "America/Chicago",
+      "kind": "scheduled",
+      "action": "Summarise this week's visitor log in three lines",
+      "enabled": true
+    }
+  ],
+  "connectors": [
+    {
+      "name": "Web search",
+      "kind": "builtin"
+    },
+    {
+      "name": "visitor-log",
+      "kind": "mcp-http",
+      "url": "https://visitors.example.test/mcp",
+      "tools": [
+        "list_visitors",
+        "sign_in"
+      ]
+    }
+  ],
+  "credentials": [
+    {
+      "name": "VISITOR_LOG_TOKEN"
+    }
+  ],
+  "extras": {
+    "grok-bot": {
+      "profile": {
+        "harness": "temporal",
+        "name": "Acme Helper"
+      }
+    }
+  }
+}

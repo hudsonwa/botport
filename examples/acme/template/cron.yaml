@@ -1,0 +1,10 @@
+jobs:
+  - name: acme-morning-note
+    schedule: "0 9 * * 1-5"
+    deliver: local
+    enabled: true
+    prompt: Say good morning in one line.
+  - name: acme-weekly-report
+    schedule: "0 16 * * 5"
+    deliver: local
+    prompt: Summarise this week's helpdesk questions in three bullets (not enabled, so it is created paused).

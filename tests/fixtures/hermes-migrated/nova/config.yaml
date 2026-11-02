@@ -1,0 +1,3 @@
+mcp_servers:
+  notes-service-mcp-lookup-documents-find-items-reached-through-t:
+    url: https://demo.example.test/mcp

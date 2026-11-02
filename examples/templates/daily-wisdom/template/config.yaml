@@ -1,0 +1,7 @@
+# Generic made-up base for the Daily Wisdom demo (botport)
+model:
+  default: example-model
+agent:
+  max_turns: 8
+platform_toolsets:
+  cli: [memory, skills]

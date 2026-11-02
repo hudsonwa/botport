@@ -1,0 +1,69 @@
+{
+  "schema": "bot-model/1",
+  "persona": {
+    "name": "helper",
+    "instructions": "Be concise."
+  },
+  "memory": [
+    {
+      "text": "Prefers metric units.",
+      "tier": "core",
+      "scope": "user",
+      "source": "memories",
+      "date": "2026-10-01",
+      "origin_side": "a"
+    }
+  ],
+  "skills": [
+    {
+      "name": "weather",
+      "description": "Look up weather.",
+      "files": {
+        "SKILL.md": "# weather\n"
+      }
+    }
+  ],
+  "schedules": [
+    {
+      "name": "sample report",
+      "cron": "0 8 * * *",
+      "tz": "Europe/London",
+      "kind": "scheduled",
+      "action": "Send the sample report.",
+      "enabled": true
+    },
+    {
+      "name": "on mail",
+      "tz": "UTC",
+      "kind": "event",
+      "action": "Summarise new mail.",
+      "enabled": false
+    }
+  ],
+  "connectors": [
+    {
+      "name": "demo",
+      "kind": "mcp-http",
+      "url": "https://example.invalid/mcp",
+      "tools": [
+        "search"
+      ]
+    }
+  ],
+  "credentials": [
+    {
+      "name": "DEMO_TOKEN"
+    }
+  ],
+  "history": {
+    "kind": "jsonl",
+    "path": "history/history.jsonl"
+  },
+  "extras": {
+    "example-adapter": {
+      "unparsed": {
+        "voice": "alloy"
+      }
+    }
+  }
+}

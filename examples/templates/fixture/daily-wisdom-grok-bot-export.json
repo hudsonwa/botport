@@ -1,0 +1,18 @@
+{
+  "format": "grok-bot-export",
+  "version": 1,
+  "bots": [
+    {
+      "name": "Demo Bot",
+      "title": "Made-up fixture",
+      "instructions": "Placeholder instructions for a made-up test fixture.",
+      "memories": ["Placeholder fact"],
+      "user_facts": ["The user is called Robin Example"],
+      "skills": [{"name": "Placeholder Skill", "description": "Made up", "instructions": "Say hello."}],
+      "routines": [{"name": "Placeholder routine", "instruction": "Say hello.", "trigger": "schedule",
+        "schedule_cron": "0 8 * * *", "schedule_text": "Daily at 8am", "timezone": "UTC",
+        "paused": false, "skills": [], "trigger_details": ""}],
+      "apps": []
+    }
+  ]
+}

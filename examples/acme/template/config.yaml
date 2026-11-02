@@ -1,0 +1,7 @@
+# Acme Helper (made-up example for botport)
+model:
+  default: example-model
+agent:
+  max_turns: 8
+platform_toolsets:
+  cli: [memory, skills]

@@ -1,0 +1,68 @@
+{
+ "gap_s": 3,
+ "cases": [
+  {
+   "id": "persona",
+   "family": "persona",
+   "prompt": "Who are you and what do you do? Two sentences.",
+   "want": [],
+   "forbid": [
+    "terminal"
+   ],
+   "patterns": [
+    "wisdom|reading|reflect"
+   ],
+   "why": "persona: instructions should carry over"
+  },
+  {
+   "id": "mem-rotation",
+   "family": "memory",
+   "prompt": "How do you choose which tradition today's reading comes from? One sentence.",
+   "want": [
+    "skill_view"
+   ],
+   "forbid": [],
+   "patterns": [
+    "3 days|three days|rotat"
+   ],
+   "why": "memory fact: tradition rotation"
+  },
+  {
+   "id": "mem-streak",
+   "family": "memory",
+   "prompt": "What happens to my streak if I miss a day?",
+   "want": [
+    "skill_view"
+   ],
+   "forbid": [],
+   "patterns": [
+    "0|zero|reset"
+   ],
+   "why": "memory fact: streak rule"
+  },
+  {
+   "id": "mem-quotes",
+   "family": "memory",
+   "prompt": "What do you do when you're not sure of a quote's exact wording?",
+   "want": [],
+   "forbid": [],
+   "patterns": [
+    "paraphrase"
+   ],
+   "why": "memory fact: never invent a quote"
+  },
+  {
+   "id": "sitting",
+   "family": "routine",
+   "prompt": "Give me today's sitting right here in chat (no files needed): one short attributed reading and one question to carry through the day.",
+   "want": [],
+   "forbid": [
+    "terminal"
+   ],
+   "patterns": [
+    "\\?"
+   ],
+   "why": "routine body: Morning sitting, run on demand"
+  }
+ ]
+}

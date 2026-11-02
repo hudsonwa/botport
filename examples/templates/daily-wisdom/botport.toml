@@ -1,0 +1,25 @@
+# Port spec for the "Daily Wisdom" Grok Bot template demo (SMF Works; see docs/examples/daily-wisdom.md).
+# Input: a grok-bot-export v1 file, supplied at run time and never committed (xAI sharing terms), e.g.
+#   botport plan --bundle /path/to/daily-wisdom-grok-bot-export.json --spec examples/templates/daily-wisdom/botport.toml
+# The base template is generic and made up. Paths are relative to this file's folder.
+profile = "tpl-daily-wisdom"
+base = "template"
+skill_category = "daily-wisdom-grok"
+category_description = "Daily Wisdom demo skills: {names}."
+disable_other_skills = false
+
+[vars]
+REPO = "{{SPEC_DIR}}"
+
+[memory_skill]
+name = "daily-wisdom-memory"
+
+[soul]
+template = "SOUL.md"
+
+[config]
+template = "config.yaml"
+preserve = []
+
+[user]
+seed = "memories/USER.md"
