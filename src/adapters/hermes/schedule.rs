@@ -209,16 +209,15 @@ fn cron(s: &str) -> Option<String> {
     if parts.len() != 5 || !parts.iter().enumerate().all(|(i, f)| cron_field(f, i)) {
         return None;
     }
-    // with a weekday field croniter fires on day OR weekday; otherwise some listed month must have a listed day
+    // some listed month must have a listed day: croniter 6 first computes the day-of-month half even when a weekday
+    // is set, and raises "failed to find next date" if no month has that day, so `hermes cron create` would fail
     const DAYS_IN: [u32; 12] = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    if parts[4] == "*" {
-        let first_day = *cron_values(parts[2], 2).iter().min()?;
-        if !cron_values(parts[3], 3)
-            .iter()
-            .any(|m| first_day <= DAYS_IN[*m as usize - 1])
-        {
-            return None;
-        }
+    let first_day = *cron_values(parts[2], 2).iter().min()?;
+    if !cron_values(parts[3], 3)
+        .iter()
+        .any(|m| first_day <= DAYS_IN[*m as usize - 1])
+    {
+        return None;
     }
     Some(parts.join(" "))
 }
@@ -461,13 +460,15 @@ mod tests {
             "0 0 31 4 *",
             "0 0 31 2,4,6 *",
             "0 0 30-31 feb *",
+            "0 0 30 2 1",
+            "0 0 31 4 sun",
         ] {
             assert!(n(bad).is_err(), "{bad}");
         }
         for ok in [
             "0 0 29 2 *",
             "0 0 31 1-12 *",
-            "0 0 30 2 1",
+            "0 0 1 * 1",
             "0 0 */10 2 *",
             "0 0 31 2,3 *",
         ] {
