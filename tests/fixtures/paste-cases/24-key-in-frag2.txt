@@ -1,0 +1,7 @@
+```json
+{"format": "grok-bot-export", "version": 1, "bots": [{"name": "Nova", "memories": ["x"], 
+```
+(more)
+```json
+"api_key": "abc"}]}
+```

@@ -1591,3 +1591,218 @@ fn spec_cron_in_a_non_canonical_form_settles_after_one_apply() {
     );
     assert!(!log.contains("edit "), "{log}");
 }
+
+/// `botport ARGS` with `input` on stdin and its own state dir.
+fn run_stdin(t: &Path, args: &[&str], input: &str) -> (i32, String) {
+    use std::io::Write;
+    let mut c = bin();
+    c.env("XDG_STATE_HOME", t)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut ch = c.spawn().unwrap();
+    ch.stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    let o = ch.wait_with_output().unwrap();
+    (
+        o.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr),
+    )
+}
+
+#[test]
+fn pasted_export_on_stdin_is_repaired_reported_and_verified() {
+    let t = Tmp::new("paste");
+    let exp = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/grok-export/grok-bot-export.json");
+    let doc = fs::read_to_string(&exp).unwrap();
+    let (rc, strict) = run(&["verify", "--bundle", s(&exp)]);
+    assert_eq!(rc, 0, "{strict}");
+    assert!(!strict.contains("repaired"), "{strict}");
+    // a chat reply: chatter, a fenced block, a trailing comma
+    let pasted = format!(
+        "Here is my export:\n```json\n{}\n```\nAnything else?\n",
+        doc.replacen("\n  ]\n}", "\n  ],\n}", 1)
+    );
+    let (rc, out) = run_stdin(&t.0, &["verify", "--bundle", "-"], &pasted);
+    assert_eq!(rc, 0, "{out}");
+    assert!(
+        out.contains("repaired export: took the JSON out of a fenced code block"),
+        "{out}"
+    );
+    assert!(
+        out.contains("repaired export: removed 1 trailing commas"),
+        "{out}"
+    );
+    let first = |o: &str| {
+        o.lines()
+            .find(|l| l.starts_with("verify OK"))
+            .map(String::from)
+    };
+    assert_eq!(first(&out), first(&strict));
+    // saved for this run only, in a per-run dir that is gone afterwards
+    assert!(
+        out.contains("/botport/paste-") && out.contains("for this run"),
+        "{out}"
+    );
+    let left: Vec<_> = fs::read_dir(t.0.join("botport"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+        .filter(|n| n.starts_with("paste"))
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+
+    // the secret guard runs on the repaired text: nothing is saved
+    let t2 = Tmp::new("paste-secret");
+    let bad = pasted.replacen(
+        "\"name\": \"Nova\"",
+        "\"name\": \"Nova\", \"password\": \"x\"",
+        1,
+    );
+    let (rc, out) = run_stdin(&t2.0, &["verify", "--bundle", "-"], &bad);
+    assert_eq!(rc, 2, "{out}");
+    assert!(
+        out.contains("credential-looking keys") && out.contains("password"),
+        "{out}"
+    );
+    assert!(fs::read_dir(t2.0.join("botport")).map_or(true, |d| d
+        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+        .all(|n| !n.starts_with("paste"))));
+}
+
+#[test]
+fn pasted_export_never_picks_up_a_describe_json_in_the_state_dir() {
+    let t = Tmp::new("paste-describe");
+    let exp = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/grok-export/grok-bot-export.json");
+    let doc = fs::read_to_string(&exp).unwrap();
+    let (_, plain) = run_stdin(&t.0, &["verify", "--bundle", "-"], &doc);
+    fs::create_dir_all(t.0.join("botport")).unwrap();
+    fs::write(
+        t.0.join("botport/describe.json"),
+        r#"{"persona": "PLANTED-DESCRIPTION"}"#,
+    )
+    .unwrap();
+    let (rc, out) = run_stdin(&t.0, &["verify", "--bundle", "-"], &doc);
+    assert_eq!(rc, 0, "{out}");
+    let first = |o: &str| {
+        o.lines()
+            .find(|l| l.starts_with("verify OK"))
+            .map(String::from)
+    };
+    assert_eq!(first(&out), first(&plain));
+    assert!(!out.contains("PLANTED"), "{out}");
+}
+
+#[test]
+fn paste_input_conflicts_are_refused() {
+    let t = Tmp::new("paste-args");
+    for (args, want) in [
+        (
+            &["verify", "--bundle", "x", "--clipboard"][..],
+            "--bundle and --clipboard",
+        ),
+        (
+            &["verify", "--bundle", "-", "--clipboard"][..],
+            "--bundle - and --clipboard",
+        ),
+        (
+            &["verify", "--bundle", "-", "--bundle", "x"][..],
+            "more than once",
+        ),
+        (
+            &["verify", "--bundle", "x", "--bundle", "-"][..],
+            "more than once",
+        ),
+        (
+            &["verify", "--bundle", "x", "--bundle", "y", "--clipboard"][..],
+            "more than once",
+        ),
+    ] {
+        let (rc, out) = run_stdin(&t.0, args, "{}");
+        assert_eq!(rc, 2, "{args:?}: {out}");
+        assert!(out.contains(want), "{args:?}: {out}");
+    }
+}
+
+#[test]
+fn clipboard_without_a_clipboard_tool_is_a_clear_error() {
+    let t = Tmp::new("clip");
+    let o = bin()
+        .env("XDG_STATE_HOME", &t.0)
+        .env("PATH", &t.0)
+        .args(["verify", "--clipboard"])
+        .output()
+        .unwrap();
+    let e = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code(), Some(2), "{e}");
+    assert!(
+        e.contains("--clipboard needs") && e.contains("--bundle -"),
+        "{e}"
+    );
+}
+
+#[test]
+fn smart_quoted_paste_is_refused_with_plain_advice() {
+    let t = Tmp::new("paste-smart");
+    let pasted = "```json\n{“format”: “grok-bot-export”, “bots”: [{“name”: “Nova”, “memories”: [“Use “,” here”]}]}\n```\n";
+    let (rc, out) = run_stdin(&t.0, &["verify", "--bundle", "-"], pasted);
+    assert_eq!(rc, 2, "{out}");
+    assert!(
+        out.contains("stdin: the export was mangled by the chat app (smart quotes); ask the bot to re-send it as a file or a plain code block"),
+        "{out}"
+    );
+    assert!(!out.contains("not valid JSON"), "{out}");
+}
+
+/// The audits' token cases (rounds 2-3): a token whole, split across fragments at any point, behind a `\u`
+/// escape or in a smart-quoted paste is refused and nothing is saved.
+#[test]
+fn token_split_across_pasted_fragments_is_refused_once_joined() {
+    let xai = "xai-A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0U1v2W3x4Y5z6";
+    let ant = format!(
+        "sk-ant-api03-{}-AbCdEf",
+        "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789".repeat(2)
+    );
+    let ghp = format!("ghp_{}", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8");
+    let doc = |m: &str, q: char| {
+        format!(r#"{{"format": "grok-bot-export", "version": 1, "bots": [{{"name": "Nova", "memories": ["k {m}"]}}]}}"#)
+            .replace('"', &q.to_string())
+    };
+    let split = |m: &str, at: usize| {
+        let d = doc(m, '"');
+        let (a, b) = d.split_at(d.find(m).unwrap() + at);
+        format!("```json\n{a}\n```\n(more)\n```json\n{b}\n```\n")
+    };
+    let cases = [
+        ("22", split(xai, 20)),
+        ("23", format!("```json\n{}\n```\n", doc(xai, '"'))),
+        ("25", doc(xai, '“')),
+        ("26", split(xai, 7)),
+        ("57", split(xai, 5)),
+        ("58", split(xai, 2)),
+        ("60", doc(&xai.replacen('x', "\\u0078", 1), '"')),
+        ("61", split(&ant, 14)),
+        ("62", split(&ghp, 4)),
+        ("short", {
+            let d = r#"{"format": "grok-bot-export", "version": 1, "bots": [{"name": "Nova", "memories": ["key xai-ABCDEFGHIJKLMNOPQRSTUVWX", "ok"]}]}"#;
+            let (a, b) = d.split_at(d.find("xai-ABC").unwrap() + 7);
+            format!("```json\n{a}\n```\n(more)\n```\n{b}\n```\n")
+        }),
+    ];
+    for (n, pasted) in cases {
+        let t = Tmp::new(&format!("paste-token-{n}"));
+        let (rc, out) = run_stdin(&t.0, &["verify", "--bundle", "-"], &pasted);
+        assert_eq!(rc, 2, "{n}: {out}");
+        assert!(
+            fs::read_dir(t.0.join("botport")).map_or(true, |d| d
+                .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+                .all(|n| !n.starts_with("paste"))),
+            "{n}"
+        );
+    }
+}

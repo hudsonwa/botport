@@ -1,0 +1,8 @@
+Sure:
+```json
+{"format": "grok-bot-export", "version": 1, "bots": [{"name": "Nova", "memories": ["ends ```"
+```
+(cont)
+```json
+, "x"]}]}
+```

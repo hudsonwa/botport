@@ -206,6 +206,32 @@ Upstream Hermes ships its own Grok Bot importer (`hermes migrate grok-bot` / `he
   detected by its `"format": "grok-bot-export"` field. `verify` checks it parses, is version 1 and has no secret-looking
   keys, and warns about facts the Bot marked `[truncated …]` (they are kept as written). Skill texts stored with literal
   `\n` are unescaped. An export with several bots uses the first one.
+- **Pasted exports.** The export can come straight from the chat: `--bundle -` reads it from stdin and
+  `--clipboard` from the clipboard (`pbpaste` on macOS; `wl-paste` or `xclip` on Linux, else an error). Give only
+  one input: `--bundle` with another value, or twice, is refused. For the run it is saved as
+  `pasted-grok-bot-export.json` (mode 0600) in a new `paste-<random>` dir (mode 0700) under botport's state dir
+  (`$XDG_STATE_HOME/botport`, default `~/.local/state/botport`), read from there, and removed when the command ends. A run killed by Ctrl-C, SIGTERM or a crash skips that cleanup and can leave its `paste-<random>` dir (holding the bot's memories) under that state dir; later runs never read it, and it is safe to delete by hand when no botport command is running. Strict JSON is read exactly as before; otherwise botport tolerates, and
+  reports on stderr one line per repair:
+  - the JSON inside a fenced code block (```` ```json ````, ```` ``` ````, `~~~` or a longer fence, also all on one
+    line) with chat text around it, or with no fence the text from the first `{` to the last `}`;
+  - a reply split across several messages: the line break before each closing fence is dropped and all fenced blocks
+    are joined in order with nothing between them, so a split inside a text value or a number joins up; the result
+    must parse. If two or more blocks are each a complete export (an object with `format` or `bots`), it is refused as
+    ambiguous; if exactly one is, that one is taken, unless another block also holds export data (then it is refused
+    as ambiguous too). Paste every part, in the order the bot sent them: a missing part can't be detected;
+  - trailing commas before `}` or `]`, outside string values (commas inside text are kept).
+
+  Smart quotes are refused, not repaired. If a chat app curled the JSON quotes (“ ” ‘ ’), botport can't tell
+  for sure where each value ends, so a paste that still does not parse and holds a curly quote is refused with
+  "the export was mangled by the chat app (smart quotes); ask the bot to re-send it as a file or a plain code
+  block". Do that: a file, or a plain code block, keeps the straight quotes. Curly quotes inside straight-quoted
+  values (`"say “hi” now"`) are ordinary text and are read as they are. After any repair, botport also counts the
+  memories, user facts, skills and routines in the pasted text and refuses the paste if the parsed export holds a
+  different number.
+
+  The secret-key check runs on the repaired document, so a credential inside a fenced block is still refused (and
+  nothing is saved). The token check runs on the pasted text and again on the repaired document, so a token split
+  across two fragments is refused once joined.
 - **Shared skills.** Grok Bot skills come from a library shared by all your Bots, so every export carries all of them.
   Pick the ones this profile takes with `skills_include = [...]` in the spec (`skills_include = []` takes none).
 - **Its output.** On a profile the upstream importer already filled, `plan`/`drift`/`apply` treat its work as present:

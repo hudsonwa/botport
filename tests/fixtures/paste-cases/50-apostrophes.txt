@@ -1,0 +1,1 @@
+{“format”: “grok-bot-export”, “version”: 1, “bots”: [{“name”: “Nova”, “memories”: [“don’t”, “the bots’ code”, “rock ’n’ roll”]}]}
