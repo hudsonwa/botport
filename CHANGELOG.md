@@ -12,9 +12,12 @@ All notable changes to this project are documented here. The format is based on
   never turned into cron jobs. The NOT_CAPTURED.md botport writes now keeps an event's prompt.
 
 ### Changed
-- A hand-export bundle's `profile.json` `instructions` now ports to the persona, and so to SOUL.md, the same as a
-  grok-bot-export file's instructions (#15). A bundle with instructions there gets a new botport-owned persona
-  section in SOUL.md on the next apply; one already edited by hand on the Hermes side shows as a conflict.
+- A bundle directory's `profile.json` `instructions` (hand exports; real Grok-box profiles carry none today) now
+  ports to the persona, and so to SOUL.md, the same as a grok-bot-export file's instructions (#15). Such a bundle
+  gets a new botport-owned persona section appended to SOUL.md on the next apply. Your own text is kept; if you had
+  pasted those instructions in by hand, remove your copy.
+- Writing a Grok description: an event schedule stays "on an event" and reads back as an event (#14). A timed
+  schedule with no cron is now written as "no schedule given", not "on an event", and reads back as a manual item.
 
 ## [0.1.0] - 2026-11-03
 First public release. The tool was called grok2hermes before release; the old names still work (see
