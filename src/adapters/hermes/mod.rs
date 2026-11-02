@@ -3,15 +3,58 @@ pub mod spec;
 pub mod sync;
 pub mod twoway;
 
-use crate::core::adapter::Adapter;
-use crate::core::model::{BotModel, Fact, Persona, Skill, SCHEMA_FAMILY, SCHEMA_MAJOR};
+use crate::core::adapter::{Adapter, Applied, Plan, Source, Target};
+use crate::core::model::{
+    BotModel, Connector, CredentialRef, Fact, ManualItem, Persona, Schedule, ScheduleKind, Skill,
+    SCHEMA_FAMILY, SCHEMA_MAJOR,
+};
 use crate::core::util::*;
-use std::path::Path;
+use serde_json::json;
+use serde_yaml::Value as Y;
+use std::path::{Path, PathBuf};
 
 pub const ID: &str = "hermes";
 
-/// A Hermes profile directory (SOUL.md, memories/, skills/).
+/// A Hermes profile directory (SOUL.md, memories/, skills/, config.yaml, cron/jobs.json, botport-manual.md).
 pub struct HermesProfile;
+
+/// How plan/apply treat the profile: the port spec (ownership templates) and how cron is managed.
+pub struct Opts {
+    pub spec: spec::Spec,
+    /// profile name (what `hermes -p` takes)
+    pub profile: String,
+    /// cron is managed through the hermes CLI (only for ~/.hermes, or an explicit --hermes-bin)
+    pub real_home: bool,
+    pub hermes_bin: String,
+    /// HERMES_HOME for the hermes CLI when it is not ~/.hermes (None = the CLI's default)
+    pub hermes_home: Option<PathBuf>,
+}
+
+/// The production sync: the model diffed against / written into a live profile behind a restore point, with
+/// the ownership rules in `sync` (Hermes-side edits are conflicts, never overwritten; jobs created paused).
+impl Target for HermesProfile {
+    type Opts = Opts;
+
+    fn plan(&self, m: &BotModel, src: &Source, dest: &Path, o: &Opts) -> Res<Plan> {
+        let p = sync::plan(&sync::Ctx::new(m, src, dest, o))?;
+        Ok(Plan {
+            items: p.items,
+            synced_digest: p.lock.map(|l| l.bundle_digest),
+        })
+    }
+
+    fn apply(
+        &self,
+        m: &BotModel,
+        src: &Source,
+        dest: &Path,
+        o: &Opts,
+        adopt: bool,
+        dry: bool,
+    ) -> Res<Applied> {
+        sync::apply(&sync::Ctx::new(m, src, dest, o), adopt, dry)
+    }
+}
 
 impl Adapter for HermesProfile {
     fn id(&self) -> &'static str {
@@ -52,13 +95,10 @@ impl Adapter for HermesProfile {
             }) {
                 continue;
             }
-            let (files, _) = super::grok_bot::split_files(&read_tree(&sroot.join(d))?);
-            skills.push(Skill {
-                name: d.rsplit('/').next().unwrap_or(d).to_string(),
-                description: None,
-                files,
-            });
+            let name = d.rsplit('/').next().unwrap_or(d);
+            skills.push(Skill::from_bytes(name, &read_tree(&sroot.join(d))?));
         }
+        let (credentials, manual) = read_manual(src);
         Ok(BotModel {
             schema: format!("{SCHEMA_FAMILY}/{SCHEMA_MAJOR}"),
             persona: Persona {
@@ -69,11 +109,13 @@ impl Adapter for HermesProfile {
                 instructions: text("SOUL.md"),
             },
             memory,
+            memory_text: None,
             skills,
-            schedules: vec![],
-            connectors: vec![],
-            credentials: vec![],
+            schedules: read_schedules(src),
+            connectors: read_connectors(src)?,
+            credentials,
             history: None,
+            manual,
             extras: match unmapped(src)? {
                 Some(x) => [(ID.to_string(), x)].into_iter().collect(),
                 None => Default::default(),
@@ -81,37 +123,161 @@ impl Adapter for HermesProfile {
         })
     }
 
-    /// Writes SOUL.md, memories/MEMORY.md and USER.md (§-separated; user-scope or `profile`-tier facts go to USER.md) and skills/<name>/... into a profile directory.
-    /// Production syncs go through `sync::plan`/`sync::apply` with a port spec; this is the plain model mapping.
+    /// The plain model mapping into a fresh profile directory: SOUL.md; memories/MEMORY.md and USER.md
+    /// (§-separated; user-scope or `profile`-tier facts go to USER.md); skills/<name>/...; the bot's schedules as
+    /// cron/jobs.json entries (always paused); MCP connectors under config.yaml `mcp_servers` (on top of the
+    /// profile config kept in `extras`); and botport-manual.md for credential names and everything else that
+    /// needs a human. Live profiles go through `Target::plan`/`apply` instead (cron via the hermes CLI).
     fn write(&self, m: &BotModel, dest: &Path) -> Res<Vec<String>> {
-        let is_user =
-            |f: &&Fact| f.scope.as_deref() == Some("user") || f.tier.as_deref() == Some("profile");
         let join = |user: bool| {
             m.memory
                 .iter()
-                .filter(|f| is_user(f) == user)
+                .filter(|f| sync::is_user_fact(f) == user)
                 .map(|f| f.text.as_str())
                 .collect::<Vec<_>>()
                 .join("\n§\n")
         };
         let mut out = vec![
-            ("SOUL.md".to_string(), m.persona.instructions.clone()),
-            ("memories/MEMORY.md".into(), join(false)),
+            (
+                "SOUL.md".to_string(),
+                m.persona.instructions.clone().into_bytes(),
+            ),
+            ("memories/MEMORY.md".into(), join(false).into_bytes()),
         ];
         let user = join(true);
         if !user.is_empty() {
-            out.push(("memories/USER.md".into(), user));
+            out.push(("memories/USER.md".into(), user.into_bytes()));
         }
         for s in &m.skills {
-            for (rel, body) in &s.files {
-                out.push((format!("skills/{}/{rel}", s.name), body.clone()));
+            for (rel, body) in s.bytes() {
+                out.push((format!("skills/{}/{rel}", s.name), body));
             }
         }
+        let (jobs, mcp, manual) = sync::from_described(m, &[], &[], &[]);
+        if !jobs.is_empty() {
+            let jobs: Vec<serde_json::Value> = jobs
+                .iter()
+                .map(|j| {
+                    json!({"name": j.name, "prompt": j.prompt, "deliver": j.deliver, "enabled": false,
+                    "schedule": {"kind": "cron", "expr": j.schedule}, "paused_reason": j.paused_reason})
+                })
+                .collect();
+            out.push((
+                "cron/jobs.json".into(),
+                json_sorted(&json!({ "jobs": jobs })).into_bytes(),
+            ));
+        }
+        let kept = m.extras.get(ID).and_then(|x| x.get("config")).cloned();
+        if !mcp.is_empty() || kept.is_some() {
+            let mut cfg: Y = match kept {
+                Some(v) => serde_yaml::to_value(v).map_err(|e| e.to_string())?,
+                None => Y::Mapping(Default::default()),
+            };
+            for (id, entry) in mcp {
+                let mut ls = vec![];
+                sync::leaves(&entry, &mut vec!["mcp_servers".into(), id], &mut ls);
+                for (path, v) in ls {
+                    sync::set_path(&mut cfg, &path, v);
+                }
+            }
+            out.push((
+                "config.yaml".into(),
+                crate::core::yaml11::emit_checked(&cfg)?.into_bytes(),
+            ));
+        }
+        if !manual.is_empty() {
+            out.push((sync::MANUAL.into(), sync::manual_text(&manual).into_bytes()));
+        }
         for (rel, b) in &out {
-            write_atomic(&dest.join(rel), b.as_bytes(), None)?;
+            write_atomic(&dest.join(rel), b, None)?;
         }
         Ok(out.into_iter().map(|(r, _)| r).collect())
     }
+}
+
+/// cron/jobs.json -> schedules (Hermes runs cron in the host's timezone: `local`).
+fn read_schedules(src: &Path) -> Vec<Schedule> {
+    sync::live_jobs(src)
+        .iter()
+        .map(|j| {
+            let expr = sync::cron_expr(j);
+            Schedule {
+                name: j["name"].as_str().unwrap_or("").to_string(),
+                kind: if expr.is_empty() {
+                    ScheduleKind::Event
+                } else {
+                    ScheduleKind::Scheduled
+                },
+                cron: (!expr.is_empty()).then_some(expr),
+                tz: "local".into(),
+                action: j["prompt"].as_str().unwrap_or("").to_string(),
+                enabled: j["enabled"] != json!(false),
+            }
+        })
+        .collect()
+}
+
+/// config.yaml `mcp_servers` -> connectors (url and `tools.include`; header and auth values are never read).
+fn read_connectors(src: &Path) -> Res<Vec<Connector>> {
+    let cfg = src.join("config.yaml");
+    if !cfg.is_file() {
+        return Ok(vec![]);
+    }
+    let y: Y = serde_yaml::from_str(&crate::core::yaml11::read(&read_str(&cfg)?))
+        .map_err(|e| format!("{}: {e}", cfg.display()))?;
+    let servers = y.get("mcp_servers").and_then(Y::as_mapping);
+    Ok(servers
+        .into_iter()
+        .flatten()
+        .map(|(k, v)| {
+            let url = v.get("url").and_then(Y::as_str).map(String::from);
+            let http = url
+                .as_deref()
+                .is_some_and(|u| u.starts_with("http://") || u.starts_with("https://"));
+            Connector {
+                name: k.as_str().unwrap_or("").to_string(),
+                kind: if http { "mcp-http" } else { "mcp-stdio" }.into(),
+                url,
+                tools: v
+                    .get("tools")
+                    .and_then(|t| t.get("include"))
+                    .and_then(Y::as_sequence)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|x| x.as_str().map(String::from))
+                    .collect(),
+            }
+        })
+        .collect())
+}
+
+/// botport-manual.md -> credential names (`credential NAME: ...` lines) and the other open items.
+fn read_manual(src: &Path) -> (Vec<CredentialRef>, Vec<ManualItem>) {
+    let text = std::fs::read_to_string(src.join(sync::MANUAL)).unwrap_or_default();
+    let (mut creds, mut manual) = (vec![], vec![]);
+    for l in text.lines() {
+        let Some(rest) = ["- [ ] ", "- [x] ", "- [X] "]
+            .iter()
+            .find_map(|p| l.strip_prefix(p))
+        else {
+            continue;
+        };
+        let Some((item, todo)) = rest.split_once(": ") else {
+            continue;
+        };
+        match item.strip_prefix("credential ") {
+            Some(n)
+                if !n.starts_with('(') && crate::core::secrets::credential_name(n).is_none() =>
+            {
+                creds.push(CredentialRef::new(n))
+            }
+            _ => manual.push(ManualItem {
+                item: item.into(),
+                todo: todo.into(),
+            }),
+        }
+    }
+    (creds, manual)
 }
 
 /// Profile data the model has no field for: config.yaml (secret-looking keys dropped) and the cron jobs.

@@ -168,3 +168,34 @@ fn hermes_read_never_reads_env_or_auth_and_scrubs_secret_config_keys() {
     }
     std::fs::remove_dir_all(&d).unwrap();
 }
+
+#[test]
+fn hermes_write_carries_schedules_connectors_and_credential_names() {
+    let m = GrokBot.read(&root().join("examples/acme/grok")).unwrap();
+    assert!(!m.schedules.is_empty() && !m.connectors.is_empty() && !m.credentials.is_empty());
+    let d = scratch("full");
+    HermesProfile.write(&m, &d).unwrap();
+    let jobs: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(d.join("cron/jobs.json")).unwrap()).unwrap();
+    let jobs = jobs["jobs"].as_array().unwrap();
+    assert_eq!(
+        jobs.len(),
+        m.schedules.iter().filter(|s| s.cron.is_some()).count()
+    );
+    assert!(jobs.iter().all(|j| j["enabled"] == false), "{jobs:?}");
+    let cfg = std::fs::read_to_string(d.join("config.yaml")).unwrap();
+    assert!(cfg.contains("https://visitors.example.test/mcp"), "{cfg}");
+    let manual = std::fs::read_to_string(d.join("botport-manual.md")).unwrap();
+    assert!(
+        manual.contains("credential VISITOR_LOG_TOKEN") && manual.contains("connector Web search")
+    );
+    let back = HermesProfile.read(&d).unwrap();
+    let names = |x: &BotModel| {
+        x.credentials
+            .iter()
+            .map(|c| c.name.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(names(&back), names(&m));
+    std::fs::remove_dir_all(&d).unwrap();
+}

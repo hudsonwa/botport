@@ -1,0 +1,2 @@
+{"jobs": [{"id": "c0ffee", "name": "Conformance: Nightly tidy", "prompt": "Tidy the visitor log", "deliver": "local",
+  "schedule": {"kind": "cron", "expr": "0 2 * * *", "display": "0 2 * * *"}, "enabled": false}]}

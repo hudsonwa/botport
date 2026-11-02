@@ -1,1 +1,7 @@
 conformance_unknown: CONFORMANCE-UNKNOWN-MARKER
+mcp_servers:
+  visitor-log:
+    url: https://visitors.example.test/mcp
+    tools:
+      include:
+      - list_visitors
