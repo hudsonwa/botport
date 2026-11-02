@@ -691,6 +691,7 @@ fn profile_report(
 
 fn cmd_test(a: &Args) -> Res<Report> {
     let profile = a.get("profile").ok_or("--profile is required")?;
+    plain_name("profile", profile)?;
     let bp = a.path("battery").ok_or("--battery is required")?;
     let b = battery::load(&bp)?;
     let only: Vec<String> = a

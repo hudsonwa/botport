@@ -749,17 +749,19 @@ fn cred_name(name: &str) -> Option<Reason> {
 /// and the reason, never the value. Binary data is not text and is not checked.
 pub fn guard(what: &str, data: &[u8]) -> Result<(), String> {
     guard_with(what, data, guard_str)
+        .map_err(|at| format!("refusing to write {what}: {at}; route it to the checklist"))
+}
+
+/// Where `data` looks like it holds a secret ("line 2 looks like it holds a secret (…)"), never the value.
+pub fn find_secret(what: &str, data: &[u8]) -> Option<String> {
+    guard_with(what, data, guard_str).err()
 }
 
 fn guard_with(what: &str, data: &[u8], check: fn(&str) -> Option<Reason>) -> Result<(), String> {
     let Ok(text) = std::str::from_utf8(data) else {
         return Ok(());
     };
-    let hit = |at: String, r: Reason| {
-        Err(format!(
-            "refusing to write {what}: {at} looks like it holds a secret ({r}); route it to the checklist"
-        ))
-    };
+    let hit = |at: String, r: Reason| Err(format!("{at} looks like it holds a secret ({r})"));
     let jsonl = || {
         let v: Option<Vec<serde_json::Value>> = text
             .lines()

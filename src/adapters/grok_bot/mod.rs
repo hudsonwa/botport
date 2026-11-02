@@ -360,7 +360,9 @@ impl Adapter for GrokBot {
             out.push(("NOT_CAPTURED.md".into(), render_description(m).into_bytes()));
         }
         for s in &m.skills {
+            plain_name("skill name", &s.name)?;
             for (rel, body) in s.bytes() {
+                safe_rel("skill file path", &rel)?;
                 out.push((format!("skills/{}/{rel}", s.name), body));
             }
         }

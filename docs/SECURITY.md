@@ -105,17 +105,21 @@ refusal naming the file and field path (or line), never the value. Callers that 
 check (a skill file or memory line that would fail (B) goes to the checklist; an instructions or unparsed line in
 `describe.json` becomes `[text not copied: <reason>]`), so the hard refusal only fires when that routing missed.
 Restore points are zipped, so each live file is guarded as plaintext before it is added: a hit refuses the restore
-point and with it the whole apply, before anything is written (move the value to `.env` and retry).
+point and with it the whole apply, before anything is written, not even a directory (move the value to `.env` and retry).
 
 **Apply is sequential, not transactional.** It writes one file at a time behind a restore point; if it stops
 part-way, the files already written stay written. The restore point lets you put them back by hand; it does not roll
 back a partial apply on its own.
 
 **Paths stay confined.** Profile names must be plain names (no `/`, no leading `.`); skill names and skill file paths
-from a bundle must stay below `skills/<category>/<name>/` or the skill goes to the checklist; `verify` refuses
-symlinks, non-regular files and anything that resolves outside the bundle; atomic writes use an unpredictable
+from a bundle must stay below `skills/<category>/<name>/` or the skill goes to the checklist (the library
+adapters' `write` refuses them); `verify` reports every symlink or other non-regular entry anywhere in the bundle,
+listed in the manifest or not, and every listed path that resolves outside it; `plan`/`apply` read an exported
+bundle only through the manifest-listed regular files that `verify` just read and hash-checked (no link followed),
+and refuse a legacy hand export that holds any symlink or special file; atomic writes use an unpredictable
 temporary name created exclusively (never through an existing file or symlink); g2h's `service_label` must be a
-reverse-DNS name.
+reverse-DNS name, or g2h neither writes nor unloads a service for it. A bundle that another user can change while
+botport reads it is outside this model.
 
 **The bar.** The gate test (`tests/describe_sync.rs`) seeds every secret in a (B) shape into every field and runs
 export → describe → plan → apply → export-hermes. It passes as shipped and with (A) switched off

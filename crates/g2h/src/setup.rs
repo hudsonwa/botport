@@ -804,7 +804,11 @@ pub fn uninstall(p: &Paths, keep_logs: bool) -> i32 {
         .service
         .clone()
         .unwrap_or_else(|| (label.clone(), service_file(&label).unwrap_or_default()));
-    service_unload(&label);
+    // a label edited into config.yaml never reaches launchctl/systemctl unless it is plain reverse-DNS
+    match check_service_label(&label) {
+        Ok(()) => service_unload(&label),
+        Err(e) => eprintln!("not unloading the service: {e}"),
+    }
     let mut gone: Vec<PathBuf> = vec![svc, p.credentials()];
     gone.extend(m.created.iter().cloned());
     if !m.created.contains(&p.config()) && p.config().exists() {

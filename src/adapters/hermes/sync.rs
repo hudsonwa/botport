@@ -1644,14 +1644,6 @@ fn should_write(i: &Item, adopt: bool) -> bool {
 pub fn restore_point(dest: &Path, cat: &str, keep: usize) -> Res<PathBuf> {
     use std::io::Write;
     let dir = dest.join(BACKUPS);
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let stamp = utc_stamp();
-    let mut n = 0;
-    let mut path = dir.join(format!("restore-{stamp}-{n:02}.zip"));
-    while path.exists() {
-        n += 1;
-        path = dir.join(format!("restore-{stamp}-{n:02}.zip"));
-    }
     let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let opts = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
@@ -1659,9 +1651,12 @@ pub fn restore_point(dest: &Path, cat: &str, keep: usize) -> Res<PathBuf> {
         let b = read(&dest.join(&rel))?;
         // The archive is compressed, so the write guard cannot see into it: guard each entry's plaintext here. A hit
         // refuses the restore point (and so the apply, before any change): a secret never reaches disk, not even zipped.
-        secrets::guard(&rel, &b).map_err(|e| {
-            format!("{e}; no restore point was written and nothing was applied (move the value to .env, then retry)")
-        })?;
+        if let Some(at) = secrets::find_secret(&rel, &b) {
+            return Err(format!(
+                "live file {rel}: {at}. botport will not copy it into a restore point, so no restore point was \
+                 written and nothing was applied. Move the value to the profile's .env, then retry"
+            ));
+        }
         z.start_file(rel, opts).map_err(|e| e.to_string())?;
         z.write_all(&b).map_err(|e| e.to_string())
     };
@@ -1684,6 +1679,15 @@ pub fn restore_point(dest: &Path, cat: &str, keep: usize) -> Res<PathBuf> {
         add(format!("skills/{cat}/{}", rel_str(&rel)))?;
     }
     let zip = z.finish().map_err(|e| e.to_string())?.into_inner();
+    // directories only once every entry passed the guard: a refused restore point leaves nothing behind
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let stamp = utc_stamp();
+    let mut n = 0;
+    let mut path = dir.join(format!("restore-{stamp}-{n:02}.zip"));
+    while path.exists() {
+        n += 1;
+        path = dir.join(format!("restore-{stamp}-{n:02}.zip"));
+    }
     write_atomic(&path, &zip, Some(0o600))?;
     // keep the newest `keep`
     let mut all: Vec<PathBuf> = fs::read_dir(&dir)
@@ -2267,10 +2271,12 @@ mod tests {
             "{e}"
         );
         assert!(!e.contains("0123456789abcdef"), "{e}");
-        let left: Vec<_> = fs::read_dir(d.join(BACKUPS))
-            .map(|r| r.flatten().collect())
-            .unwrap_or_default();
-        assert!(left.is_empty(), "{left:?}");
+        assert!(
+            !e.contains("refusing to write") && !e.contains("checklist"),
+            "{e}"
+        );
+        // not even an empty backups directory is created
+        assert!(!d.join("backups").exists());
         // without the secret it works
         fs::write(d.join("skills/cat/s/SKILL.md"), "hello\n").unwrap();
         assert!(restore_point(&d, "cat", 5).unwrap().is_file());

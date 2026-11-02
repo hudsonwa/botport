@@ -47,6 +47,70 @@ pub fn files_sorted(root: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// Every entry under `root` that is neither a directory nor a regular file (symlinks included, never followed),
+/// as relative paths, sorted.
+pub fn special_entries(root: &Path) -> Vec<String> {
+    fn walk(base: &Path, dir: &Path, out: &mut Vec<String>) {
+        let Ok(rd) = fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            let p = e.path();
+            match fs::symlink_metadata(&p).map(|m| m.file_type()) {
+                Ok(ft) if ft.is_dir() => walk(base, &p, out),
+                Ok(ft) if ft.is_file() => {}
+                _ => out.push(rel_str(p.strip_prefix(base).unwrap_or(&p))),
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, &mut out);
+    out.sort();
+    out
+}
+
+/// Why [`read_confined`] refused a path.
+#[derive(Debug, PartialEq)]
+pub enum Confined {
+    Missing,
+    NotRegular,
+    Outside,
+    Io(String),
+}
+
+/// Read `dir/rel` only if it is a regular file reached through no symlink and inside `root` (the canonical
+/// `dir`). The opened file must be the same inode `lstat` saw, so a swap to a symlink in between is refused.
+pub fn read_confined(root: &Path, dir: &Path, rel: &str) -> Result<Vec<u8>, Confined> {
+    if safe_rel("path", rel).is_err() {
+        return Err(Confined::Outside);
+    }
+    let p = dir.join(rel);
+    let md = match fs::symlink_metadata(&p) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(Confined::Missing),
+        Err(e) => return Err(Confined::Io(e.to_string())),
+    };
+    if !md.file_type().is_file() {
+        return Err(Confined::NotRegular);
+    }
+    if !p.canonicalize().is_ok_and(|c| c.starts_with(root)) {
+        return Err(Confined::Outside);
+    }
+    let mut f = fs::File::open(&p).map_err(|e| Confined::Io(e.to_string()))?;
+    let fmd = f.metadata().map_err(|e| Confined::Io(e.to_string()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if (fmd.dev(), fmd.ino()) != (md.dev(), md.ino()) {
+            return Err(Confined::NotRegular);
+        }
+    }
+    if !fmd.is_file() {
+        return Err(Confined::NotRegular);
+    }
+    let mut b = Vec::new();
+    std::io::Read::read_to_end(&mut f, &mut b).map_err(|e| Confined::Io(e.to_string()))?;
+    Ok(b)
+}
+
 pub fn rel_str(p: &Path) -> String {
     p.components()
         .map(|c| c.as_os_str().to_string_lossy())
@@ -104,9 +168,9 @@ fn write_unguarded(p: &Path, data: &[u8], mode: Option<u32>) -> Res<()> {
     #[cfg(not(unix))]
     let _ = mode;
     // Unpredictable temp name, created exclusively (O_EXCL): never opens or follows a file or symlink already there.
-    let name = p.file_name().ok_or("no file name")?.to_string_lossy();
+    p.file_name().ok_or("no file name")?;
     let (tmp, mut f) = loop {
-        let tmp = dir.join(format!(".{name}.{}.botport-tmp", random_hex()));
+        let tmp = dir.join(format!(".botport-tmp.{}", random_hex()));
         let mut o = fs::OpenOptions::new();
         o.write(true).create_new(true);
         #[cfg(unix)]
@@ -333,6 +397,16 @@ mod tests {
         for bad in ["", "/etc/x", "../x", "a/../../x", "a//b", "./a", "a\\..\\b"] {
             assert!(super::safe_rel("skill file", bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn write_atomic_handles_a_212_byte_file_name() {
+        let d = std::env::temp_dir().join(format!("botport-longname-{}", std::process::id()));
+        let p = d.join(format!("{}.md", "r".repeat(212)));
+        super::write_atomic(&p, b"long", None).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"long");
+        assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1);
+        std::fs::remove_dir_all(&d).unwrap();
     }
 
     #[cfg(unix)]

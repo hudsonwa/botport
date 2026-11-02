@@ -148,3 +148,30 @@ fn the_grok_adapter_dropping_credential_names_fails_too() {
     let drop = GrokDropping(|m| m.credentials.clear());
     c::round_trips_credential_names(&drop, &fixture("grok-bot"));
 }
+
+#[test]
+fn adapter_write_refuses_unsafe_skill_names_and_paths() {
+    let adapters: [(&dyn Adapter, &str); 2] = [(&GrokBot, "grok-bot"), (&HermesProfile, "hermes")];
+    for (a, id) in adapters {
+        let base =
+            std::env::temp_dir().join(format!("botport-unsafe-write-{id}-{}", std::process::id()));
+        let good = a.read(&fixture(id)).unwrap();
+        let mut by_name = good.clone();
+        let mut s = good.skills[0].clone();
+        s.name = "../../evil".into();
+        by_name.skills.push(s);
+        let mut by_rel = good.clone();
+        by_rel.skills[0]
+            .files
+            .insert("../../../escaped.md".into(), "x\n".into());
+        for m in [by_name, by_rel] {
+            let d = base.join("out/dest");
+            assert!(a.write(&m, &d).is_err(), "{id}");
+            assert!(
+                !base.join("evil").exists() && !base.join("escaped.md").exists(),
+                "{id}"
+            );
+        }
+        std::fs::remove_dir_all(&base).ok();
+    }
+}

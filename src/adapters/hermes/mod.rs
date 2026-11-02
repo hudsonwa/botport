@@ -149,7 +149,9 @@ impl Adapter for HermesProfile {
             out.push(("memories/USER.md".into(), user.into_bytes()));
         }
         for s in &m.skills {
+            plain_name("skill name", &s.name)?;
             for (rel, body) in s.bytes() {
+                safe_rel("skill file path", &rel)?;
                 out.push((format!("skills/{}/{rel}", s.name), body));
             }
         }

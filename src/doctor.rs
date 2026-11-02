@@ -76,7 +76,11 @@ fn hermes(bin: &str) -> Result<String, String> {
 
 fn writable(dir: &Path) -> Result<String, String> {
     let probe = dir.join(format!(".botport-doctor-{}", std::process::id()));
-    std::fs::write(&probe, b"")
+    // create_new (O_EXCL): never opens or truncates through a file or symlink already at the probe name
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe)
         .and_then(|_| std::fs::remove_file(&probe))
         .map(|_| format!("{} is writable", dir.display()))
         .map_err(|e| {
@@ -167,5 +171,19 @@ mod tests {
         );
         assert_eq!(parse_version("hermes dev"), None);
         assert!(parse_version("v0.21.9").unwrap() < MIN_HERMES);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_probe_never_truncates_through_a_planted_symlink() {
+        let d = std::env::temp_dir().join(format!("botport-doctor-probe-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let outside = d.join("outside.txt");
+        std::fs::write(&outside, "keep").unwrap();
+        let probe = d.join(format!(".botport-doctor-{}", std::process::id()));
+        std::os::unix::fs::symlink(&outside, &probe).unwrap();
+        assert!(writable(&d).is_err());
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "keep");
+        std::fs::remove_dir_all(&d).unwrap();
     }
 }
