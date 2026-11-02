@@ -1,8 +1,7 @@
 # botport
 
-**botport connects a Grok Bot (a custom bot on xAI's [Grok](https://grok.com)) with a
-[Hermes Agent](https://github.com/NousResearch/hermes-agent) bot (Nous Research's open-source agent that runs on
-your own machine).**
+**botport connects a bot in xAI's [Grok Bot](https://grok.com) with a bot in open-source Nous Research's
+[Hermes Agent](https://github.com/NousResearch/hermes-agent).**
 
 ## What works today, between a Grok Bot and a Hermes bot
 1. **Export and import, both directions.** The Grok Bot exports itself into a bundle and `botport apply` turns it
@@ -34,9 +33,12 @@ Platform changes we hit and how the brief or tool adapted are logged in
 | Item | Status |
 |---|---|
 | Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | in progress (lands in v0.1.0) |
-| OpenClaw adapter | planned |
+| OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |
 | `g2hd` running as a separate OS user | planned |
+
+The OpenClaw and OpenBot adapters are what the `BotModel` seam is for: once it lands, each new platform needs one
+adapter that reads into and writes from the neutral model, and it can then port to and from every other adapter.
 
 Details in [ROADMAP.md](ROADMAP.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#today-vs-target).
 
