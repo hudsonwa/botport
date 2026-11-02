@@ -36,6 +36,7 @@ git, put it in a shared or synced folder, or attach it to an issue. Secret redac
 like credentials, not private conversations. Delete old bundles you no longer need.
 ```bash
 mkdir -p -m 700 ~/your-bot/grok && tar -xzf /path/to/your-bot-g2h-bundle.tgz -C ~/your-bot/grok --strip-components=1
+rm /path/to/your-bot-g2h-bundle.tgz   # the archive holds the same personal data; don't keep a second copy
 ```
 ```bash
 botport verify --bundle ~/your-bot/grok

@@ -448,6 +448,12 @@ fn cmd_describe(a: &Args) -> Res<Report> {
         print!("{}", json_sorted(&v));
     } else {
         write_atomic(&out, json_sorted(&v).as_bytes(), Some(0o600))?;
+        // write_atomic keeps an existing file's mode; describe.json holds personal data, so force 0600
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| e.to_string())?;
+        }
     }
     let n = |k: &str| v[k].as_array().map_or(0, |x| x.len());
     let other = v["schedules"]

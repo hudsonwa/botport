@@ -94,7 +94,7 @@ botport routes or refuses values that look like secrets instead of writing them,
   --describe /workspace/exports/describe.md \
   --out /workspace/exports/NAME-g2h-bundle --strict
 /workspace/botport verify --bundle /workspace/exports/NAME-g2h-bundle
-tar -czf /workspace/exports/NAME-g2h-bundle.tgz -C /workspace/exports NAME-g2h-bundle
+(umask 077; tar -czf /workspace/exports/NAME-g2h-bundle.tgz -C /workspace/exports NAME-g2h-bundle)
 ```
 (`--agent-data` defaults to `/home/box/agent-data`, the memory drop to `/workspace/exports/memory-drop`.) Chat
 history is **not** exported unless the owner asked for it: then add `--with-history` (it reads
