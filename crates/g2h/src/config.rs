@@ -23,6 +23,7 @@
 //! | `service_label` | `"io.g2h.daemon"` | launchd label / systemd unit name used by `g2h setup` |
 //! | `op_approval_ttl_secs` | 86400 | a pending op approval expires after this |
 //! | `[ops_approver]` | unset | `command = ["argv", …]`: owner-set program that gets each approve-tier op's one-time code on stdin; unset refuses every approve-tier op |
+//! | `[separate_user]` | unset | opt-in: `allowed_uids = [uid, …]`, `socket_gid = gid`; g2hd runs as its own user (see `isolation`) |
 //! | `[ops]` | empty | op name -> `"auto"` / `"approve"` / `"never"`; empty refuses every op |
 
 use crate::guard::Limits;
@@ -61,6 +62,7 @@ pub struct Config {
     pub service_label: String,
     pub op_approval_ttl_secs: i64,
     pub ops_approver: Option<OpsApprover>,
+    pub separate_user: Option<crate::isolation::SeparateUser>,
     pub ops: BTreeMap<String, Tier>,
 }
 
@@ -96,6 +98,7 @@ impl Default for Config {
             service_label: "io.g2h.daemon".into(),
             op_approval_ttl_secs: crate::ops::DEFAULT_APPROVAL_TTL_SECS,
             ops_approver: None,
+            separate_user: None,
             ops: BTreeMap::new(),
         }
     }
@@ -171,6 +174,15 @@ mod tests {
             (c.hop_limit, c.peers.len(), c.dry_run, c.debounce_secs),
             (2, 2, false, 30)
         );
+    }
+
+    #[test]
+    fn separate_user_section_parses_and_is_off_by_default() {
+        assert!(Config::default().separate_user.is_none());
+        let c = Config::parse("[separate_user]\nallowed_uids = [501]\nsocket_gid = 20\n").unwrap();
+        let s = c.separate_user.unwrap();
+        assert_eq!((s.allowed_uids, s.socket_gid), (vec![501], 20));
+        assert!(Config::parse("[separate_user]\nallowed_uids = []\n").is_err());
     }
 
     #[test]
