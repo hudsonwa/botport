@@ -22,6 +22,40 @@ Common: `--profile NAME` / `--hermes-home DIR` (default `~/.hermes`) or `--profi
 Exit codes: 0 ok, 1 drift/verify/test failure, 2 error (also bare `botport` with no command), 3 apply/sync left conflicts.
 `plan`, `apply` and `sync` name the destination profile dir on their first summary line.
 
+### Routine check (`--check-routines PATH|auto`, experimental)
+Opt-in on `verify`, `plan`, `apply`, `sync` and `drift` (any other command refuses the flag). It compares the
+routine names in the export with the routines the Grok desktop app's local cache has seen (its automation-changed
+events) and prints a `WARN` line naming each routine the cache knows but the export left out.
+
+**What it reads:** this reads your Grok desktop app's local conversation transcripts (the `transcript.replicas`
+files) in full, on this machine only. It keeps only the names of routines from automation events. Nothing else is
+stored, copied or printed, and nothing is sent anywhere.
+
+It never changes the exit code and never drops the command's report: a missing cache, a refused path, a failed
+command or an unreadable export adds one `routine check (experimental): skipped (<reason>)` line, and a cache file
+that isn't JSON is a `WARN` and is skipped. Its lines come right after the first summary line, so they are never cut
+by the 10-line summary limit.
+
+Which files are opened, and nothing else:
+- Only regular files named `<base32>.blob` whose base32 name decodes to a key containing `.transcript.replicas.`.
+  Symlinks are never followed.
+- `PATH` a file: opened only if it passes that rule. Anything else (`sand-secrets.json`, `Cookies*`, a webhook-key
+  blob, any other file, or a symlink) is refused unopened with a `skipped` note.
+- `PATH` a directory: listed (not recursively); only its files that pass the rule are opened. A symlinked directory is
+  refused.
+- `auto`: that directory at the app's default location, `<app data>/Grok Bot/sand-client-persistence`, where
+  `<app data>` is `~/Library/Application Support` (macOS), `%APPDATA%` (Windows) or `$XDG_CONFIG_HOME`/`~/.config`
+  (Linux).
+
+Cache file names (they carry an account key) are never printed. The report JSON gets a `routine_check` block (counts
+and the missing names).
+
+Experimental because the event format is assumed, not confirmed against a real cache: each file is JSON or JSON
+lines, and any object whose `type`, `event` or `kind` is `automation-changed` (or `automation_changed`,
+`automationChanged`) names a routine at `automation.name`, `payload.name` or `name`; a change with `deleted: true`
+or `action`/`change` of `deleted`/`removed` forgets it. Names match ignoring case and punctuation. If your cache
+looks different, the check finds nothing rather than guessing.
+
 ## The bundle (`export`, run inside the Grok box)
 | Path | What |
 |---|---|

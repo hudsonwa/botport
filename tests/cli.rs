@@ -110,6 +110,14 @@ fn export_is_deterministic_secret_free_and_verifies() {
     let (rc, out) = run(&["verify", "--bundle", s(&a)]);
     assert_eq!(rc, 1);
     assert!(out.contains("hash mismatch: normalized/MEMORY.md"));
+    // --check-routines on a failed verify: same exit code, the report kept, a skipped note added
+    let (rc, out) = run(&["verify", "--bundle", s(&a), "--check-routines", REPLICA]);
+    assert_eq!(rc, 1);
+    assert!(out.contains("hash mismatch: normalized/MEMORY.md"), "{out}");
+    assert!(
+        out.contains("routine check (experimental): skipped (the command did not succeed)"),
+        "{out}"
+    );
     // a foreign non-empty dir is refused
     let f = t.0.join("foreign");
     w(&f.join("x.txt"), "x");
@@ -1357,6 +1365,49 @@ fn drift_does_not_flag_spec_jobs_created_paused() {
     assert!(!out.contains("paused/disabled"), "{out}");
     assert!(!out.contains("conflict"), "{out}");
     assert!(out.contains(" 1 create "), "{out}");
+}
+
+const REPLICA: &str = "tests/fixtures/routines-cache/onqw4zbomnwgszlooqxhg3djmnss4yldmnxxk3tufztgs6duovzgkltuojqw443dojuxa5boojsxa3djmnqxgltsge.blob";
+
+#[test]
+fn verify_check_routines_warns_on_missing_and_never_fails() {
+    let exp = "tests/fixtures/grok-export/grok-bot-export.json";
+    let out = bin()
+        .args(["verify", "--bundle", exp, "--check-routines", REPLICA])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let so = String::from_utf8_lossy(&out.stdout);
+    assert!(so.contains("WARN routine \"Weekly Review\""), "{so}");
+    assert!(!so.contains("Sample Report\" is in"), "{so}");
+    // absent cache: a note, exit 0
+    let out = bin()
+        .args([
+            "verify",
+            "--bundle",
+            exp,
+            "--check-routines",
+            "tests/fixtures/routines-cache/absent",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout).contains("skipped (no Grok desktop cache found)"));
+    // a non-replica file is refused unopened, exit 0
+    let out = bin()
+        .args(["verify", "--bundle", exp, "--check-routines", "Cargo.toml"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stdout)
+        .contains("skipped (not a Grok transcript-replica file"));
+    // commands that ignore the flag refuse it
+    let out = bin()
+        .args(["describe", "--bundle", exp, "--check-routines", "auto"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--check-routines works only with"));
 }
 
 #[test]

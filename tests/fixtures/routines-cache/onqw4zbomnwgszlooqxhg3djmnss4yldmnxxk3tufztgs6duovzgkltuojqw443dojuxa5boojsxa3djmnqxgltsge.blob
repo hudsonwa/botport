@@ -1,0 +1,10 @@
+{
+  "_comment": "SYNTHETIC fixture for --check-routines (assumed format; made-up names, no real data)",
+  "events": [
+    {"type": "message", "text": "hello"},
+    {"type": "automation-changed", "automation": {"id": "auto-1", "name": "Sample Report"}},
+    {"type": "automation-changed", "automation": {"id": "auto-2", "name": "Weekly Review"}},
+    {"type": "automation-changed", "automation": {"id": "auto-3", "name": "Old Digest"}},
+    {"type": "automation-changed", "action": "deleted", "automation": {"id": "auto-3", "name": "Old Digest"}}
+  ]
+}

@@ -28,6 +28,11 @@ const USAGE: &str = "botport <command> [options]   (v{V}; --version prints it)
   test    --profile NAME --battery FILE [--only id,id] [--out DIR]
   doctor  [--profile NAME | --profile-dir DIR] [--spec FILE]   check hermes (on PATH, version), profile dir, write access, spec; exit 1 on a failure
   battery init PATH|--bundle PATH [--spec FILE] --out FILE  starter battery (PATH: bundle dir or grok-bot-export file) (docs/USER-GUIDE.md §6)
+  --check-routines PATH|auto  (verify/plan/apply/sync/drift; EXPERIMENTAL) warn about routines the Grok desktop
+          app's cache knows that the export left out. This reads your Grok desktop app's local conversation transcripts
+          (the transcript.replicas files) in full, on this machine only. It keeps only the names of routines from
+          automation events. Nothing else is stored, copied or printed, and nothing is sent anywhere. Opt-in; `auto`
+          looks in the app's default folder (docs/REFERENCE.md)
 common: --hermes-home DIR (default $HERMES_HOME, else ~/.hermes) | --profile-dir DIR  --hermes-bin PATH  --json  --details FILE";
 
 const VALUED: &[&str] = &[
@@ -50,6 +55,7 @@ const VALUED: &[&str] = &[
     "details",
     "battery",
     "only",
+    "check-routines",
 ];
 const FLAGS: &[&str] = &[
     "strict", "json", "adopt", "dry-run", "help", "no-cron", "version",
@@ -88,6 +94,12 @@ fn main() -> ExitCode {
         println!("{}", USAGE.replace("{V}", bundle::VERSION));
         return ExitCode::SUCCESS;
     }
+    const ROUTINE_CMDS: [&str; 5] = ["verify", "plan", "apply", "sync", "drift"];
+    if a.get("check-routines").is_some() && !ROUTINE_CMDS.contains(&cmd.as_str()) {
+        return fail(&format!(
+            "--check-routines works only with verify, plan, apply, sync and drift, not {cmd:?}"
+        ));
+    }
     let r = match cmd.as_str() {
         "export" => cmd_export(&a),
         "verify" => cmd_verify(&a),
@@ -98,10 +110,45 @@ fn main() -> ExitCode {
         "battery" if a.pos.get(1).map(String::as_str) == Some("init") => cmd_battery_init(&a),
         _ => Err(format!("unknown command {cmd:?} (try --help)")),
     };
+    let r = match (r, a.get("check-routines")) {
+        (Ok(r), Some(spec)) => Ok(check_routines(&a, &cmd, spec, r)),
+        (r, _) => r,
+    };
     match r {
         Ok(r) => emit(&a, &cmd, r),
         Err(e) => fail(&e),
     }
+}
+
+/// Opt-in `--check-routines`: add the routine check's lines and JSON to the report. It never changes the exit code
+/// or drops the report: when the command failed (drift's exit 1 aside) or the export can't be read, it adds a "skipped" note instead.
+/// Its lines go right after the first summary line, so the 10-line cap never hides a routine WARN.
+fn check_routines(a: &Args, cmd: &str, spec: &str, mut r: Report) -> Report {
+    use adapters::grok_bot::routines_check::{check, skip_line, Check};
+    let skipped = |why: String| Check {
+        lines: vec![skip_line(&why)],
+        json: json!({"experimental": true, "skipped": why}),
+    };
+    // drift's exit 1 means "differences found", not a failure: the export is still checked
+    let c = if r.code != 0 && cmd != "drift" {
+        skipped("the command did not succeed".into())
+    } else {
+        match a
+            .path("bundle")
+            .ok_or_else(|| "no --bundle".to_string())
+            .and_then(|b| GrokBot.read(&b))
+        {
+            Ok(m) => {
+                let names: Vec<String> = m.schedules.iter().map(|s| s.name.clone()).collect();
+                check(spec, &names)
+            }
+            Err(e) => skipped(format!("the export could not be read: {e}")),
+        }
+    };
+    let at = r.lines.len().min(1);
+    r.lines.splice(at..at, c.lines);
+    r.json["routine_check"] = c.json;
+    r
 }
 
 fn fail(e: &str) -> ExitCode {
