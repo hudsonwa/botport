@@ -33,16 +33,18 @@ stored, copied or printed, and nothing is sent anywhere.
 
 It never changes the exit code and never drops the command's report: a missing cache, a refused path, a failed
 command or an unreadable export adds one `routine check (experimental): skipped (<reason>)` line, and a cache file
-that isn't JSON is a `WARN` and is skipped. Its lines come right after the first summary line, so they are never cut
-by the 10-line summary limit.
+that isn't JSON is a `WARN` and is skipped. Its lines come right after the first summary line. The 10-line summary limit still applies, so with many missing
+routines some of them (and some of the command's own lines) only appear in the details file; `routine_check` there
+always lists every missing name.
 
 Which files are opened, and nothing else:
 - Only regular files named `<base32>.blob` whose base32 name decodes to a key containing `.transcript.replicas.`.
-  Symlinks are never followed.
+  A file that is a symlink is never opened.
 - `PATH` a file: opened only if it passes that rule. Anything else (`sand-secrets.json`, `Cookies*`, a webhook-key
   blob, any other file, or a symlink) is refused unopened with a `skipped` note.
 - `PATH` a directory: listed (not recursively); only its files that pass the rule are opened. A symlinked directory is
-  refused.
+  refused when given as written; with a trailing `/` or `/.` the operating system follows the link, and its entries
+  are then still opened only if they pass the rule above.
 - `auto`: that directory at the app's default location, `<app data>/Grok Bot/sand-client-persistence`, where
   `<app data>` is `~/Library/Application Support` (macOS), `%APPDATA%` (Windows) or `$XDG_CONFIG_HOME`/`~/.config`
   (Linux).
