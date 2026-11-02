@@ -113,7 +113,10 @@ point and with it the whole apply, before anything is written, not even a direct
 
 **Apply is sequential, not transactional.** It writes one file at a time behind a restore point; if it stops
 part-way, the files already written stay written. The restore point lets you put them back by hand; it does not roll
-back a partial apply on its own.
+back a partial apply on its own. Two runs can't interleave: `apply` and `sync` hold a per-profile lock
+(`<profile>/.botport.lock`, with the holder's pid) while they write, so a second run is refused with the holder named;
+a lock left by a run that died is taken over with a note. `plan` and `drift` never take or touch it. A malformed or
+unreadable `cron/jobs.json` stops `apply`, `sync` and `drift` with an error instead of being read as "no jobs".
 
 **Paths stay confined.** Profile names must be plain names (no `/`, no leading `.`); skill names and skill file paths
 from a bundle must stay below `skills/<category>/<name>/` or the skill goes to the checklist (the library

@@ -1806,3 +1806,133 @@ fn token_split_across_pasted_fragments_is_refused_once_joined() {
         );
     }
 }
+
+/// The plan/drift/apply args for the fixture into `<t>/hermes` (profile demo).
+fn demo_args(t: &Path) -> (PathBuf, Vec<String>) {
+    let (g, spec) = fixture(t);
+    let hh = t.join("hermes");
+    let v = [
+        "--bundle",
+        s(&g),
+        "--spec",
+        s(&spec),
+        "--hermes-home",
+        s(&hh),
+    ]
+    .iter()
+    .map(|x| x.to_string())
+    .collect();
+    (hh.join("profiles/demo"), v)
+}
+
+fn run_with(cmd: &str, base: &[String], extra: &[&str]) -> (i32, String) {
+    let mut v = vec![cmd];
+    v.extend(base.iter().map(String::as_str));
+    v.extend(extra);
+    run(&v)
+}
+
+#[test]
+fn apply_refuses_a_held_lock_and_takes_over_a_stale_one() {
+    let t = Tmp::new("oplock");
+    let (prof, base) = demo_args(&t.0);
+    fs::create_dir_all(&prof).unwrap();
+    let lock = prof.join(".botport.lock");
+    let mut holder = Command::new("sleep").arg("30").spawn().unwrap();
+    w(&lock, &format!("pid={} since=1\n", holder.id()));
+    for cmd in ["apply", "sync"] {
+        let (rc, out) = run_with(cmd, &base, &[]);
+        assert_eq!(rc, 2, "{out}");
+        assert!(
+            out.contains("another botport run holds")
+                && out.contains(&format!("pid={}", holder.id())),
+            "{out}"
+        );
+    }
+    assert!(!prof.join("backups").exists() && !prof.join("skills").exists());
+    // plan and drift stay lock-free: they run and leave the holder's lock alone
+    assert_eq!(run_with("drift", &base, &[]).0, 1);
+    assert_eq!(run_with("plan", &base, &[]).0, 0);
+    assert!(lock.is_file());
+    holder.kill().unwrap();
+    holder.wait().unwrap();
+    let (rc, out) = run_with("apply", &base, &[]);
+    assert_eq!(rc, 0, "{out}");
+    assert!(out.contains("taking over a stale lock"), "{out}");
+    assert!(!lock.exists(), "released after the run");
+    assert_eq!(run_with("drift", &base, &[]).0, 0);
+    assert!(!lock.exists(), "drift never creates the lock");
+}
+
+#[test]
+fn concurrent_applies_never_interleave() {
+    let t = Tmp::new("oplock2");
+    let (prof, base) = demo_args(&t.0);
+    fs::create_dir_all(&prof).unwrap();
+    let kids: Vec<_> = (0..6)
+        .map(|_| {
+            let mut c = bin();
+            c.arg("apply").args(&base);
+            c.stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .unwrap()
+        })
+        .collect();
+    let mut ok = 0;
+    for k in kids {
+        let o = k.wait_with_output().unwrap();
+        let out =
+            String::from_utf8_lossy(&o.stdout).to_string() + &String::from_utf8_lossy(&o.stderr);
+        match o.status.code() {
+            Some(0) => ok += 1,
+            _ => assert!(out.contains("another botport run holds"), "{out}"),
+        }
+    }
+    assert!(ok >= 1);
+    assert!(!prof.join(".botport.lock").exists());
+    assert_eq!(run_with("drift", &base, &[]).0, 0);
+}
+
+#[test]
+fn malformed_jobs_json_is_an_error_not_no_jobs() {
+    for bad in ["{\"jobs\": [", "{\"jobs\": 3}", "\"x\""] {
+        let t = Tmp::new("badjobs");
+        let (prof, base) = demo_args(&t.0);
+        w(&prof.join("cron/jobs.json"), bad);
+        for cmd in ["apply", "sync", "drift"] {
+            let (rc, out) = run_with(cmd, &base, &[]);
+            assert_eq!(rc, 2, "{cmd} {bad}: {out}");
+            assert!(out.contains("cron/jobs.json: malformed"), "{out}");
+        }
+        assert!(!prof.join("backups").exists() && !prof.join("skills").exists());
+        assert_eq!(
+            fs::read_to_string(prof.join("cron/jobs.json")).unwrap(),
+            bad
+        );
+    }
+}
+
+#[test]
+fn unwritable_details_report_warns_once_and_keeps_the_exit_code() {
+    let t = Tmp::new("details");
+    let (_, base) = demo_args(&t.0);
+    w(&t.0.join("file"), "x");
+    let bad = t.0.join("file/report.json");
+    let (rc_good, _) = run_with("plan", &base, &[]);
+    let o = bin()
+        .arg("plan")
+        .args(&base)
+        .args(["--details", s(&bad)])
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert_eq!(o.status.code().unwrap(), rc_good, "{err}");
+    assert_eq!(
+        err.matches("could not write the details report").count(),
+        1,
+        "{err}"
+    );
+    assert!(err.contains(&bad.display().to_string()), "{err}");
+    assert!(!String::from_utf8_lossy(&o.stdout).contains("details:"));
+}

@@ -225,6 +225,99 @@ fn random_hex() -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
+/// The per-profile operation lock file: `apply` and `sync` hold it while they write; plan/drift never touch it.
+pub const OP_LOCK: &str = ".botport.lock";
+
+/// An exclusive per-directory lock: `<dir>/.botport.lock` created atomically (hard link, fails if present), holding `pid=<pid> since=<unix secs>`.
+/// A second run fails fast naming the holder; a lock whose pid is gone is taken over with a note. Removed on drop.
+pub struct OpLock(PathBuf);
+
+impl OpLock {
+    pub fn acquire(dir: &Path) -> Res<OpLock> {
+        let p = dir.join(OP_LOCK);
+        for _ in 0..2 {
+            // written in full to a private temp file, then hard-linked into place: the link is atomic and fails
+            // if the lock exists, so another run never sees a half-written lock
+            let since = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let tmp = dir.join(format!(".botport-lock.{}", random_hex()));
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&tmp)
+                .and_then(|mut f| writeln!(f, "pid={} since={since}", std::process::id()))
+                .map_err(|e| format!("lock {}: {e}", tmp.display()))?;
+            let linked = fs::hard_link(&tmp, &p);
+            fs::remove_file(&tmp).ok();
+            match linked {
+                Ok(()) => return Ok(OpLock(p)),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let held = fs::read_to_string(&p).unwrap_or_default();
+                    let pid = held
+                        .split_whitespace()
+                        .find_map(|w| w.strip_prefix("pid="))
+                        .and_then(|n| n.parse::<u32>().ok());
+                    if pid.is_some_and(pid_alive) || (pid.is_none() && !held.is_empty()) {
+                        return err(format!(
+                            "another botport run holds {} ({}); wait for it to finish (if no botport is running, remove that file)",
+                            p.display(),
+                            held.trim()
+                        ));
+                    }
+                    eprintln!(
+                        "botport: note: taking over a stale lock {} ({})",
+                        p.display(),
+                        if held.trim().is_empty() {
+                            "empty"
+                        } else {
+                            held.trim()
+                        }
+                    );
+                    // move it aside atomically; if what moved is not the stale lock (another run just took over),
+                    // link it back (never clobbering) and let the retry report it
+                    let aside = dir.join(format!(".botport-lock.{}", random_hex()));
+                    fs::rename(&p, &aside).map_err(|e| format!("remove {}: {e}", p.display()))?;
+                    if fs::read_to_string(&aside).unwrap_or_default() != held {
+                        fs::hard_link(&aside, &p).ok();
+                    }
+                    fs::remove_file(&aside).ok();
+                }
+                Err(e) => return err(format!("lock {}: {e}", p.display())),
+            }
+        }
+        err(format!("lock {}: another run took it first", p.display()))
+    }
+}
+
+impl Drop for OpLock {
+    fn drop(&mut self) {
+        fs::remove_file(&self.0).ok();
+    }
+}
+
+/// Is a process with this pid running (this machine)? `kill -0`; unknown counts as running.
+fn pid_alive(pid: u32) -> bool {
+    if pid == std::process::id() {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(true)
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
 /// A plain name for one path component (a profile, a skill category or name): not empty, no `/` or `\`, no
 /// leading `.` (so neither `.` nor `..`), no NUL.
 pub fn plain_name(what: &str, s: &str) -> Res<()> {

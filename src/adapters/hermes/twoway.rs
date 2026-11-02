@@ -281,7 +281,7 @@ pub fn collect(c: &Ctx) -> Res<Export> {
     let spec: BTreeMap<String, &sync::CronJob> =
         w.cron.iter().map(|j| (j.name.clone(), j)).collect();
     let mut cron = vec![];
-    for j in sync::live_jobs(&c.dest) {
+    for j in sync::live_jobs(&c.dest)? {
         let name = j["name"].as_str().unwrap_or("").to_string();
         if w.model_cron.iter().any(|m| m.name == name) {
             continue; // made from the Grok bot's own routine: it is already there

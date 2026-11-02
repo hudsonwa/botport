@@ -1005,13 +1005,31 @@ fn load_yaml(p: &Path) -> Res<Option<Y>> {
         .map_err(|e| format!("{}: {e}", p.display()))
 }
 
-pub fn live_jobs(dest: &Path) -> Vec<serde_json::Value> {
-    let Ok(b) = fs::read(dest.join("cron/jobs.json")) else {
-        return vec![];
+/// cron/jobs.json: no file = no jobs; an unreadable or malformed file is an error (never read as "no jobs").
+pub fn live_jobs(dest: &Path) -> Res<Vec<serde_json::Value>> {
+    let p = dest.join("cron/jobs.json");
+    let b = match fs::read(&p) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(e) => return Err(format!("{}: unreadable: {e}", p.display())),
     };
-    let v: serde_json::Value = serde_json::from_slice(&b).unwrap_or_default();
-    let arr = if v.is_object() { v["jobs"].clone() } else { v };
-    arr.as_array().cloned().unwrap_or_default()
+    let bad = |why: String| {
+        format!(
+            "{}: malformed ({why}); fix or move it aside, nothing was written",
+            p.display()
+        )
+    };
+    let v: serde_json::Value = serde_json::from_slice(&b).map_err(|e| bad(e.to_string()))?;
+    let arr = match &v {
+        serde_json::Value::Object(o) => match o.get("jobs") {
+            None => return Ok(vec![]),
+            Some(a) => a,
+        },
+        a => a,
+    };
+    arr.as_array()
+        .cloned()
+        .ok_or_else(|| bad("expected a list of jobs".into()))
 }
 
 pub fn cron_expr(j: &serde_json::Value) -> String {
@@ -1066,7 +1084,7 @@ pub fn plan(c: &Ctx) -> Res<Plan> {
     if let Some(seed) = &w.user_seed {
         items.push(plan_user(c, seed));
     }
-    let jobs = live_jobs(&c.dest);
+    let jobs = live_jobs(&c.dest)?;
     items.extend(plan_spec_cron(c, &w, &jobs));
     items.extend(plan_model_cron(c, &w.model_cron, &jobs, &rec));
     if !w.mcp.is_empty() {
@@ -1751,6 +1769,10 @@ pub fn restore_point(dest: &Path, cat: &str, keep: usize) -> Res<PathBuf> {
 }
 
 pub fn apply(c: &Ctx, adopt: bool, dry: bool) -> Res<Applied> {
+    // one writer per profile: the lock is taken before the plan, so the plan can't go stale under another run
+    let mut held = (!dry && c.dest.is_dir())
+        .then(|| OpLock::acquire(&c.dest))
+        .transpose()?;
     let p = plan(c)?;
     let todo: Vec<&Item> = p
         .items
@@ -1769,6 +1791,9 @@ pub fn apply(c: &Ctx, adopt: bool, dry: bool) -> Res<Applied> {
     let legacy = has_legacy_names(&c.dest);
     if !todo.is_empty() || legacy {
         fs::create_dir_all(&c.dest).map_err(|e| e.to_string())?;
+        if held.is_none() {
+            held = Some(OpLock::acquire(&c.dest)?);
+        }
         rp = Some(restore_point(&c.dest, &p.want.cat, 5)?);
     }
     if legacy {
@@ -1783,9 +1808,10 @@ pub fn apply(c: &Ctx, adopt: bool, dry: bool) -> Res<Applied> {
     apply_user(c, &p, &todo, &mut out)?;
     restart |= apply_mcp(c, &p, &todo, &mut out, &mut lock, adopt)?;
     apply_manual(c, &p, &todo, &mut out)?;
-    record_model_cron(c, &p.want.model_cron, &out, &mut lock);
+    record_model_cron(c, &p.want.model_cron, &out, &mut lock)?;
     apply_cron(c, &p, &todo, &mut out)?;
     write_lock(c, &mut lock)?;
+    drop(held);
     Ok(Applied {
         items: out,
         restore_point: rp,
@@ -2107,13 +2133,13 @@ fn apply_manual(c: &Ctx, p: &Plan, todo: &[&Item], out: &mut [Item]) -> Res<()> 
 }
 
 /// Record the bot's cron jobs that are ours: adopted live ones as they are, created/updated ones as wanted.
-fn record_model_cron(c: &Ctx, model_cron: &[CronJob], out: &[Item], lock: &mut Lock) {
+fn record_model_cron(c: &Ctx, model_cron: &[CronJob], out: &[Item], lock: &mut Lock) -> Res<()> {
     for j in model_cron {
         let st = out
             .iter()
             .find(|i| i.area == "cron" && i.name == j.name)
             .map(|i| i.status);
-        let live = live_jobs(&c.dest);
+        let live = live_jobs(&c.dest)?;
         let cur = live.iter().find(|x| x["name"].as_str() == Some(&j.name));
         match (st, cur) {
             (Some(St::InSync), Some(cur)) => {
@@ -2127,6 +2153,7 @@ fn record_model_cron(c: &Ctx, model_cron: &[CronJob], out: &[Item], lock: &mut L
             _ => {}
         }
     }
+    Ok(())
 }
 
 /// Cron jobs through the hermes CLI (which owns jobs.json); skipped off ~/.hermes.
@@ -2151,7 +2178,7 @@ fn apply_cron(c: &Ctx, p: &Plan, todo: &[&Item], out: &mut [Item]) -> Res<()> {
         }
         run_hermes_cron(c, j, i.status == St::Create)?;
         // Read back: an exit code of 0 is not proof the job exists.
-        if live_jobs(&c.dest)
+        if live_jobs(&c.dest)?
             .iter()
             .any(|x| x["name"].as_str() == Some(&j.name))
         {
@@ -2196,7 +2223,7 @@ fn run_hermes_cron(c: &Ctx, j: &CronJob, create: bool) -> Res<()> {
         }
         cmd.args([&j.schedule, &j.prompt]);
     } else {
-        let id = live_jobs(&c.dest)
+        let id = live_jobs(&c.dest)?
             .into_iter()
             .find(|x| x["name"].as_str() == Some(&j.name))
             .and_then(|x| x["id"].as_str().map(String::from))

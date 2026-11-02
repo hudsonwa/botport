@@ -337,7 +337,16 @@ fn emit(a: &Args, cmd: &str, r: Report) -> ExitCode {
         eprintln!("botport: ERROR: {e}");
         return ExitCode::from(2);
     }
-    let wrote = write_atomic(&details, json_sorted(&r.json).as_bytes(), Some(0o600)).is_ok();
+    let wrote = match write_atomic(&details, json_sorted(&r.json).as_bytes(), Some(0o600)) {
+        Ok(()) => true,
+        Err(e) => {
+            eprintln!(
+                "botport: warning: could not write the details report {}: {e}",
+                details.display()
+            );
+            false
+        }
+    };
     let quiet_ok = r.json["in_sync"] == json!(true); // nothing to look up: skip the details line
                                                      // describe --out - puts describe.json on stdout, so the report goes to stderr
     let to_stderr = cmd == "describe" && a.get("out") == Some("-");
