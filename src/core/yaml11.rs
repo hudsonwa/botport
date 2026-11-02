@@ -388,14 +388,6 @@ pub fn emit_checked(v: &Y) -> Result<String, String> {
     }
 }
 
-/// Re-emit serde_yaml text through `emit` (kept for callers and harnesses that hold YAML text).
-#[allow(dead_code)]
-pub fn write(text: &str) -> String {
-    serde_yaml::from_str::<Y>(text)
-        .map(|v| emit(&v))
-        .unwrap_or_else(|_| text.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
