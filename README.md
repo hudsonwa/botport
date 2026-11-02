@@ -50,6 +50,9 @@ botport reads the same `grok-bot-export` v1 format as the upstream importer, as 
 mapping follows agent-importers, and credit goes to that project (see [NOTICE](NOTICE)).
 
 ## Where it's going (roadmap)
+Start with [docs/OWNERSHIP.md](docs/OWNERSHIP.md): one page on the ownership rules that are botport's core (what it
+records, when it writes, and when it refuses to overwrite a Hermes-side edit).
+
 | Item | Status |
 |---|---|
 | Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | done (v0.1.0) |
@@ -57,10 +60,15 @@ mapping follows agent-importers, and credit goes to that project (see [NOTICE](N
 | OpenBot adapter | planned |
 | `g2hd` running as a separate OS user | implemented, opt-in (not yet run in production) |
 
-The OpenClaw and OpenBot adapters are what the `BotModel` seam is for: plan/apply/sync/drift now run on the neutral
-model. A new platform needs an adapter that reads into (and writes from) that model and passes the conformance
-suite, plus a small CLI change to select it as a source. Porting *into* a new platform also needs a `Target` (Hermes
-is the only one today), and the two-way export back to Grok is Hermes-specific code. Neither adapter has code yet.
+OpenClaw and OpenBot are named because they are the platforms the `BotModel` seam is meant for, but neither has any
+code yet, and neither is a small first contribution. Porting a bot *from* a new platform needs an adapter that reads
+it into (and writes it from) the model and passes the conformance suite, plus a way to select it as a source in the
+CLI (today only `--bundle`, the Grok Bot source). Porting *into* it also needs a `Target` (Hermes is the only one
+today) that implements the rules in [docs/OWNERSHIP.md](docs/OWNERSHIP.md); the two-way export back to Grok is
+Hermes-specific code.
+
+**g2h is an optional companion and is feature-frozen for v0.x**: bug fixes and the open hardening issues only, no new
+features, until botport has outside users.
 
 Details in [ROADMAP.md](ROADMAP.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#today-vs-target).
 
@@ -104,7 +112,8 @@ For a Grok Bot exporting itself, use [docs/AGENT-EXPORT.md](docs/AGENT-EXPORT.md
 
 ## What it does
 Two tools: **botport** ports and syncs the bot; **g2h** (`g2h` CLI, `g2hd` daemon) is an optional companion that lets
-the two copies talk. botport works on its own: you do not need to install or run g2h to port, sync or test a bot.
+the two copies talk. botport works on its own: you do not need to install or run g2h to port, sync or test a bot. g2h is feature-frozen
+for v0.x (bug fixes and the open hardening issues only) until botport has outside users.
 - **Port.** `export` makes a bundle from a Grok Bot: skills, memory, chat history (read-only), and a checklist of
   what it can't copy. `plan` and `apply` turn that bundle into a Hermes profile. A short spec file says which parts
   of the profile botport owns.
@@ -151,8 +160,9 @@ reviewed commits.
 
 ## Docs and contributing
 - [docs/README.md](docs/README.md): every guide, in one list.
-- [CONTRIBUTING.md](CONTRIBUTING.md): build, test, and send a pull request. Rust help with adapters is welcome:
-  OpenClaw and OpenBot are the next ones (see the roadmap above).
+- [CONTRIBUTING.md](CONTRIBUTING.md): build, test, and send a pull request. Good first contributions: a
+  [PLATFORM-CHANGES](docs/PLATFORM-CHANGES.md) entry from a bot you run,
+  [#16](https://github.com/hudsonwa/botport/issues/16), [#5](https://github.com/hudsonwa/botport/issues/5).
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License and credits
