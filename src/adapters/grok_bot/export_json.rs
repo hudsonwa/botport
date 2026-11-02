@@ -133,21 +133,12 @@ fn secret_paths(v: &Value, path: &str, out: &mut Vec<String>) {
 /// The bots in the export (version 1 only; secret-looking keys refuse the whole document, as upstream).
 pub fn bots(p: &Path) -> Res<Vec<Value>> {
     let raw = read_str(p)?;
-    let v: Value = serde_json::from_str(raw.trim()).map_err(|e| format!("{}: {e}", p.display()))?;
-    if v["format"] != json!(FORMAT) && v.get("bots").is_none() {
-        return err(format!("{}: not a {FORMAT} document", p.display()));
-    }
-    if v.get("version").is_some_and(|x| *x != json!(1)) {
-        return err(format!("unsupported {FORMAT} version {}", v["version"]));
-    }
-    let mut sec = vec![];
-    secret_paths(&v, "", &mut sec);
-    if !sec.is_empty() {
-        return err(format!(
-            "the export carries credential-looking keys, so it was not read: {}",
-            sec.into_iter().take(5).collect::<Vec<_>>().join(", ")
-        ));
-    }
+    let (v, repairs) = parse(&raw).map_err(|e| format!("{}: {e}", p.display()))?;
+    check(&v).map_err(|e| match e.starts_with("not a ") {
+        true => format!("{}: {e}", p.display()),
+        false => e,
+    })?;
+    report_repairs(&repairs);
     let bots: Vec<Value> = dicts(&v["bots"]).into_iter().cloned().collect();
     if bots.is_empty() {
         return err("the export has no bots");
@@ -158,6 +149,210 @@ pub fn bots(p: &Path) -> Res<Vec<Value>> {
         }
     }
     Ok(bots)
+}
+
+/// The export document checked as upstream does: a grok-bot-export, version 1, no credential-looking keys.
+/// The secret check runs on the parsed (so already repaired) document.
+pub fn document(raw: &str) -> Res<(Value, Vec<String>)> {
+    let (v, repairs) = parse(raw)?;
+    check(&v)?;
+    Ok((v, repairs))
+}
+
+fn check(v: &Value) -> Res<()> {
+    if v["format"] != json!(FORMAT) && v.get("bots").is_none() {
+        return err(format!("not a {FORMAT} document"));
+    }
+    if v.get("version").is_some_and(|x| *x != json!(1)) {
+        return err(format!("unsupported {FORMAT} version {}", v["version"]));
+    }
+    let mut sec = vec![];
+    secret_paths(v, "", &mut sec);
+    if !sec.is_empty() {
+        return err(format!(
+            "the export carries credential-looking keys, so it was not read: {}",
+            sec.into_iter().take(5).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    Ok(())
+}
+
+/// Parse an export as pasted: strict JSON first (unchanged behaviour); failing that, the tolerant path below.
+/// Returns the document and one short line per repair applied (empty for strict JSON).
+///
+/// Tolerated, in this order:
+/// 1. Fenced code blocks (```json / ``` / ~~~ lines) with chatter around them. One block that parses is taken
+///    as is. Several blocks are a reply split across messages: they are joined in order (no separator) and the
+///    join must parse; if two or more blocks each parse alone, the input is ambiguous and refused. Without
+///    fences, the text from the first `{` to the last `}` is taken. An unclosed last fence runs to the end.
+/// 2. Curly quotes (“ ” ‘ ’) used as JSON quotes, outside string values only; quotes inside strings stay.
+/// 3. Trailing commas before `}` or `]`, outside string values.
+pub fn parse(raw: &str) -> Res<(Value, Vec<String>)> {
+    let strict = serde_json::from_str::<Value>(raw.trim());
+    let first_err = match strict {
+        Ok(v) => return Ok((v, vec![])),
+        Err(e) => e.to_string(),
+    };
+    let mut repairs = vec![];
+    let blocks = fenced_blocks(raw);
+    let body = match blocks.len() {
+        0 => {
+            let (a, b) = (raw.find('{'), raw.rfind('}'));
+            match (a, b) {
+                (Some(a), Some(b)) if b > a => {
+                    if !raw[..a].trim().is_empty() || !raw[b + 1..].trim().is_empty() {
+                        repairs
+                            .push("took the JSON object out of the surrounding text".to_string());
+                    }
+                    raw[a..=b].to_string()
+                }
+                _ => return err(first_err),
+            }
+        }
+        1 => {
+            repairs.push("took the JSON out of a fenced code block".to_string());
+            blocks[0].clone()
+        }
+        n => {
+            let whole = blocks.iter().filter(|b| repair(b).is_ok()).count();
+            if whole > 1 {
+                return err(format!(
+                    "{whole} of the {n} fenced code blocks are each a complete JSON document; \
+                     paste only the export (ambiguous, nothing was read)"
+                ));
+            }
+            if whole == 1 {
+                // one complete document among fragments: the fragments are not part of it
+                let b = blocks.iter().find(|b| repair(b).is_ok()).unwrap();
+                repairs.push(format!(
+                    "took the one complete JSON document out of {n} fenced code blocks"
+                ));
+                b.clone()
+            } else {
+                repairs.push(format!(
+                    "joined {n} fenced code blocks in order (a reply split across messages)"
+                ));
+                blocks.concat()
+            }
+        }
+    };
+    let (v, more) = repair(&body).map_err(|e| format!("not valid JSON even after repairs: {e}"))?;
+    repairs.extend(more);
+    Ok((v, repairs))
+}
+
+/// The contents of every fenced code block, in order. A fence is a line starting with ``` or ~~~ (after
+/// leading spaces); an opening fence may carry a language tag.
+fn fenced_blocks(raw: &str) -> Vec<String> {
+    let mut out = vec![];
+    let mut cur: Option<(String, String)> = None; // (fence marker, body)
+    for line in raw.split_inclusive('\n') {
+        let t = line.trim_start();
+        let marker = ["```", "~~~"].into_iter().find(|m| t.starts_with(m));
+        match (&mut cur, marker) {
+            (None, Some(m)) => cur = Some((m.to_string(), String::new())),
+            (Some((open, _)), Some(m))
+                if *open == m && t.trim_end().trim_start_matches(m).is_empty() =>
+            {
+                out.push(cur.take().unwrap().1);
+            }
+            (Some((_, body)), _) => body.push_str(line),
+            (None, None) => {}
+        }
+    }
+    if let Some((_, body)) = cur {
+        out.push(body);
+    }
+    out.retain(|b| !b.trim().is_empty());
+    out
+}
+
+/// Rewrite curly quotes used as JSON quotes and drop trailing commas, outside string values only; then parse.
+fn repair(s: &str) -> Res<(Value, Vec<String>)> {
+    let (mut curly, mut commas) = (0usize, 0usize);
+    let mut out = String::with_capacity(s.len());
+    let mut close: Option<char> = None; // the quote that ends the current string
+    let mut esc = false;
+    let cs: Vec<char> = s.trim().chars().collect();
+    for (i, &c) in cs.iter().enumerate() {
+        if let Some(q) = close {
+            if esc {
+                esc = false;
+                out.push(c);
+            } else if c == '\\' {
+                esc = true;
+                out.push(c);
+            } else if c == q
+                || (q != '"'
+                    && matches!(c, '"' | '“' | '”' | '‘' | '’')
+                    && ends_value(&cs[i + 1..]))
+            {
+                // a curly-quoted string may close with any quote that is followed by `:` `,` `}` `]` or the end
+                close = None;
+                if c != '"' {
+                    curly += 1;
+                }
+                out.push('"');
+            } else if c == '"' {
+                // a straight quote inside a curly-quoted string is text
+                out.push_str("\\\"");
+            } else {
+                out.push(c);
+            }
+            continue;
+        }
+        match c {
+            '"' => {
+                close = Some('"');
+                out.push('"');
+            }
+            '“' | '”' => {
+                close = Some('\0');
+                curly += 1;
+                out.push('"');
+            }
+            '‘' | '’' => {
+                close = Some('\0');
+                curly += 1;
+                out.push('"');
+            }
+            ',' if cs[i + 1..]
+                .iter()
+                .find(|x| !x.is_whitespace())
+                .is_some_and(|x| *x == '}' || *x == ']') =>
+            {
+                commas += 1;
+            }
+            _ => out.push(c),
+        }
+    }
+    let v: Value = serde_json::from_str(&out).map_err(|e| e.to_string())?;
+    let mut r = vec![];
+    if curly > 0 {
+        r.push(format!("replaced {curly} curly quotes used as JSON quotes"));
+    }
+    if commas > 0 {
+        r.push(format!("removed {commas} trailing commas"));
+    }
+    Ok((v, r))
+}
+
+fn ends_value(rest: &[char]) -> bool {
+    rest.iter()
+        .find(|x| !x.is_whitespace())
+        .is_none_or(|x| matches!(x, ':' | ',' | '}' | ']'))
+}
+
+/// One stderr line per repair, once per process (the export is read several times per command).
+fn report_repairs(repairs: &[String]) {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    if !repairs.is_empty() {
+        ONCE.call_once(|| {
+            for r in repairs {
+                eprintln!("botport: repaired export: {r}");
+            }
+        });
+    }
 }
 
 /// Upstream `_skill_markdown`, so our copy and the upstream import of one skill are byte-identical.
@@ -371,4 +566,111 @@ pub fn truncated_count(p: &Path) -> Res<usize> {
         .chain(&strings(&bot["user_facts"]))
         .filter(|t| t.contains(TRUNCATED))
         .count())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DOC: &str = r#"{"format": "grok-bot-export", "version": 1, "bots": [{"name": "Nova", "memories": ["it’s “quoted”", "a, b"]}]}"#;
+
+    fn ok(raw: &str) -> (Value, Vec<String>) {
+        document(raw).unwrap_or_else(|e| panic!("{e}\n---\n{raw}"))
+    }
+
+    #[test]
+    fn strict_json_has_no_repairs_and_same_value() {
+        let (v, r) = ok(DOC);
+        assert!(r.is_empty());
+        assert_eq!(v, serde_json::from_str::<Value>(DOC).unwrap());
+    }
+
+    #[test]
+    fn fenced_block_with_chatter() {
+        for fence in ["```json", "```", "~~~"] {
+            let close = &fence[..3];
+            let raw = format!("Here is my export:\n\n{fence}\n{DOC}\n{close}\n\nLet me know!\n");
+            let (v, r) = ok(&raw);
+            assert_eq!(v, ok(DOC).0);
+            assert_eq!(r, ["took the JSON out of a fenced code block"]);
+        }
+        // no fence: the object is cut out of the text
+        let (_, r) = ok(&format!("Sure! {DOC} Done."));
+        assert_eq!(r, ["took the JSON object out of the surrounding text"]);
+    }
+
+    #[test]
+    fn reply_split_across_messages_is_joined_in_order() {
+        let (a, b) = DOC.split_at(40);
+        let raw = format!("Part 1:\n```json\n{a}\n```\n(continued)\n```\n{b}\n```\n");
+        let (v, r) = ok(&raw);
+        assert_eq!(v, ok(DOC).0);
+        assert!(r[0].starts_with("joined 2 fenced code blocks"), "{r:?}");
+        // an unclosed last fence (message cut off) runs to the end
+        let raw = format!("```json\n{a}\n```\n```json\n{b}");
+        assert_eq!(ok(&raw).0, ok(DOC).0);
+        // fragments in the wrong order do not parse: refused
+        let raw = format!("```\n{b}\n```\n```\n{a}\n```\n");
+        assert!(document(&raw).is_err());
+    }
+
+    #[test]
+    fn several_complete_documents_are_ambiguous() {
+        let raw = format!("```json\n{DOC}\n```\nor\n```json\n{DOC}\n```\n");
+        let e = document(&raw).unwrap_err();
+        assert!(e.contains("ambiguous"), "{e}");
+    }
+
+    #[test]
+    fn curly_quotes_as_json_quotes() {
+        let raw = r#"{“format”: “grok-bot-export”, ‘version’: 1, “bots”: [{“name”: “Nova”, “memories”: [“it’s a "test"”, “ok”]}]}"#;
+        let (v, r) = ok(raw);
+        assert_eq!(v["bots"][0]["memories"][0], json!("it’s a \"test\""));
+        assert_eq!(v["version"], json!(1));
+        assert!(
+            r[0].starts_with("replaced") && r[0].contains("curly quotes"),
+            "{r:?}"
+        );
+        // curly quotes inside straight-quoted strings are text and untouched
+        assert_eq!(ok(DOC).0["bots"][0]["memories"][0], json!("it’s “quoted”"));
+    }
+
+    #[test]
+    fn trailing_commas_removed_outside_strings() {
+        let raw = DOC
+            .replace("\"a, b\"]", "\"a, b\",]")
+            .replace("]}]}", "],},]}");
+        let (v, r) = ok(&raw);
+        assert_eq!(v, ok(DOC).0);
+        assert_eq!(r, ["removed 3 trailing commas"]);
+        // a ", ]" inside a string value is text
+        let raw = DOC.replace("a, b", "x, ]");
+        assert_eq!(ok(&raw).0["bots"][0]["memories"][1], json!("x, ]"));
+    }
+
+    #[test]
+    fn secret_inside_fenced_block_is_still_refused() {
+        let doc = DOC.replace(
+            "\"name\": \"Nova\"",
+            "\"name\": \"Nova\", \"api_key\": \"x\"",
+        );
+        let raw = format!(
+            "Here you go\n```json\n{}\n```\n",
+            doc.replace("]}]}", "],}]}")
+        );
+        let e = document(&raw).unwrap_err();
+        assert!(
+            e.contains("credential-looking") && e.contains("api_key"),
+            "{e}"
+        );
+        let raw = format!("```json\n{}\n```", doc.replace('"', "“"));
+        let e = document(&raw).unwrap_err();
+        assert!(e.contains("credential-looking"), "{e}");
+    }
+
+    #[test]
+    fn garbage_is_refused() {
+        assert!(document("no json here").is_err());
+        assert!(document("```\n{nope\n```").is_err());
+    }
 }

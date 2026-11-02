@@ -17,6 +17,7 @@ const USAGE: &str = "botport <command> [options]   (v{V}; --version prints it)
   export  --out DIR [--from-dir DIR | --agent-data DIR] [--agent-id ID] [--memory-drop DIR]
           [--history-db FILE | --history-sqlite FILE] [--describe FILE] [--max-memory-age-days 2] [--strict]
   verify  --bundle DIR
+  (a grok-bot-export can also be read as --bundle - (stdin) or --clipboard; it is saved under the state dir first)
   describe --bundle DIR [--describe FILE] [--out FILE|-] [--json]   NOT_CAPTURED.md -> describe.json (default ./describe.json; - = stdout)
   plan    --bundle DIR [--spec FILE] [--profile NAME] [--no-cron]   dry run: what apply would do
   apply   --bundle DIR [--spec FILE] [--profile NAME] [--adopt] [--dry-run] [--no-cron]
@@ -52,7 +53,14 @@ const VALUED: &[&str] = &[
     "only",
 ];
 const FLAGS: &[&str] = &[
-    "strict", "json", "adopt", "dry-run", "help", "no-cron", "version",
+    "strict",
+    "json",
+    "adopt",
+    "dry-run",
+    "help",
+    "no-cron",
+    "version",
+    "clipboard",
 ];
 
 struct Report {
@@ -73,6 +81,14 @@ fn main() -> ExitCode {
         .collect();
     let a = match Args::parse(&raw, VALUED, FLAGS) {
         Ok(a) => a,
+        Err(e) => return fail(&e),
+    };
+    let a = match pasted_export(&a, &raw) {
+        Ok(Some(raw)) => match Args::parse(&raw, VALUED, FLAGS) {
+            Ok(a) => a,
+            Err(e) => return fail(&e),
+        },
+        Ok(None) => a,
         Err(e) => return fail(&e),
     };
     let cmd = a.pos.first().cloned().unwrap_or_default();
@@ -102,6 +118,83 @@ fn main() -> ExitCode {
         Ok(r) => emit(&a, &cmd, r),
         Err(e) => fail(&e),
     }
+}
+
+/// `--bundle -` (stdin) or `--clipboard`: read a pasted grok-bot-export, check it parses (secret guard
+/// included), save it as `<state dir>/botport/pasted-grok-bot-export.json` (0600) and return the arguments
+/// with `--bundle` pointing there. None when neither is given.
+fn pasted_export(a: &Args, raw: &[String]) -> Res<Option<Vec<String>>> {
+    let stdin = a.get("bundle") == Some("-");
+    if !stdin && !a.has("clipboard") {
+        return Ok(None);
+    }
+    if stdin && a.has("clipboard") {
+        return Err("--bundle - and --clipboard both name the input; use one".into());
+    }
+    let text = if stdin {
+        let mut s = String::new();
+        std::io::Read::read_to_string(&mut std::io::stdin(), &mut s)
+            .map_err(|e| format!("stdin: {e}"))?;
+        s
+    } else {
+        clipboard()?
+    };
+    let from = if stdin { "stdin" } else { "the clipboard" };
+    if !text.contains(export_json::FORMAT) {
+        return Err(format!(
+            "{from} does not hold a {} document",
+            export_json::FORMAT
+        ));
+    }
+    export_json::document(&text).map_err(|e| format!("{from}: {e}"))?;
+    let dir = std::env::var_os("XDG_STATE_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home().join(".local/state"));
+    let p = dir.join("botport").join("pasted-grok-bot-export.json");
+    write_atomic(&p, text.as_bytes(), Some(0o600))?;
+    eprintln!(
+        "botport: read the export from {from}; saved as {}",
+        p.display()
+    );
+    let mut out = vec![];
+    let mut it = raw.iter();
+    while let Some(s) = it.next() {
+        if s == "--clipboard" || s == "--bundle=-" {
+            continue;
+        }
+        if s == "--bundle" {
+            it.next();
+            continue;
+        }
+        out.push(s.clone());
+    }
+    out.extend(["--bundle".to_string(), p.display().to_string()]);
+    Ok(Some(out))
+}
+
+/// The clipboard as text: pbpaste on macOS; wl-paste or xclip elsewhere.
+fn clipboard() -> Res<String> {
+    let tries: &[&[&str]] = if cfg!(target_os = "macos") {
+        &[&["pbpaste"]]
+    } else {
+        &[
+            &["wl-paste", "--no-newline"],
+            &["xclip", "-selection", "clipboard", "-o"],
+        ]
+    };
+    for t in tries {
+        if let Ok(o) = std::process::Command::new(t[0]).args(&t[1..]).output() {
+            if o.status.success() {
+                return String::from_utf8(o.stdout)
+                    .map_err(|_| "the clipboard is not UTF-8 text".into());
+            }
+        }
+    }
+    Err(format!(
+        "--clipboard needs {} (not found or failed); use --bundle - and pipe the export instead",
+        tries.iter().map(|t| t[0]).collect::<Vec<_>>().join(" or ")
+    ))
 }
 
 fn fail(e: &str) -> ExitCode {
