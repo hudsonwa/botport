@@ -166,23 +166,19 @@ fn manual_items(d: &Described) -> Vec<ManualItem> {
     let mut out: Vec<ManualItem> = d
         .manual
         .iter()
-        .map(|(item, todo)| ManualItem {
-            item: item.clone(),
-            todo: todo.clone(),
-        })
+        .map(|(item, todo)| ManualItem::new(item, todo))
         .collect();
     for n in &d.elsewhere {
-        out.push(ManualItem {
-            item: format!("schedule {n}"),
-            todo: "runs on another machine, not on Grok: move it by hand if it should".into(),
-        });
+        out.push(ManualItem::new(
+            format!("schedule {n}"),
+            "runs on another machine, not on Grok: move it by hand if it should",
+        ));
     }
     for a in &d.apps_without_url {
-        out.push(ManualItem {
-            item: format!("connector {a}"),
-            todo: "app without an MCP url (its login stays on the Grok side): connect it by hand"
-                .into(),
-        });
+        out.push(ManualItem::new(
+            format!("connector {a}"),
+            "app without an MCP url (its login stays on the Grok side): connect it by hand",
+        ));
     }
     out
 }

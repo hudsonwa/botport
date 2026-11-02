@@ -1,7 +1,9 @@
 //! `test`: a scripted CLI battery through `hermes chat -p <bot> --format stream-json` (tool calls visible)
 //! plus an optional gateway turn through `hermes -p <bot> -z`; `battery init` writes a starter battery from a bundle.
 //! Nothing here assumes a particular bot: every expectation comes from the battery file.
-use crate::util::*;
+use crate::core::adapter::Source;
+use crate::core::model::BotModel;
+use crate::core::util::*;
 use regex::RegexBuilder;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -182,7 +184,7 @@ pub fn run(
 
 /// A deterministic starter battery: persona, one case per skill, per schedule/connector named in NOT_CAPTURED.md,
 /// a few memory facts, and live-status questions that must use a tool. Output depends only on the bundle content.
-pub fn init(b: &crate::bundle::Bundle, not_captured: &str) -> Value {
+pub fn init(m: &BotModel, src: &Source, not_captured: &str) -> Value {
     let mut cases = vec![];
     let mut add = |id: String,
                    family: &str,
@@ -195,7 +197,7 @@ pub fn init(b: &crate::bundle::Bundle, not_captured: &str) -> Value {
                           "patterns": patterns, "absent": [], "generated": true, "why": why}),
         );
     };
-    let first = b.name.split_whitespace().next().unwrap_or("");
+    let first = m.persona.name.split_whitespace().next().unwrap_or("");
     add(
         "persona".into(),
         "persona",
@@ -208,13 +210,14 @@ pub fn init(b: &crate::bundle::Bundle, not_captured: &str) -> Value {
         },
         "the bot should introduce itself by its profile name",
     );
-    for (dir, files) in &b.skills {
-        let md =
-            String::from_utf8_lossy(files.get("SKILL.md").map(Vec::as_slice).unwrap_or_default())
-                .to_string();
+    let mut skills: Vec<_> = m.skills.iter().collect();
+    skills.sort_by(|a, b| a.name.cmp(&b.name));
+    for s in skills {
+        let dir = &s.name;
+        let md = s.files.get("SKILL.md").cloned().unwrap_or_default();
         let title = front(&md, "name").unwrap_or_else(|| dir.clone());
         add(
-            format!("skill-{}", crate::spec::slug(dir)),
+            format!("skill-{}", crate::adapters::hermes::spec::slug(dir)),
             "skill",
             format!("What does your \"{title}\" skill tell you to do? Two sentences."),
             vec!["skill_view", "skills_list"],
@@ -235,7 +238,7 @@ pub fn init(b: &crate::bundle::Bundle, not_captured: &str) -> Value {
             format!("Can you use the \"{label}\" connector right now? Check, then answer in one sentence.")
         };
         add(
-            format!("{family}-{}", crate::spec::slug(&label)),
+            format!("{family}-{}", crate::adapters::hermes::spec::slug(&label)),
             family,
             prompt,
             vec!["*"],
@@ -243,7 +246,7 @@ pub fn init(b: &crate::bundle::Bundle, not_captured: &str) -> Value {
             "listed in NOT_CAPTURED.md: confirm it was re-created on the Hermes side",
         );
     }
-    for (i, (prompt, pat)) in memory_cases(b).into_iter().enumerate() {
+    for (i, (prompt, pat)) in memory_cases(m, src).into_iter().enumerate() {
         add(
             format!("memory-{}", i + 1),
             "memory",
@@ -286,7 +289,7 @@ fn front(md: &str, key: &str) -> Option<String> {
 /// Schedule and connector names from the structured description; bullets under matching headings when the
 /// description parser finds none (free-form text).
 fn described_items(md: &str) -> Vec<(&'static str, String)> {
-    let d = crate::describe::parse(md);
+    let d = crate::adapters::grok_bot::describe::parse(md);
     let names = |k: &str| -> Vec<String> {
         d[k].as_array()
             .into_iter()
@@ -339,31 +342,40 @@ fn not_captured_items(md: &str) -> Vec<(&'static str, String)> {
 }
 
 /// Up to 3 facts (memory.jsonl rows first, else MEMORY.md bullets): ask for the first half, expect a word from the rest.
-fn memory_cases(b: &crate::bundle::Bundle) -> Vec<(String, String)> {
-    let p = b.root.join("memory/memory.jsonl");
+fn memory_cases(m: &BotModel, src: &Source) -> Vec<(String, String)> {
+    let p = src.path.join("memory/memory.jsonl");
     let mut facts: Vec<String> = if p.is_file() {
-        crate::bundle::parse_jsonl(&String::from_utf8_lossy(&read(&p).unwrap_or_default()))
-            .iter()
-            .filter_map(|r| r["fact"].as_str().map(String::from))
-            .collect()
+        crate::adapters::grok_bot::bundle::parse_jsonl(&String::from_utf8_lossy(
+            &read(&p).unwrap_or_default(),
+        ))
+        .iter()
+        .filter_map(|r| r["fact"].as_str().map(String::from))
+        .collect()
     } else {
         vec![]
     };
-    if facts.is_empty() {
-        facts = b
-            .facts
-            .iter()
+    let bullets = |lines: Vec<&str>| -> Vec<String> {
+        lines
+            .into_iter()
             .filter_map(|l| l.trim().strip_prefix("- ").map(String::from))
-            .collect();
+            .collect()
+    };
+    if facts.is_empty() {
+        // the bundle's MEMORY.md lines, or each fact of a grok-bot-export file as written
+        facts = match &m.memory_text {
+            Some(t) => bullets(t.lines().collect()),
+            None => bullets(m.memory.iter().map(|f| f.text.as_str()).collect()),
+        };
     }
-    // a grok-bot-export bundle keeps its memories as MEMORY.md bullets, its facts unprefixed
-    if facts.is_empty() {
-        facts = b
-            .memory_md
+    // a grok-bot-export file keeps its memories as MEMORY.md bullets, its facts unprefixed
+    if facts.is_empty() && m.memory_text.is_none() {
+        let md: String = m
+            .memory
             .iter()
-            .flat_map(|m| m.lines())
-            .filter_map(|l| l.trim().strip_prefix("- ").map(String::from))
+            .filter(|f| f.scope.as_deref() != Some("user"))
+            .map(|f| format!("- {}\n", f.text))
             .collect();
+        facts = bullets(md.lines().collect());
     }
     let mut out = vec![];
     for f in facts {
