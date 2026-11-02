@@ -93,7 +93,13 @@ pub fn run(a: &Args, hermes_home: &Path) -> Vec<Check> {
     let dir: PathBuf = match (a.path("profile-dir"), a.get("profile")) {
         (Some(d), _) => d,
         (None, Some("default")) | (None, None) => hermes_home.to_path_buf(),
-        (None, Some(p)) => hermes_home.join("profiles").join(p),
+        (None, Some(p)) => {
+            if let Err(e) = crate::core::util::plain_name("profile name", p) {
+                out.push(check("profile", Err(e)));
+                return out;
+            }
+            hermes_home.join("profiles").join(p)
+        }
     };
     let what = if a.path("profile-dir").is_some() || a.get("profile").is_some() {
         "profile dir"

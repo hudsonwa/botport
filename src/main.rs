@@ -342,6 +342,7 @@ fn cmd_profile(a: &Args, cmd: &str) -> Res<Report> {
             let d = if p == "default" {
                 hh.clone()
             } else {
+                botport::core::util::plain_name("profile name", &p)?;
                 hh.join("profiles").join(&p)
             };
             // an explicit --hermes-bin (e.g. a test double) also manages cron in a non-default home

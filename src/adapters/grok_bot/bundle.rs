@@ -756,12 +756,30 @@ pub fn verify(dir: &Path) -> Res<VerifyResult> {
     let files = m["files"].as_object().ok_or("manifest has no files")?;
     let mut problems = vec![];
     let mut seen = BTreeMap::new();
+    let root = dir
+        .canonicalize()
+        .map_err(|e| format!("{}: {e}", dir.display()))?;
     for (rel, sha) in files {
-        if rel.split('/').any(|c| c == ".." || c.is_empty()) || rel.starts_with('/') {
+        if crate::core::util::safe_rel("manifest", rel).is_err() {
             problems.push(format!("unsafe path in manifest: {rel}"));
             continue;
         }
-        match fs::read(dir.join(rel)) {
+        // Only regular files read through no symlink, confined to the bundle root (not a link to /etc/hosts).
+        let p = dir.join(rel);
+        match fs::symlink_metadata(&p) {
+            Ok(md) if !md.file_type().is_file() => {
+                problems.push(format!("not a regular file (symlink or special): {rel}"));
+                seen.insert(rel.clone(), sha.as_str().unwrap_or("").to_string());
+                continue;
+            }
+            Ok(_) if !p.canonicalize().is_ok_and(|c| c.starts_with(&root)) => {
+                problems.push(format!("outside the bundle: {rel}"));
+                seen.insert(rel.clone(), sha.as_str().unwrap_or("").to_string());
+                continue;
+            }
+            _ => {}
+        }
+        match fs::read(&p) {
             Ok(b) if bundle_secret(&b) => {
                 let why = crate::core::secrets::guard(rel, &b)
                     .err()
@@ -798,6 +816,44 @@ pub fn verify(dir: &Path) -> Res<VerifyResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn verify_rejects_symlinks_out_of_the_bundle() {
+        let d = std::env::temp_dir().join(format!("botport-verify-link-{}", std::process::id()));
+        let b = d.join("bundle");
+        fs::create_dir_all(b.join("sub")).unwrap();
+        let outside = d.join("outside.txt");
+        fs::write(&outside, "outside\n").unwrap();
+        std::os::unix::fs::symlink(&outside, b.join("a.txt")).unwrap();
+        // a link through a symlinked directory, too
+        std::os::unix::fs::symlink(&d, b.join("sub/up")).unwrap();
+        let sha = sha256_hex(b"outside\n");
+        let files: BTreeMap<String, String> = [
+            ("a.txt".to_string(), sha.clone()),
+            ("sub/up/outside.txt".to_string(), sha),
+        ]
+        .into();
+        let man = serde_json::json!({"files": files, "digest": digest_pairs(&files)});
+        fs::write(b.join("manifest.json"), serde_json::to_vec(&man).unwrap()).unwrap();
+        let r = verify(&b).unwrap();
+        assert!(!r.ok, "{:?}", r.problems);
+        assert!(
+            r.problems
+                .iter()
+                .any(|p| p.contains("a.txt") && p.contains("not a regular file")),
+            "{:?}",
+            r.problems
+        );
+        assert!(
+            r.problems
+                .iter()
+                .any(|p| p.contains("sub/up/outside.txt") && p.contains("outside the bundle")),
+            "{:?}",
+            r.problems
+        );
+        fs::remove_dir_all(&d).unwrap();
+    }
 
     #[test]
     fn secrets_by_name_and_content() {

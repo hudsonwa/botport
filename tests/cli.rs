@@ -1358,3 +1358,29 @@ fn drift_does_not_flag_spec_jobs_created_paused() {
     assert!(!out.contains("conflict"), "{out}");
     assert!(out.contains(" 1 create "), "{out}");
 }
+
+#[test]
+fn profile_names_must_be_plain() {
+    let t = Tmp::new("profname");
+    let (g, spec) = fixture(&t.0);
+    let hh = t.0.join("hermes");
+    for bad in ["../escape", "a/b", ".hidden", ".."] {
+        for cmd in ["plan", "apply"] {
+            let (rc, out) = run(&[
+                cmd,
+                "--bundle",
+                s(&g),
+                "--spec",
+                s(&spec),
+                "--hermes-home",
+                s(&hh),
+                "--profile",
+                bad,
+            ]);
+            assert_ne!(rc, 0, "{cmd} {bad}: {out}");
+            assert!(out.contains("plain name"), "{cmd} {bad}: {out}");
+        }
+    }
+    assert!(!t.0.join("escape").exists());
+    assert!(!hh.join("profiles").exists());
+}
