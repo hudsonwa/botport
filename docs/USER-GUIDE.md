@@ -217,7 +217,8 @@ Upstream Hermes ships its own Grok Bot importer (`hermes migrate grok-bot` / `he
   - a reply split across several messages: the line break before each closing fence is dropped and all fenced blocks
     are joined in order with nothing between them, so a split inside a text value or a number joins up; the result
     must parse. If two or more blocks are each a complete export (an object with `format` or `bots`), it is refused as
-    ambiguous; if exactly one is, that one is taken. Paste the parts in the order the bot sent them;
+    ambiguous; if exactly one is, that one is taken, unless another block also holds export data (then it is refused
+    as ambiguous too). Paste every part, in the order the bot sent them: a missing part can't be detected;
   - trailing commas before `}` or `]`, outside string values (commas inside text are kept).
 
   Smart quotes are refused, not repaired. If a chat app curled the JSON quotes (“ ” ‘ ’), botport can't tell

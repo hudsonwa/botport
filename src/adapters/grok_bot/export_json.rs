@@ -227,8 +227,28 @@ pub fn parse(raw: &str) -> Res<(Value, Vec<String>)> {
                 ));
             }
             if whole == 1 {
-                // one complete document among fragments: the fragments are not part of it
+                // one complete document among fragments: the fragments are not part of it, unless a fragment
+                // looks like export data too (an older export plus a split re-send): then refuse, don't pick
                 let b = blocks.iter().find(|b| is_whole_export(b)).unwrap();
+                const EXPORT_MARKS: [&str; 7] = [
+                    "grok-bot-export",
+                    "\"bots\"",
+                    "\"memories\"",
+                    "\"user_facts\"",
+                    "\"skills\"",
+                    "\"routines\"",
+                    "\"schedules\"",
+                ];
+                if blocks
+                    .iter()
+                    .filter(|o| !std::ptr::eq(*o, b))
+                    .any(|o| EXPORT_MARKS.iter().any(|m| o.contains(m)))
+                {
+                    return err(format!(
+                        "one of the {n} fenced code blocks is a complete export, but another also holds export \
+                         data; paste only the export you want (ambiguous, nothing was read)"
+                    ));
+                }
                 repairs.push(format!(
                     "took the one complete JSON document out of {n} fenced code blocks"
                 ));
@@ -285,7 +305,8 @@ fn fenced_blocks(raw: &str) -> Vec<String> {
     if let Some((_, body)) = cur {
         out.push(body);
     }
-    out.retain(|b| !b.trim().is_empty());
+    // drop only truly empty blocks: a part made of blanks can be the middle of a split string value
+    out.retain(|b| !b.is_empty());
     out
 }
 
@@ -768,6 +789,7 @@ mod tests {
     fn audit_counterexamples_refuse_or_parse_exactly() {
         const NOVA: &str = "a long memory that the bot cut in the middle of";
         let refused: &[(&str, &str)] = &[
+            ("34-whole-plus-object", "ambiguous"),
             ("05-pretty-fence-line", "not valid JSON"),
             ("10-secret-key-split", "not valid JSON"),
             ("13-two", "ambiguous"),
@@ -832,7 +854,6 @@ mod tests {
                 json!(["a long memory that the bot cut in the middle", "b"]),
             ),
             ("33-fence-split-ambig", json!(["see ```jsonhere", "b"])),
-            ("34-whole-plus-object", json!(["ok"])),
             (
                 "49-curly-in-straight",
                 json!(["it’s “quoted”, ok", "‘x’, ”y“", "don’t"]),
@@ -913,6 +934,24 @@ mod tests {
                 assert!(r[0].starts_with("joined 2"), "{r:?}");
             }
         }
+    }
+
+    #[test]
+    fn a_blank_part_in_the_middle_of_a_split_value_is_kept() {
+        // audit p12 r4 case 97: a part holding only spaces is the middle of a string value
+        let raw = "```json\n{\"format\": \"grok-bot-export\", \"version\": 1, \"bots\": [{\"name\": \"Nova\", \"memories\": [\"col1\n```\n```\n    \n```\n```json\ncol2\", \"b\"]}]}\n```\n";
+        let (v, r) = ok(raw);
+        assert_eq!(v["bots"][0]["memories"][0], "col1    col2", "{r:?}");
+        assert!(r[0].starts_with("joined 3"), "{r:?}");
+    }
+
+    #[test]
+    fn a_complete_export_next_to_other_export_data_is_ambiguous() {
+        // audit p12 r4 cases 90 and 79: an older export plus a split re-send, or plus a memories fragment
+        let raw = format!(
+            "Old:\n```json\n{DOC}\n```\nNew:\n```json\n{{\"memories\": [\"m2\", \"m3\"]}}\n```\n"
+        );
+        assert!(document(&raw).unwrap_err().contains("ambiguous"));
     }
 
     #[test]
