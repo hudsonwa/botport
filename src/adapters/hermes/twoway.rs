@@ -9,9 +9,9 @@
 //!   skill edited on the Hermes side since the last sync. If the Grok side changed the same skill since that sync, it
 //!   is a CONFLICT, reported and not exported. A skill whose identical copy is already in the Grok export is skipped.
 //! - cron: jobs that differ from the repo's cron spec become requested actions (Grok cannot set schedules by file).
-use crate::bundle::{secret_content, TOOL, VERSION};
-use crate::hermes::{self, Ctx, Item, St};
-use crate::util::*;
+use super::sync::{self, Ctx, Item, St};
+use crate::adapters::grok_bot::bundle::{secret_content, TOOL, VERSION};
+use crate::core::util::*;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -77,8 +77,8 @@ fn skill_dirs(root: &Path) -> BTreeMap<String, std::path::PathBuf> {
 
 /// What the Hermes profile holds that the Grok side does not (read-only).
 pub fn collect(c: &Ctx) -> Res<Export> {
-    let w = hermes::want(c)?;
-    let lock = hermes::read_lock(&c.dest).unwrap_or_default();
+    let w = sync::want(c)?;
+    let lock = sync::read_lock(&c.dest).unwrap_or_default();
     let mut items = vec![];
     // --- memory
     let grok: BTreeSet<String> = c
@@ -91,7 +91,7 @@ pub fn collect(c: &Ctx) -> Res<Export> {
     let seed: BTreeSet<String> = w
         .user_seed
         .as_deref()
-        .map(hermes::entries)
+        .map(sync::entries)
         .unwrap_or_default()
         .iter()
         .map(|e| norm(e))
@@ -104,11 +104,11 @@ pub fn collect(c: &Ctx) -> Res<Export> {
         ("memories/USER.md", "profile"),
     ] {
         let text = fs::read_to_string(c.dest.join(file)).unwrap_or_default();
-        let new = union_new(&have, &hermes::entries(&text));
+        let new = union_new(&have, &sync::entries(&text));
         for f in new {
             have.insert(norm(&f));
             if secret_content(f.as_bytes()) {
-                items.push(hermes::item(
+                items.push(sync::item(
                     "memory",
                     file,
                     St::Skip,
@@ -128,7 +128,7 @@ pub fn collect(c: &Ctx) -> Res<Export> {
         )
     });
     if !facts.is_empty() {
-        items.push(hermes::item(
+        items.push(sync::item(
             "memory",
             "facts",
             St::Create,
@@ -144,7 +144,7 @@ pub fn collect(c: &Ctx) -> Res<Export> {
                    why: &str,
                    items: &mut Vec<Item>| {
         if files.values().any(|b| secret_content(b)) {
-            items.push(hermes::item(
+            items.push(sync::item(
                 "skills",
                 &name,
                 St::Skip,
@@ -153,10 +153,10 @@ pub fn collect(c: &Ctx) -> Res<Export> {
         } else if c.skills.get(&name).map(tree_digest_files) == Some(tree_digest_files(&files)) {
             // identical copy already on the Grok side: nothing to send
         } else if let std::collections::btree_map::Entry::Vacant(v) = skills.entry(name.clone()) {
-            items.push(hermes::item("skills", &name, St::Create, why));
+            items.push(sync::item("skills", &name, St::Create, why));
             v.insert(files);
         } else {
-            items.push(hermes::item(
+            items.push(sync::item(
                 "skills",
                 &name,
                 St::Conflict,
@@ -180,7 +180,7 @@ pub fn collect(c: &Ctx) -> Res<Export> {
         if c.source.excluded.contains(&dirname) || lock.grok_excluded.contains(&dirname) {
             continue; // a Grok skill this profile does not take is never Hermes-made nor sent back
         }
-        let fm = hermes::skill_name(&dir.join("SKILL.md"));
+        let fm = sync::skill_name(&dir.join("SKILL.md"));
         let rec = usage
             .get(&fm)
             .or_else(|| usage.get(&dirname))
@@ -221,7 +221,7 @@ pub fn collect(c: &Ctx) -> Res<Export> {
                     continue;
                 }
                 None if lock.h2g_seen.contains(&dirname) && live_d == *sent => {
-                    items.push(hermes::item(
+                    items.push(sync::item(
                         "skills",
                         &dirname,
                         St::InSync,
@@ -233,7 +233,7 @@ pub fn collect(c: &Ctx) -> Res<Export> {
                 Some(g) if known(g) => {} // Grok unchanged; the Hermes copy differs from it -> (re)send below
                 Some(_) if live_d == *sent => continue, // only the Grok side changed: the Grok -> Hermes side reports it
                 Some(_) => {
-                    items.push(hermes::item("skills", &dirname, St::Conflict,
+                    items.push(sync::item("skills", &dirname, St::Conflict,
                         "changed on both sides since it was sent to Grok; not exported, not overwritten — merge by hand"));
                     continue;
                 }
@@ -262,7 +262,7 @@ pub fn collect(c: &Ctx) -> Res<Export> {
         if name == mem || name == "DESCRIPTION.md" {
             continue;
         }
-        let Some(live) = hermes::live_unit(&c.dest, u) else {
+        let Some(live) = sync::live_unit(&c.dest, u) else {
             continue;
         };
         let ld = tree_digest_files(&live);
@@ -271,27 +271,27 @@ pub fn collect(c: &Ctx) -> Res<Export> {
             continue; // never synced, untouched since, or equal to the export
         }
         if Some(&tree_digest_files(want_files)) != rec {
-            items.push(hermes::item("skills", &name, St::Conflict,
+            items.push(sync::item("skills", &name, St::Conflict,
                 "changed on both sides since the last sync; not exported, not overwritten — merge by hand"));
             continue;
         }
         add(name, live, "edited on the Hermes side", &mut items);
     }
     // --- cron
-    let spec: BTreeMap<String, &hermes::CronJob> =
+    let spec: BTreeMap<String, &sync::CronJob> =
         w.cron.iter().map(|j| (j.name.clone(), j)).collect();
     let mut cron = vec![];
-    for j in hermes::live_jobs(&c.dest) {
+    for j in sync::live_jobs(&c.dest) {
         let name = j["name"].as_str().unwrap_or("").to_string();
         if w.model_cron.iter().any(|m| m.name == name) {
             continue; // made from the Grok bot's own routine: it is already there
         }
-        let row = json!({"name": name, "schedule": hermes::cron_expr(&j), "deliver": j["deliver"],
+        let row = json!({"name": name, "schedule": sync::cron_expr(&j), "deliver": j["deliver"],
                          "prompt": j["prompt"], "enabled": j["enabled"] != json!(false)});
         let same = spec
             .get(&name)
             .map(|s| {
-                s.schedule == hermes::cron_expr(&j)
+                s.schedule == sync::cron_expr(&j)
                     && j["prompt"].as_str() == Some(&s.prompt)
                     && j["deliver"].as_str() == Some(&s.deliver)
                     && j["enabled"] != json!(false)
@@ -299,7 +299,7 @@ pub fn collect(c: &Ctx) -> Res<Export> {
             .unwrap_or(false);
         if !same && !name.is_empty() {
             if secret_content(row.to_string().as_bytes()) {
-                items.push(hermes::item(
+                items.push(sync::item(
                     "cron",
                     &name,
                     St::Skip,
@@ -310,9 +310,9 @@ pub fn collect(c: &Ctx) -> Res<Export> {
             // Grok cannot export schedules back, so a request counts as pending only until it was sent once
             // (unchanged); the bundle still carries it, so a re-written bundle never drops an unread request.
             if lock.h2g_cron.get(&name) == Some(&sha256_hex(row.to_string().as_bytes())) {
-                items.push(hermes::item("cron", &name, St::InSync, "requested earlier"));
+                items.push(sync::item("cron", &name, St::InSync, "requested earlier"));
             } else {
-                items.push(hermes::item(
+                items.push(sync::item(
                     "cron",
                     &name,
                     St::Create,
@@ -360,7 +360,7 @@ Carry each one out with your own tools (automations/schedules), then report what
 
 /// Write the Hermes-side bundle (same manifest and determinism rules as `export`). Returns its file map.
 pub fn write(e: &Export, c: &Ctx, out: &Path) -> Res<BTreeMap<String, String>> {
-    crate::bundle::clear_out(out)?;
+    crate::adapters::grok_bot::bundle::clear_out(out)?;
     let mut files = BTreeMap::new();
     let mut put = |rel: String, data: &[u8]| -> Res<()> {
         write_atomic(&out.join(&rel), data, Some(0o644))?;
@@ -388,7 +388,7 @@ pub fn write(e: &Export, c: &Ctx, out: &Path) -> Res<BTreeMap<String, String>> {
 
 /// Record exported skills (not installed back when Grok re-exports them) and cron requests (asked once).
 pub fn record(e: &Export, c: &Ctx) -> Res<()> {
-    let mut lock = hermes::read_lock(&c.dest).unwrap_or_default();
+    let mut lock = sync::read_lock(&c.dest).unwrap_or_default();
     if e.skills.is_empty()
         && e.cron.is_empty()
         && e.resolved.is_empty()
@@ -418,7 +418,7 @@ pub fn record(e: &Export, c: &Ctx) -> Res<()> {
         );
     }
     write_atomic(
-        &c.dest.join(hermes::LOCK),
+        &c.dest.join(sync::LOCK),
         json_sorted(&lock).as_bytes(),
         Some(0o644),
     )

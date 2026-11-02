@@ -135,6 +135,19 @@ impl Skill {
 pub struct ManualItem {
     pub item: String,
     pub todo: String,
+    /// ticked off by a human (`- [x]` in a checklist)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub done: bool,
+}
+
+impl ManualItem {
+    pub fn new(item: impl Into<String>, todo: impl Into<String>) -> Self {
+        ManualItem {
+            item: item.into(),
+            todo: todo.into(),
+            done: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

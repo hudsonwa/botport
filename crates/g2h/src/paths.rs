@@ -146,11 +146,16 @@ impl Paths {
 /// Create the home dir 0700 if missing; refuse one that is world-writable
 /// (or not a directory). An existing dir with looser group bits is tightened to 0700.
 pub fn ensure_home(home: &Path) -> io::Result<()> {
+    ensure_home_mode(home, 0o700)
+}
+
+/// `ensure_home` with another target mode (0750 in separate-user mode).
+pub fn ensure_home_mode(home: &Path, want: u32) -> io::Result<()> {
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     if !home.exists() {
         std::fs::DirBuilder::new()
             .recursive(true)
-            .mode(0o700)
+            .mode(want)
             .create(home)?;
     }
     // metadata() follows symlinks: a symlinked home is fine.
@@ -171,16 +176,28 @@ pub fn ensure_home(home: &Path) -> io::Result<()> {
             ),
         ));
     }
-    if mode != 0o700 {
-        std::fs::set_permissions(home, std::fs::Permissions::from_mode(0o700))?;
+    if mode != want {
+        std::fs::set_permissions(home, std::fs::Permissions::from_mode(want))?;
     }
     Ok(())
 }
 
-/// Credential files must be 0600 regular files; a symlink is refused.
+/// Credential files must be 0600 regular files owned by this process's uid
+/// (or root reading as root); a symlink is refused.
 pub fn check_perms(path: &Path) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
     let md = std::fs::symlink_metadata(path)?;
+    let me = crate::isolation::euid();
+    if md.uid() != me && me != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "{} is owned by uid {}, not uid {me}; fix: chown it to the user g2hd runs as",
+                path.display(),
+                md.uid()
+            ),
+        ));
+    }
     if md.file_type().is_symlink() {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,

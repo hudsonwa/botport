@@ -159,7 +159,28 @@ fn service_dir() -> Option<PathBuf> {
     })
 }
 
+/// A service label becomes a file name and a launchctl/systemctl argument: reverse-DNS only
+/// (`[A-Za-z0-9-]` segments joined by single dots, no leading `.` or `-`, at most 128 bytes).
+pub fn check_service_label(label: &str) -> Result<(), String> {
+    let ok = !label.is_empty()
+        && label.len() <= 128
+        && label.split('.').all(|seg| {
+            !seg.is_empty()
+                && !seg.starts_with('-')
+                && seg.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        });
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "invalid service_label {label:?}: use a reverse-DNS name like io.g2h.daemon (letters, digits, '-', '.')"
+        ))
+    }
+}
+
+/// None when HOME is unset or the label is not a valid reverse-DNS name.
 pub fn service_file(label: &str) -> Option<PathBuf> {
+    check_service_label(label).ok()?;
     let ext = if cfg!(target_os = "macos") {
         "plist"
     } else {
@@ -382,6 +403,7 @@ fn setup_inner(a: &SetupArgs, p: &Paths) -> Result<(), String> {
     let label = Config::parse(&cfg_text)
         .map_err(|e| e.to_string())?
         .service_label;
+    check_service_label(&label)?;
     let svc = service_file(&label).ok_or("cannot resolve the service directory (HOME unset)")?;
     let g2hd = g2hd_path();
     let svc_text = service_text(&label, &g2hd, &p.home);
@@ -782,7 +804,11 @@ pub fn uninstall(p: &Paths, keep_logs: bool) -> i32 {
         .service
         .clone()
         .unwrap_or_else(|| (label.clone(), service_file(&label).unwrap_or_default()));
-    service_unload(&label);
+    // a label edited into config.yaml never reaches launchctl/systemctl unless it is plain reverse-DNS
+    match check_service_label(&label) {
+        Ok(()) => service_unload(&label),
+        Err(e) => eprintln!("not unloading the service: {e}"),
+    }
     let mut gone: Vec<PathBuf> = vec![svc, p.credentials()];
     gone.extend(m.created.iter().cloned());
     if !m.created.contains(&p.config()) && p.config().exists() {
@@ -946,6 +972,20 @@ pub fn selftest(p: &Paths, live: bool, wake_only: bool, yes: bool, timeout: u64)
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn service_label_is_reverse_dns_only() {
+        for ok in ["io.g2h.daemon", "com.example.my-bot2", "g2h"] {
+            assert!(super::check_service_label(ok).is_ok(), "{ok}");
+            assert!(super::service_file(ok).is_some() || std::env::var_os("HOME").is_none());
+        }
+        for bad in [
+            "", "../x", "a/b", "io..g2h", ".io.g2h", "io.g2h.", "a b", "-x", "io.g2h\n", "x;rm",
+        ] {
+            assert!(super::check_service_label(bad).is_err(), "{bad:?}");
+            assert!(super::service_file(bad).is_none(), "{bad:?}");
+        }
+    }
+
     use super::*;
 
     #[test]

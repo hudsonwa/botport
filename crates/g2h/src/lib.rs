@@ -2,6 +2,7 @@
 //! secret redaction, logging, persistent state, IPC types and config.
 //! Networking is confined to `hermes` (the peer backend) and `wake` (the
 //! outbound wake webhook); `daemon` listens only on a Unix socket.
+#![forbid(unsafe_code)]
 
 pub mod cli;
 pub mod client;
@@ -12,6 +13,7 @@ pub mod framing;
 pub mod guard;
 pub mod hermes;
 pub mod ipc;
+pub mod isolation;
 pub mod log;
 pub mod ops;
 pub mod paths;

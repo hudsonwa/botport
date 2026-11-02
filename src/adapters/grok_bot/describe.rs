@@ -455,7 +455,7 @@ pub fn parse(text: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::json_sorted;
+    use crate::core::util::json_sorted;
 
     const STRUCTURED: &str = include_str!("../../../tests/fixtures/describe/structured.md");
     const MESSY: &str = include_str!("../../../tests/fixtures/describe/messy.md");
