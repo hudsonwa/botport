@@ -1,6 +1,8 @@
 //! docs/schema/botmodel-v1.json describes `BotModel` as it is: every committed model fixture and every model the
 //! adapters read from their conformance fixtures validates against it, and so does a model with every field set
-//! (so a field added to the types but not to the schema fails here, via `additionalProperties: false`).
+//! (so a field added to the types but not to the schema fails here, via `additionalProperties: false`). The reverse
+//! direction is checked per struct: the schema's `properties` and `required` must equal what the types serialise
+//! with every field set and with only the required ones.
 use botport::adapters::{grok_bot::GrokBot, hermes::HermesProfile};
 use botport::core::adapter::Adapter;
 use botport::core::model::*;
@@ -252,4 +254,137 @@ fn the_schema_rejects_what_the_types_reject() {
     errs.clear();
     validate(&root, &root, &v, "$", &mut errs);
     assert_eq!(errs.len(), 1, "{errs:?}");
+}
+
+/// One instance of every struct with only its required fields set, serialised: these keys must be exactly the
+/// schema's `required`, as the keys of the [`every_field`] instance must be exactly its `properties`.
+fn minimal() -> BotModel {
+    BotModel {
+        schema: "bot-model/1".into(),
+        persona: Persona {
+            name: "n".into(),
+            instructions: String::new(),
+        },
+        memory: vec![Fact {
+            text: "t".into(),
+            tier: None,
+            scope: None,
+            source: None,
+            date: None,
+            origin_side: None,
+        }],
+        memory_text: None,
+        skills: vec![Skill {
+            name: "k".into(),
+            description: None,
+            files: BTreeMap::new(),
+            binary_files: BTreeMap::new(),
+        }],
+        schedules: vec![Schedule {
+            name: "s".into(),
+            cron: None,
+            tz: String::new(),
+            kind: ScheduleKind::Event,
+            action: "a".into(),
+            enabled: false,
+        }],
+        connectors: vec![Connector {
+            name: "c".into(),
+            kind: "mcp-http".into(),
+            url: None,
+            tools: vec![],
+        }],
+        credentials: vec![CredentialRef::new("TOKEN_NAME")],
+        history: Some(HistoryRef {
+            kind: "jsonl".into(),
+            path: "h.jsonl".into(),
+        }),
+        manual: vec![ManualItem::new("schedule s", "by hand")],
+        extras: BTreeMap::new(),
+    }
+}
+
+/// Where each `$defs` struct sits in a serialised model ("" is the model itself).
+const DEFS: [(&str, &str); 8] = [
+    ("Persona", "/persona"),
+    ("Fact", "/memory/0"),
+    ("Skill", "/skills/0"),
+    ("Schedule", "/schedules/0"),
+    ("Connector", "/connectors/0"),
+    ("CredentialRef", "/credentials/0"),
+    ("HistoryRef", "/history"),
+    ("ManualItem", "/manual/0"),
+];
+
+fn sorted_keys(v: &Value) -> Vec<String> {
+    let mut k: Vec<String> = v.as_object().unwrap().keys().cloned().collect();
+    k.sort();
+    k
+}
+
+fn sorted_strs(v: &Value) -> Vec<String> {
+    let mut k: Vec<String> = v
+        .as_array()
+        .map(|a| a.iter().map(|x| x.as_str().unwrap().to_string()).collect())
+        .unwrap_or_default();
+    k.sort();
+    k
+}
+
+/// Both directions, for the model and every `$defs` object: the schema claims no property and no required-ness
+/// that the types lack, and the types have none the schema lacks.
+#[test]
+fn every_struct_matches_its_schema_both_ways() {
+    let root = schema();
+    let full: Value = serde_json::from_str(&every_field().to_json()).unwrap();
+    let min: Value = serde_json::from_str(&minimal().to_json()).unwrap();
+    check(&min, "required fields only");
+    // the model itself, with nothing optional: only the two required keys
+    let mut bare = minimal();
+    (bare.memory, bare.skills, bare.schedules, bare.connectors) = (vec![], vec![], vec![], vec![]);
+    (bare.credentials, bare.history, bare.manual) = (vec![], None, vec![]);
+    let bare: Value = serde_json::from_str(&bare.to_json()).unwrap();
+    let mut seen: Vec<&str> = vec![];
+    for (name, at) in std::iter::once(("BotModel", "")).chain(DEFS) {
+        let s = if at.is_empty() {
+            &root
+        } else {
+            &root["$defs"][name]
+        };
+        assert!(s.is_object(), "no $defs.{name}");
+        assert_eq!(
+            sorted_keys(full.pointer(at).unwrap()),
+            sorted_keys(&s["properties"]),
+            "{name}: fields of the types vs the schema's properties"
+        );
+        assert_eq!(
+            sorted_keys(if at.is_empty() {
+                &bare
+            } else {
+                min.pointer(at).unwrap()
+            }),
+            sorted_strs(&s["required"]),
+            "{name}: required fields of the types vs the schema's required"
+        );
+        // and each required key really is required by the types
+        for r in sorted_strs(&s["required"]) {
+            let mut v = full.clone();
+            v.pointer_mut(at)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .remove(&r);
+            assert!(
+                BotModel::from_json(&v.to_string()).is_err(),
+                "{name}.{r}: the schema requires it but the types accept a document without it"
+            );
+        }
+        seen.push(name);
+    }
+    let mut defs = sorted_keys(&root["$defs"]);
+    defs.retain(|d| root["$defs"][d]["type"] == "object" && !seen.contains(&d.as_str()));
+    assert!(
+        defs.is_empty(),
+        "$defs objects this test does not cover: {defs:?}"
+    );
 }

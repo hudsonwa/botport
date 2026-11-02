@@ -3,8 +3,9 @@
 Every adapter reads a platform's export **into** this model and writes a platform's import **from** it
 (hub and spoke). The core knows no platform. Rust types: `src/core/model.rs`. Fixtures: `tests/fixtures/model/`.
 JSON Schema: [`schema/botmodel-v1.json`](schema/botmodel-v1.json) (draft 2020-12). `tests/schema.rs` validates
-every model fixture and every model the adapters read against it, and fails when the types have a field the schema
-lacks. The crate API (`cargo doc --no-deps --open`) documents the same types.
+every model fixture and every model the adapters read against it, and checks both directions for the model and every
+`$defs` object: it fails when the types have a field the schema lacks, when the schema lists a property the types
+lack, and when the schema's `required` differs from the fields the types require. The crate API (`cargo doc --no-deps --open`) documents the same types.
 
 ## Document
 

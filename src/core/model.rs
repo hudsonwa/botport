@@ -200,7 +200,7 @@ pub struct Schedule {
     /// Five-field cron; absent for `event` schedules.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cron: Option<String>,
-    /// IANA timezone.
+    /// IANA timezone; empty when the origin gave none.
     pub tz: String,
     /// Time or event trigger.
     pub kind: ScheduleKind,
