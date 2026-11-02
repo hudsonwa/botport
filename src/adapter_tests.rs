@@ -298,3 +298,109 @@ fn hermes_manual_names_with_colons_and_ticks_survive() {
     }
     std::fs::remove_dir_all(&src).unwrap();
 }
+
+/// The conformance Hermes fixture read, `edit` applied to the model, then write -> read: the connectors read back.
+fn hermes_edit_round(
+    tag: &str,
+    edit: impl Fn(&mut BotModel),
+) -> Vec<crate::core::model::Connector> {
+    let mut m = HermesProfile
+        .read(&root().join("tests/fixtures/conformance/hermes"))
+        .unwrap();
+    edit(&mut m);
+    let d = scratch(tag);
+    HermesProfile.write(&m, &d).unwrap();
+    let mut back = HermesProfile.read(&d).unwrap().connectors;
+    back.sort_by(|a, b| a.name.cmp(&b.name));
+    std::fs::remove_dir_all(&d).unwrap();
+    back
+}
+
+fn http(name: &str, url: &str, tools: &[&str]) -> crate::core::model::Connector {
+    crate::core::model::Connector {
+        name: name.into(),
+        kind: "mcp-http".into(),
+        url: Some(url.into()),
+        tools: tools.iter().map(|t| t.to_string()).collect(),
+    }
+}
+
+#[test]
+fn hermes_write_takes_an_edited_kept_connector_from_the_model() {
+    let back = hermes_edit_round("mcp-edit", |m| {
+        m.connectors[0].url = Some("https://new.example.test/mcp".into());
+        m.connectors[0].tools = vec!["sign_in".into()];
+    });
+    assert_eq!(
+        back,
+        [http(
+            "visitor-log",
+            "https://new.example.test/mcp",
+            &["sign_in"]
+        )]
+    );
+    // dropping the tools list removes the kept one
+    let back = hermes_edit_round("mcp-edit-notools", |m| m.connectors[0].tools.clear());
+    assert_eq!(back[0].tools, Vec::<String>::new());
+}
+
+#[test]
+fn hermes_write_keeps_a_second_server_at_the_same_url() {
+    let back = hermes_edit_round("mcp-same-url", |m| {
+        let url = m.connectors[0].url.clone().unwrap();
+        m.connectors.push(http("visitor-admin", &url, &["sign_in"]));
+    });
+    let names: Vec<_> = back
+        .iter()
+        .map(|c| (c.name.as_str(), c.tools.clone()))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("visitor-admin", vec!["sign_in".to_string()]),
+            ("visitor-log", vec!["list_visitors".to_string()])
+        ]
+    );
+}
+
+#[test]
+fn hermes_write_does_not_merge_a_new_connector_into_a_kept_one_with_its_slug() {
+    let back = hermes_edit_round("mcp-slug", |m| {
+        m.connectors
+            .push(http("Visitor Log", "https://b.example.test/mcp", &[]));
+    });
+    let got: Vec<_> = back
+        .iter()
+        .map(|c| (c.name.as_str(), c.url.as_deref().unwrap(), c.tools.len()))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("visitor-log", "https://visitors.example.test/mcp", 1),
+            ("visitor-log-2", "https://b.example.test/mcp", 0)
+        ]
+    );
+}
+
+#[test]
+fn hermes_ticked_credential_lines_stay_ticked() {
+    let src = scratch("cred-src");
+    let line = "credential FOO_TOKEN: set it on the Hermes side by hand (e.g. the profile's .env); no value was copied";
+    std::fs::write(
+        src.join("botport-manual.md"),
+        format!("# Set up by hand (botport)\n\n- [x] {line}\n- [ ] credential BAR_TOKEN: set it on the Hermes side by hand (e.g. the profile's .env); no value was copied\n"),
+    )
+    .unwrap();
+    for (i, m) in hermes_rounds("rounds-cred", &src, 2).iter().enumerate() {
+        assert_eq!(m.credentials.len(), 2);
+        if i > 0 {
+            let d = scratch("cred-out");
+            HermesProfile.write(m, &d).unwrap();
+            let text = std::fs::read_to_string(d.join("botport-manual.md")).unwrap();
+            assert!(text.contains(&format!("- [x] {line}")), "{text}");
+            assert!(text.contains("- [ ] credential BAR_TOKEN"), "{text}");
+            std::fs::remove_dir_all(&d).unwrap();
+        }
+    }
+    std::fs::remove_dir_all(&src).unwrap();
+}

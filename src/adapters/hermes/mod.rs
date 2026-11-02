@@ -154,19 +154,56 @@ impl Adapter for HermesProfile {
             }
         }
         let kept = m.extras.get(ID).and_then(|x| x.get("config")).cloned();
-        // a server the kept config already has (same key or url) is not merged in again or listed as manual
+        // Each model connector goes under a kept `mcp_servers` key with its own name (skipped when that entry
+        // already says the same, as `read_connectors` reads it), else under its slug, else (the slug is a
+        // different kept server) under the first free `<slug>-N`: a kept server is never merged into another.
         let servers = kept
             .as_ref()
-            .and_then(|c| c.get("mcp_servers")?.as_object().cloned());
+            .and_then(|c| c.get("mcp_servers")?.as_object().cloned())
+            .unwrap_or_default();
         let mut m = m.clone();
-        m.connectors.retain(|c| {
-            !servers.iter().flatten().any(|(k, v)| {
-                *k == c.name
-                    || (c.url.is_some()
-                        && v.get("url").and_then(|u| u.as_str()) == c.url.as_deref())
-            })
-        });
-        let (jobs, mcp, manual) = sync::from_described(&m, &[], &[], &[]);
+        let connectors = std::mem::take(&mut m.connectors);
+        let (jobs, mut mcp, mut manual) = sync::from_described(&m, &[], &[], &[]);
+        let mut taken: Vec<String> = servers.keys().cloned().collect();
+        for c in connectors {
+            let key = match servers.get(&c.name) {
+                Some(v) => {
+                    let tools: Vec<&str> = v["tools"]["include"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|t| t.as_str())
+                        .collect();
+                    if v["url"].as_str() == c.url.as_deref() && tools == c.tools {
+                        continue;
+                    }
+                    Some(c.name.clone())
+                }
+                None => None,
+            };
+            let one = BotModel {
+                connectors: vec![c.clone()],
+                schedules: vec![],
+                credentials: vec![],
+                manual: vec![],
+                ..m.clone()
+            };
+            let (_, entries, items) = sync::from_described(&one, &[], &[], &[]);
+            manual.extend(items);
+            for (id, entry) in entries {
+                let id = key.clone().unwrap_or_else(|| {
+                    let free = |k: &String| !taken.contains(k);
+                    std::iter::once(id.clone())
+                        .chain((2..).map(|n| format!("{id}-{n}")))
+                        .find(free)
+                        .unwrap()
+                });
+                taken.push(id.clone());
+                mcp.push((id, entry));
+            }
+        }
+        manual.sort();
+        manual.dedup_by(|a, b| a.0 == b.0);
         if !jobs.is_empty() {
             // names stay as the schedules have them: the `<Bot>: ` prefix is for jobs in a shared live profile
             let prefix = format!("{}: ", sync::bot_name(&m));
@@ -189,6 +226,14 @@ impl Adapter for HermesProfile {
                 None => Y::Mapping(Default::default()),
             };
             for (id, entry) in mcp {
+                // the model's url and tools replace a kept entry's (other kept fields, e.g. headers, stay)
+                if let Some(Y::Mapping(e)) = cfg.get_mut("mcp_servers").and_then(|s| s.get_mut(&id))
+                {
+                    e.remove("url");
+                    if let Some(Y::Mapping(t)) = e.get_mut("tools") {
+                        t.remove("include");
+                    }
+                }
                 let mut ls = vec![];
                 sync::leaves(&entry, &mut vec!["mcp_servers".into(), id], &mut ls);
                 for (path, v) in ls {
@@ -293,7 +338,14 @@ fn read_manual(src: &Path) -> (Vec<CredentialRef>, Vec<ManualItem>) {
             Some(n)
                 if !n.starts_with('(') && crate::core::secrets::credential_name(n).is_none() =>
             {
-                creds.push(CredentialRef::new(n))
+                creds.push(CredentialRef::new(n));
+                // a ticked credential line stays ticked: `write` finds its tick among the manual items
+                if !l.starts_with("- [ ]") {
+                    manual.push(ManualItem {
+                        done: true,
+                        ..ManualItem::new(item, todo)
+                    });
+                }
             }
             _ => manual.push(ManualItem {
                 done: !l.starts_with("- [ ]"),
