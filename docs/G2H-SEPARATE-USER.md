@@ -20,6 +20,17 @@ approver or read the state. In separate-user mode:
     and it, a symlink at that path, and every directory above it are owned by that user or root and not
     group/other-writable. Put any arguments in a root-owned wrapper script.
 
+  These approver checks are best effort, not a proof:
+  - the interpreter list is a list of names, and other programs (`expect`, `m4`, `at` …) also execute text;
+  - symlinks met halfway through resolving the path are not examined, so keep the approver at its real path with no
+    links;
+  - only mode bits are read, so a macOS ACL that grants write access is not seen.
+
+  **The approver gets the approval message on stdin, and that message contains text the bot chose (the op's
+  arguments).** Treat it as data: append or forward it, never evaluate it. A wrapper script's `#!` interpreter and
+  every program it runs must also be absolute paths that are owned by root (`#!/bin/sh` is fine;
+  `#!/usr/bin/env python3` or a Homebrew interpreter is not).
+
   Each time it reads a credentials file it also refuses one that is not 0600 or not owned by the uid it runs as.
   It does **not** check the `g2h`/`g2hd` binaries themselves, rotated logs, or anything outside the home; that part
   is the recipe below.
