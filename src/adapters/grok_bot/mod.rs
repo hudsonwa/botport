@@ -276,9 +276,8 @@ impl Adapter for GrokBot {
         self.read_source(src).map(|(m, _)| m)
     }
 
-    /// A grok-bot-export file, else a bundle directory (exported, or a hand export). Persona instructions come
-    /// only from an export file: a bundle's profile.json is kept verbatim in `extras` (a Grok box's profile carries
-    /// no live instructions, and the import never wrote them to SOUL.md).
+    /// A grok-bot-export file, else a bundle directory (exported, or a hand export). A bundle's profile.json is
+    /// kept verbatim in `extras`; its `instructions` (a hand export's) are the persona's, as for an export file (#15).
     fn read_source(&self, src: &Path) -> Res<(BotModel, Source)> {
         if export_json::is_export(src) {
             let mut m = export_json::read_model(src)?;
@@ -324,6 +323,7 @@ impl Adapter for GrokBot {
             .iter()
             .map(|(n, files)| Skill::from_bytes(n, files))
             .collect();
+        let instructions = profile["instructions"].as_str().unwrap_or("").to_string();
         let mut extra = json!({"profile": profile});
         if !b.agent_id.is_empty() {
             extra["agent_id"] = json!(b.agent_id);
@@ -336,7 +336,7 @@ impl Adapter for GrokBot {
             schema: format!("{SCHEMA_FAMILY}/{SCHEMA_MAJOR}"),
             persona: Persona {
                 name: b.name.clone(),
-                instructions: String::new(),
+                instructions,
             },
             memory,
             memory_text: b.memory_md.clone(),
@@ -398,6 +398,29 @@ impl Adapter for GrokBot {
 #[cfg(test)]
 mod seeded_tests {
     use super::*;
+
+    /// #15: a hand export's profile.json instructions are the persona's (and so reach SOUL.md).
+    #[test]
+    fn hand_export_profile_instructions_are_the_persona() {
+        let t = std::env::temp_dir().join(format!("g2h-hand-instr-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        std::fs::create_dir_all(&t).unwrap();
+        std::fs::write(
+            t.join("profile.json"),
+            r#"{"name":"Nova","instructions":"Be brief."}"#,
+        )
+        .unwrap();
+        std::fs::write(t.join("MEMORY.md"), "# Nova memory\n").unwrap();
+        let m = GrokBot.read(&t).unwrap();
+        assert_eq!(m.persona.instructions, "Be brief.");
+        std::fs::write(
+            t.join("profile.json"),
+            r#"{"name":"Nova","instructions":7}"#,
+        )
+        .unwrap();
+        assert_eq!(GrokBot.read(&t).unwrap().persona.instructions, "");
+        std::fs::remove_dir_all(&t).unwrap();
+    }
 
     /// #14: an event schedule written back reads as an event (paused flag and prompt kept, never a cron); a
     /// timed schedule without a cron does not turn into an event.

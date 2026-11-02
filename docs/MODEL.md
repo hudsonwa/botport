@@ -71,7 +71,7 @@ changes additively (a new optional field, together with the types). A breaking c
 | Bundle | Model | Lossy notes |
 |---|---|---|
 | `profile.json` `name` | `persona.name` | — |
-| agent instructions / role text | `persona.instructions` | — |
+| `profile.json` `instructions` (a hand export; exported bundles carry none) | `persona.instructions` | the whole profile.json is also kept in `extras["grok-bot"].profile` |
 | `memory-agent.jsonl` rows | `memory[]` (`source` = file, `date` from row) | tier not recorded → omitted |
 | `MEMORY.md` facts | `memory[]` `tier: core` | free-form prose split per entry |
 | `MEMORY.md` as a whole | `memory_text` | verbatim |

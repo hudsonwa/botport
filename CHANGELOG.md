@@ -11,6 +11,11 @@ All notable changes to this project are documented here. The format is based on
   (or "event-triggered") as `kind: event` with no cron, instead of a schedule Hermes cannot accept. Events are still
   never turned into cron jobs. The NOT_CAPTURED.md botport writes now keeps an event's prompt.
 
+### Changed
+- A hand-export bundle's `profile.json` `instructions` now ports to the persona, and so to SOUL.md, the same as a
+  grok-bot-export file's instructions (#15). A bundle with instructions there gets a new botport-owned persona
+  section in SOUL.md on the next apply; one already edited by hand on the Hermes side shows as a conflict.
+
 ## [0.1.0] - 2026-11-03
 First public release. The tool was called grok2hermes before release; the old names still work (see
 [REFERENCE.md](docs/REFERENCE.md#compatibility-with-the-old-name)).
