@@ -35,7 +35,8 @@ Find the attached archive matching `uname -m` (`x86_64` → `botport-x86_64-unkn
 `botport-aarch64-unknown-linux-musl.tar.gz`). If the owner attached `SHA256SUMS`, check the **archive** first, from
 the directory that holds both files, and stop on a mismatch:
 ```sh
-sha256sum -c --ignore-missing SHA256SUMS     # must print "<archive>: OK"
+grep "botport-<arch>-unknown-linux-musl.tar.gz$" SHA256SUMS > archive.sha256 && sha256sum -c archive.sha256
+# must print "<archive>: OK"; works with GNU and busybox sha256sum. No line found (grep fails) is a mismatch too.
 ```
 Then extract it and copy the `botport` binary to `/workspace/botport`:
 ```sh
