@@ -210,6 +210,10 @@ impl Args {
     pub fn get(&self, k: &str) -> Option<&str> {
         self.vals.get(k).and_then(|v| v.last()).map(|s| s.as_str())
     }
+    /// Every value given for the valued option `k`, in order.
+    pub fn all(&self, k: &str) -> &[String] {
+        self.vals.get(k).map_or(&[], Vec::as_slice)
+    }
     pub fn path(&self, k: &str) -> Option<PathBuf> {
         self.get(k).map(expand)
     }

@@ -1416,8 +1416,17 @@ fn pasted_export_on_stdin_is_repaired_reported_and_verified() {
             .map(String::from)
     };
     assert_eq!(first(&out), first(&strict));
-    let saved = t.0.join("botport/pasted-grok-bot-export.json");
-    assert_eq!(fs::read_to_string(saved).unwrap(), pasted);
+    // saved for this run only, in a per-run dir that is gone afterwards
+    assert!(
+        out.contains("/botport/paste-") && out.contains("for this run"),
+        "{out}"
+    );
+    let left: Vec<_> = fs::read_dir(t.0.join("botport"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+        .filter(|n| n.starts_with("paste"))
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
 
     // the secret guard runs on the repaired text: nothing is saved
     let t2 = Tmp::new("paste-secret");
@@ -1432,7 +1441,64 @@ fn pasted_export_on_stdin_is_repaired_reported_and_verified() {
         out.contains("credential-looking keys") && out.contains("password"),
         "{out}"
     );
-    assert!(!t2.0.join("botport/pasted-grok-bot-export.json").exists());
+    assert!(fs::read_dir(t2.0.join("botport")).map_or(true, |d| d
+        .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+        .all(|n| !n.starts_with("paste"))));
+}
+
+#[test]
+fn pasted_export_never_picks_up_a_describe_json_in_the_state_dir() {
+    let t = Tmp::new("paste-describe");
+    let exp = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/grok-export/grok-bot-export.json");
+    let doc = fs::read_to_string(&exp).unwrap();
+    let (_, plain) = run_stdin(&t.0, &["verify", "--bundle", "-"], &doc);
+    fs::create_dir_all(t.0.join("botport")).unwrap();
+    fs::write(
+        t.0.join("botport/describe.json"),
+        r#"{"persona": "PLANTED-DESCRIPTION"}"#,
+    )
+    .unwrap();
+    let (rc, out) = run_stdin(&t.0, &["verify", "--bundle", "-"], &doc);
+    assert_eq!(rc, 0, "{out}");
+    let first = |o: &str| {
+        o.lines()
+            .find(|l| l.starts_with("verify OK"))
+            .map(String::from)
+    };
+    assert_eq!(first(&out), first(&plain));
+    assert!(!out.contains("PLANTED"), "{out}");
+}
+
+#[test]
+fn paste_input_conflicts_are_refused() {
+    let t = Tmp::new("paste-args");
+    for (args, want) in [
+        (
+            &["verify", "--bundle", "x", "--clipboard"][..],
+            "--bundle and --clipboard",
+        ),
+        (
+            &["verify", "--bundle", "-", "--clipboard"][..],
+            "--bundle - and --clipboard",
+        ),
+        (
+            &["verify", "--bundle", "-", "--bundle", "x"][..],
+            "more than once",
+        ),
+        (
+            &["verify", "--bundle", "x", "--bundle", "-"][..],
+            "more than once",
+        ),
+        (
+            &["verify", "--bundle", "x", "--bundle", "y", "--clipboard"][..],
+            "more than once",
+        ),
+    ] {
+        let (rc, out) = run_stdin(&t.0, args, "{}");
+        assert_eq!(rc, 2, "{args:?}: {out}");
+        assert!(out.contains(want), "{args:?}: {out}");
+    }
 }
 
 #[test]

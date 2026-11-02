@@ -207,17 +207,20 @@ Upstream Hermes ships its own Grok Bot importer (`hermes migrate grok-bot` / `he
   keys, and warns about facts the Bot marked `[truncated …]` (they are kept as written). Skill texts stored with literal
   `\n` are unescaped. An export with several bots uses the first one.
 - **Pasted exports.** The export can come straight from the chat: `--bundle -` reads it from stdin and
-  `--clipboard` from the clipboard (`pbpaste` on macOS; `wl-paste` or `xclip` on Linux, else an error). It is saved
-  as `pasted-grok-bot-export.json` (mode 0600) in botport's state dir (`$XDG_STATE_HOME/botport`, default
-  `~/.local/state/botport`) and read from there. Strict JSON is read exactly as before; otherwise botport tolerates, and
+  `--clipboard` from the clipboard (`pbpaste` on macOS; `wl-paste` or `xclip` on Linux, else an error). Give only
+  one input: `--bundle` with another value, or twice, is refused. For the run it is saved as
+  `pasted-grok-bot-export.json` (mode 0600) in a new `paste-<random>` dir (mode 0700) under botport's state dir
+  (`$XDG_STATE_HOME/botport`, default `~/.local/state/botport`), read from there, and removed when the command ends. Strict JSON is read exactly as before; otherwise botport tolerates, and
   reports on stderr one line per repair:
-  - the JSON inside a fenced code block (```` ```json ````, ```` ``` ```` or `~~~`) with chat text around it, or with no
-    fence the text from the first `{` to the last `}`;
-  - a reply split across several messages: all fenced blocks are joined in order with nothing between them, and the
-    result must parse. If two or more blocks are each a complete document, it is refused as ambiguous; if exactly one
-    is, that one is taken. Paste the parts in the order the bot sent them;
+  - the JSON inside a fenced code block (```` ```json ````, ```` ``` ````, `~~~` or a longer fence, also all on one
+    line) with chat text around it, or with no fence the text from the first `{` to the last `}`;
+  - a reply split across several messages: the line break before each closing fence is dropped and all fenced blocks
+    are joined in order with nothing between them, so a split inside a text value or a number joins up; the result
+    must parse. If two or more blocks are each a complete export (an object with `format` or `bots`), it is refused as
+    ambiguous; if exactly one is, that one is taken. Paste the parts in the order the bot sent them;
   - curly quotes (“ ” ‘ ’) used as JSON quotes, and trailing commas before `}` or `]`; both only outside string
-    values (quotes and commas inside text are kept).
+    values (quotes and commas inside text are kept). A value opened with a double curly quote ends only at a double
+    quote, one opened with ‘ only at a single quote, so `“I like ‘cats’, ‘dogs’”` stays one value.
 
   The secret-key check runs on the repaired document, so a credential inside a fenced block is still refused (and
   nothing is saved).

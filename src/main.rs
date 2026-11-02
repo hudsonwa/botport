@@ -83,12 +83,13 @@ fn main() -> ExitCode {
         Ok(a) => a,
         Err(e) => return fail(&e),
     };
-    let a = match pasted_export(&a, &raw) {
-        Ok(Some(raw)) => match Args::parse(&raw, VALUED, FLAGS) {
-            Ok(a) => a,
+    // held to the end of main: the per-run paste dir is removed when it drops
+    let (a, _paste) = match pasted_export(&a, &raw) {
+        Ok(Some((raw, dir))) => match Args::parse(&raw, VALUED, FLAGS) {
+            Ok(a) => (a, Some(dir)),
             Err(e) => return fail(&e),
         },
-        Ok(None) => a,
+        Ok(None) => (a, None),
         Err(e) => return fail(&e),
     };
     let cmd = a.pos.first().cloned().unwrap_or_default();
@@ -120,16 +121,32 @@ fn main() -> ExitCode {
     }
 }
 
+/// A per-run paste dir (mode 0700), removed with everything in it when dropped.
+struct PasteDir(PathBuf);
+
+impl Drop for PasteDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 /// `--bundle -` (stdin) or `--clipboard`: read a pasted grok-bot-export, check it parses (secret guard
-/// included), save it as `<state dir>/botport/pasted-grok-bot-export.json` (0600) and return the arguments
-/// with `--bundle` pointing there. None when neither is given.
-fn pasted_export(a: &Args, raw: &[String]) -> Res<Option<Vec<String>>> {
-    let stdin = a.get("bundle") == Some("-");
+/// included), save it as `<state dir>/botport/paste-<random>/pasted-grok-bot-export.json` (dir 0700, file 0600,
+/// both new for this run) and return the arguments with `--bundle` pointing there, plus the dir to remove after
+/// the command. None when neither is given.
+fn pasted_export(a: &Args, raw: &[String]) -> Res<Option<(Vec<String>, PasteDir)>> {
+    let stdin = a.all("bundle").iter().any(|b| b == "-");
     if !stdin && !a.has("clipboard") {
         return Ok(None);
     }
+    if a.all("bundle").len() > 1 {
+        return Err("--bundle is given more than once; give it once".into());
+    }
     if stdin && a.has("clipboard") {
         return Err("--bundle - and --clipboard both name the input; use one".into());
+    }
+    if a.has("clipboard") && a.get("bundle").is_some() {
+        return Err("--bundle and --clipboard both name the input; use one".into());
     }
     let text = if stdin {
         let mut s = String::new();
@@ -147,14 +164,17 @@ fn pasted_export(a: &Args, raw: &[String]) -> Res<Option<Vec<String>>> {
         ));
     }
     export_json::document(&text).map_err(|e| format!("{from}: {e}"))?;
-    let dir = std::env::var_os("XDG_STATE_HOME")
+    botport::core::secrets::guard(from, text.as_bytes())?;
+    let state = std::env::var_os("XDG_STATE_HOME")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
-        .unwrap_or_else(|| home().join(".local/state"));
-    let p = dir.join("botport").join("pasted-grok-bot-export.json");
-    write_atomic(&p, text.as_bytes(), Some(0o600))?;
+        .unwrap_or_else(|| home().join(".local/state"))
+        .join("botport");
+    let dir = PasteDir(new_private_dir(&state)?);
+    let p = dir.0.join("pasted-grok-bot-export.json");
+    write_new_private(&p, text.as_bytes())?;
     eprintln!(
-        "botport: read the export from {from}; saved as {}",
+        "botport: read the export from {from}; saved as {} for this run",
         p.display()
     );
     let mut out = vec![];
@@ -170,7 +190,47 @@ fn pasted_export(a: &Args, raw: &[String]) -> Res<Option<Vec<String>>> {
         out.push(s.clone());
     }
     out.extend(["--bundle".to_string(), p.display().to_string()]);
-    Ok(Some(out))
+    Ok(Some((out, dir)))
+}
+
+/// A new dir `paste-<random>` under `parent`, mode 0700; never an existing one.
+fn new_private_dir(parent: &std::path::Path) -> Res<PathBuf> {
+    use std::hash::{BuildHasher, Hasher};
+    std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
+    let mut last = String::new();
+    for _ in 0..8 {
+        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+        h.write_u32(std::process::id());
+        h.write_u128(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos()),
+        );
+        let d = parent.join(format!("paste-{:016x}", h.finish()));
+        let mut b = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+        match b.create(&d) {
+            Ok(()) => return Ok(d),
+            Err(e) => last = format!("mkdir {}: {e}", d.display()),
+        }
+    }
+    Err(last)
+}
+
+/// Write a new file with mode 0600 from the start; fails rather than follow or reuse anything already there.
+fn write_new_private(p: &std::path::Path, data: &[u8]) -> Res<()> {
+    use std::io::Write;
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+    let mut f = o
+        .open(p)
+        .map_err(|e| format!("write {}: {e}", p.display()))?;
+    f.write_all(data)
+        .and_then(|_| f.sync_all())
+        .map_err(|e| format!("write {}: {e}", p.display()))
 }
 
 /// The clipboard as text: pbpaste on macOS; wl-paste or xclip elsewhere.
@@ -917,4 +977,55 @@ fn cmd_doctor(a: &Args) -> Res<Report> {
         lines,
         json,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    fn tmp(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("botport-main-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn paste_dir_is_0700_new_per_run_and_removed() {
+        let t = tmp("dir");
+        let (a, b) = (new_private_dir(&t).unwrap(), new_private_dir(&t).unwrap());
+        assert_ne!(a, b);
+        let mode = std::fs::metadata(&a).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700);
+        std::fs::write(a.join("f"), "x").unwrap();
+        drop(PasteDir(a.clone()));
+        assert!(!a.exists());
+        std::fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn paste_file_is_0600_and_never_reuses_or_follows_what_is_there() {
+        let t = tmp("file");
+        let p = t.join("pasted-grok-bot-export.json");
+        write_new_private(&p, b"{}").unwrap();
+        assert_eq!(
+            std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        // an existing file (any mode) is not rewritten
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(write_new_private(&p, b"{}").is_err());
+        // a symlink at the path is not followed
+        let target = t.join("precious.txt");
+        std::fs::write(&target, "keep").unwrap();
+        let link = t.join("link.json");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(write_new_private(&link, b"{}").is_err());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
+        std::fs::remove_dir_all(&t).unwrap();
+    }
 }

@@ -101,6 +101,13 @@ pub fn from_describe(v: &Value) -> Described {
 /// dir; for a grok-bot-export file, a `describe.json` next to it.
 fn description(src: &Path) -> Res<Option<Value>> {
     let (dj, nc) = if src.is_file() {
+        // a pasted export has no description of its own: never pick one up from its dir
+        if src
+            .file_name()
+            .is_some_and(|n| n == "pasted-grok-bot-export.json")
+        {
+            return Ok(None);
+        }
         (src.with_file_name("describe.json"), None)
     } else {
         (

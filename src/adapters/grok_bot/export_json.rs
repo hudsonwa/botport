@@ -181,9 +181,11 @@ fn check(v: &Value) -> Res<()> {
 /// Returns the document and one short line per repair applied (empty for strict JSON).
 ///
 /// Tolerated, in this order:
-/// 1. Fenced code blocks (```json / ``` / ~~~ lines) with chatter around them. One block that parses is taken
-///    as is. Several blocks are a reply split across messages: they are joined in order (no separator) and the
-///    join must parse; if two or more blocks each parse alone, the input is ambiguous and refused. Without
+/// 1. Fenced code blocks (```json / ``` / ~~~ lines, or longer fences; a one-line ```{…}``` too) with chatter
+///    around them. One block that parses is taken as is. Several blocks are a reply split across messages: one
+///    trailing line break is dropped from each (the fence line's own) and they are joined in order with nothing
+///    between them, so a split inside a string or a number joins up; the join must parse. If two or more blocks
+///    are each a complete export (an object with `format` or `bots`), the input is ambiguous and refused. Without
 ///    fences, the text from the first `{` to the last `}` is taken. An unclosed last fence runs to the end.
 /// 2. Curly quotes (“ ” ‘ ’) used as JSON quotes, outside string values only; quotes inside strings stay.
 /// 3. Trailing commas before `}` or `]`, outside string values.
@@ -214,7 +216,7 @@ pub fn parse(raw: &str) -> Res<(Value, Vec<String>)> {
             blocks[0].clone()
         }
         n => {
-            let whole = blocks.iter().filter(|b| repair(b).is_ok()).count();
+            let whole = blocks.iter().filter(|b| is_whole_export(b)).count();
             if whole > 1 {
                 return err(format!(
                     "{whole} of the {n} fenced code blocks are each a complete JSON document; \
@@ -223,7 +225,7 @@ pub fn parse(raw: &str) -> Res<(Value, Vec<String>)> {
             }
             if whole == 1 {
                 // one complete document among fragments: the fragments are not part of it
-                let b = blocks.iter().find(|b| repair(b).is_ok()).unwrap();
+                let b = blocks.iter().find(|b| is_whole_export(b)).unwrap();
                 repairs.push(format!(
                     "took the one complete JSON document out of {n} fenced code blocks"
                 ));
@@ -232,7 +234,14 @@ pub fn parse(raw: &str) -> Res<(Value, Vec<String>)> {
                 repairs.push(format!(
                     "joined {n} fenced code blocks in order (a reply split across messages)"
                 ));
-                blocks.concat()
+                blocks
+                    .iter()
+                    .map(|b| {
+                        b.strip_suffix("\r\n")
+                            .or_else(|| b.strip_suffix('\n'))
+                            .unwrap_or(b)
+                    })
+                    .collect::<String>()
             }
         }
     };
@@ -241,19 +250,29 @@ pub fn parse(raw: &str) -> Res<(Value, Vec<String>)> {
     Ok((v, repairs))
 }
 
-/// The contents of every fenced code block, in order. A fence is a line starting with ``` or ~~~ (after
-/// leading spaces); an opening fence may carry a language tag.
+/// The contents of every fenced code block, in order. A fence is a line starting with 3 or more ` or ~ (after
+/// leading spaces); an opening fence may carry a language tag, and a closing fence is at least as long as the
+/// opening one. A fence line that also ends with its fence (```json {…} ```) is a one-line block.
 fn fenced_blocks(raw: &str) -> Vec<String> {
     let mut out = vec![];
     let mut cur: Option<(String, String)> = None; // (fence marker, body)
     for line in raw.split_inclusive('\n') {
         let t = line.trim_start();
-        let marker = ["```", "~~~"].into_iter().find(|m| t.starts_with(m));
+        let marker = fence(t);
         match (&mut cur, marker) {
-            (None, Some(m)) => cur = Some((m.to_string(), String::new())),
-            (Some((open, _)), Some(m))
-                if *open == m && t.trim_end().trim_start_matches(m).is_empty() =>
-            {
+            (None, Some(m)) => {
+                let rest = t[m.len()..].trim_end();
+                match rest.strip_suffix(m.as_str()).map(str::trim_end) {
+                    Some(inner) if inner.contains('{') => {
+                        let lang = inner
+                            .find(|c: char| !c.is_alphanumeric())
+                            .unwrap_or(inner.len());
+                        out.push(inner[lang..].trim().to_string());
+                    }
+                    _ => cur = Some((m, String::new())),
+                }
+            }
+            (Some((open, _)), Some(m)) if m.starts_with(open.as_str()) && t.trim_end() == m => {
                 out.push(cur.take().unwrap().1);
             }
             (Some((_, body)), _) => body.push_str(line),
@@ -265,6 +284,18 @@ fn fenced_blocks(raw: &str) -> Vec<String> {
     }
     out.retain(|b| !b.trim().is_empty());
     out
+}
+
+/// The fence a line starts with: 3 or more of the same ` or ~.
+fn fence(t: &str) -> Option<String> {
+    let c = t.chars().next().filter(|c| *c == '`' || *c == '~')?;
+    let n = t.chars().take_while(|x| *x == c).count();
+    (n >= 3).then(|| c.to_string().repeat(n))
+}
+
+/// A block that is a complete export on its own: an object with `format` or `bots`.
+fn is_whole_export(b: &str) -> bool {
+    repair(b).is_ok_and(|(v, _)| v.get("format").is_some() || v.get("bots").is_some())
 }
 
 /// Rewrite curly quotes used as JSON quotes and drop trailing commas, outside string values only; then parse.
@@ -282,12 +313,12 @@ fn repair(s: &str) -> Res<(Value, Vec<String>)> {
             } else if c == '\\' {
                 esc = true;
                 out.push(c);
-            } else if c == q
-                || (q != '"'
-                    && matches!(c, '"' | '“' | '”' | '‘' | '’')
-                    && ends_value(&cs[i + 1..]))
+            } else if (q == '"' && c == '"')
+                || (q == '”' && matches!(c, '"' | '“' | '”') && ends_value(&cs[i + 1..]))
+                || (q == '’' && matches!(c, '‘' | '’') && ends_value(&cs[i + 1..]))
             {
-                // a curly-quoted string may close with any quote that is followed by `:` `,` `}` `]` or the end
+                // a curly-quoted string closes with a quote of its own kind (double: “ ” or ", single: ‘ ’)
+                // that is followed by `:` `,` `}` `]` or the end; any other quote inside it is text
                 close = None;
                 if c != '"' {
                     curly += 1;
@@ -307,12 +338,12 @@ fn repair(s: &str) -> Res<(Value, Vec<String>)> {
                 out.push('"');
             }
             '“' | '”' => {
-                close = Some('\0');
+                close = Some('”');
                 curly += 1;
                 out.push('"');
             }
             '‘' | '’' => {
-                close = Some('\0');
+                close = Some('’');
                 curly += 1;
                 out.push('"');
             }
@@ -666,6 +697,59 @@ mod tests {
         let raw = format!("```json\n{}\n```", doc.replace('"', "“"));
         let e = document(&raw).unwrap_err();
         assert!(e.contains("credential-looking"), "{e}");
+    }
+
+    #[test]
+    fn curly_closer_matches_its_opener() {
+        // smart punctuation inside a “…” value: the ’ after cats is text, not the end of the string
+        let raw = "{“format”: “grok-bot-export”, “version”: 1, “bots”: [{“name”: “Nova”, “memories”: [“I like ‘cats’, ‘dogs’”, “ok”]}]}";
+        let (v, _) = ok(raw);
+        assert_eq!(
+            v["bots"][0]["memories"],
+            json!(["I like ‘cats’, ‘dogs’", "ok"])
+        );
+        // a ” inside a “…” value that does not end it stays text
+        let raw = "{“format”: “grok-bot-export”, “bots”: [{“name”: “say “hi” now”}]}";
+        assert_eq!(ok(raw).0["bots"][0]["name"], json!("say “hi” now"));
+        // a ‘…’ string ends only on a single quote
+        let raw = "{‘format’: ‘grok-bot-export’, ‘bots’: [{‘name’: ‘a ”, b’}]}";
+        assert_eq!(ok(raw).0["bots"][0]["name"], json!("a ”, b"));
+    }
+
+    #[test]
+    fn split_inside_a_string_or_a_number_joins_up() {
+        let doc = r#"{"format": "grok-bot-export", "version": 1, "bots": [{"name": "Nova", "age_days": 12345, "memories": ["a long memory that the bot cut in the middle of", "ok"]}]}"#;
+        for at in [doc.find("cut in").unwrap(), doc.find("345").unwrap()] {
+            let (a, b) = doc.split_at(at);
+            for nl in ["\n", "\r\n"] {
+                let raw = format!("```json{nl}{a}{nl}```{nl}(more){nl}```{nl}{b}{nl}```{nl}");
+                let (v, r) = ok(&raw);
+                assert_eq!(v, serde_json::from_str::<Value>(doc).unwrap(), "{raw}");
+                assert!(r[0].starts_with("joined 2"), "{r:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_non_export_block_is_not_a_complete_document() {
+        let raw = format!("For example:\n```\n42\n```\nThe export:\n```json\n{DOC}\n```\n");
+        let (v, r) = ok(&raw);
+        assert_eq!(v, ok(DOC).0);
+        assert_eq!(
+            r,
+            ["took the one complete JSON document out of 2 fenced code blocks"]
+        );
+    }
+
+    #[test]
+    fn long_and_one_line_fences() {
+        let raw = format!("Here:\n````json\n{DOC}\n````\nAnything else? ```\n");
+        assert_eq!(ok(&raw).0, ok(DOC).0);
+        let raw = format!("Here: \n```json {DOC} ```\nHope that helps!\n");
+        assert_eq!(ok(&raw).0, ok(DOC).0);
+        // a ``` inside a ```` block is text
+        let raw = format!("````\n{}\n````\n", DOC.replace("a, b", "```"));
+        assert_eq!(ok(&raw).0["bots"][0]["memories"][1], json!("```"));
     }
 
     #[test]
