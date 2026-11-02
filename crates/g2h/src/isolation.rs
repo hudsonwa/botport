@@ -75,10 +75,26 @@ pub fn approve_allowed(s: Option<&SeparateUser>, own: u32, peer: Option<u32>) ->
     }
 }
 
+/// The effective uid of this process: who g2hd really runs as.
+pub fn euid() -> u32 {
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    unsafe { libc::geteuid() }
+}
+
 /// A path g2hd trusts must be owned by `own` (or root) and not writable by
 /// group or others, so no client uid can change it.
 fn trusted(path: &Path, own: u32, what: &str) -> Result<(), String> {
     let md = std::fs::metadata(path).map_err(|e| format!("{what} {}: {e}", path.display()))?;
+    owned_not_writable(path, &md, own, what, false)
+}
+
+fn owned_not_writable(
+    path: &Path,
+    md: &std::fs::Metadata,
+    own: u32,
+    what: &str,
+    sticky_ok: bool,
+) -> Result<(), String> {
     if md.uid() != own && md.uid() != 0 {
         return Err(format!(
             "{what} {} is owned by uid {}, not g2hd's uid {own} or root; fix: chown it to the g2h user",
@@ -86,7 +102,9 @@ fn trusted(path: &Path, own: u32, what: &str) -> Result<(), String> {
             md.uid()
         ));
     }
-    if md.mode() & 0o022 != 0 {
+    // a root-owned sticky dir (/tmp) lets no one else rename our entries
+    let sticky = sticky_ok && md.uid() == 0 && md.mode() & 0o1000 != 0;
+    if md.mode() & 0o022 != 0 && !sticky {
         return Err(format!(
             "{what} {} has mode {:o}; must not be group/other-writable",
             path.display(),
@@ -94,6 +112,87 @@ fn trusted(path: &Path, own: u32, what: &str) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// `path` and every directory above it, up to `/`, must be trusted: anyone
+/// who can write a parent can swap the child after the startup check. Checks
+/// the path as written (each symlink and its directory) and the resolved path.
+fn trusted_chain(path: &Path, own: u32, what: &str) -> Result<(), String> {
+    trusted(path, own, what)?;
+    let real =
+        std::fs::canonicalize(path).map_err(|e| format!("{what} {}: {e}", path.display()))?;
+    for p in [path, real.as_path()] {
+        let mut cur = p.parent();
+        while let Some(dir) = cur.filter(|d| !d.as_os_str().is_empty()) {
+            let md = std::fs::symlink_metadata(dir)
+                .map_err(|e| format!("{what} parent {}: {e}", dir.display()))?;
+            let what = format!("{what} parent dir");
+            if md.file_type().is_symlink() {
+                // a symlink's own mode is meaningless; its owner and its dir count
+                if md.uid() != own && md.uid() != 0 {
+                    return Err(format!(
+                        "{what} {} is a symlink owned by uid {}; must be g2hd's or root's",
+                        dir.display(),
+                        md.uid()
+                    ));
+                }
+            } else {
+                owned_not_writable(dir, &md, own, &what, true)?;
+            }
+            cur = dir.parent();
+        }
+    }
+    Ok(())
+}
+
+/// argv[0] names that run a second, unchecked file (a script argument, or
+/// code read from elsewhere). The approver must be one trusted program.
+const INTERPRETERS: &[&str] = &[
+    "sh",
+    "bash",
+    "zsh",
+    "dash",
+    "ksh",
+    "fish",
+    "csh",
+    "tcsh",
+    "env",
+    "python",
+    "python3",
+    "perl",
+    "ruby",
+    "node",
+    "deno",
+    "bun",
+    "php",
+    "lua",
+    "tclsh",
+    "osascript",
+    "pwsh",
+    "busybox",
+];
+
+fn is_interpreter(bin: &Path) -> bool {
+    let name = bin.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let base = name.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.');
+    INTERPRETERS.contains(&name) || INTERPRETERS.contains(&base)
+}
+
+/// Files in the home g2hd reads or writes; each must be trusted if present,
+/// or a client uid could rewrite credentials (re-read on every wake) or the
+/// pending-op book.
+pub fn home_files(home: &Path) -> [std::path::PathBuf; 8] {
+    let p = crate::paths::Paths::new(home);
+    [
+        p.config(),
+        p.state(),
+        p.credentials(),
+        p.inbox_credentials(),
+        p.log(),
+        p.lock(),
+        p.sessions(),
+        home.join("approvals.txt"),
+    ]
 }
 
 /// Startup checks for separate-user mode. `config` may be missing (defaults).
@@ -112,9 +211,27 @@ pub fn check_startup(
             "separate_user: g2hd's uid {own} is in allowed_uids; run g2hd as a dedicated user (see the README recipe)"
         ));
     }
-    trusted(home, own, "g2h home")?;
-    if std::fs::symlink_metadata(config).is_ok() {
-        trusted(config, own, "config")?;
+    trusted_chain(home, own, "g2h home")?;
+    let mut files = home_files(home).to_vec();
+    files[0] = config.to_path_buf();
+    for f in files {
+        if let Ok(md) = std::fs::symlink_metadata(&f) {
+            if md.file_type().is_symlink() {
+                return Err(format!(
+                    "separate_user: {} is a symlink; must be a regular file",
+                    f.display()
+                ));
+            }
+            owned_not_writable(&f, &md, own, "home file", false)?;
+            if md.uid() != own {
+                return Err(format!(
+                    "separate_user: {} is owned by uid {}, not g2hd's uid {own}; fix: sudo chown {own} {}",
+                    f.display(),
+                    md.uid(),
+                    f.display()
+                ));
+            }
+        }
     }
     if let Some(argv) = approver.filter(|a| !a.is_empty()) {
         let bin = Path::new(&argv[0]);
@@ -124,10 +241,13 @@ pub fn check_startup(
                 argv[0]
             ));
         }
-        trusted(bin, own, "approver")?;
-        if let Some(dir) = bin.parent() {
-            trusted(dir, own, "approver dir")?;
+        if is_interpreter(bin) {
+            return Err(format!(
+                "separate_user: [ops_approver] command {:?} is an interpreter; its script or code is not checked. Point command at the script itself (root-owned, with a #! line)",
+                argv[0]
+            ));
         }
+        trusted_chain(bin, own, "approver")?;
     }
     Ok(())
 }
@@ -229,6 +349,90 @@ mod tests {
             .contains("approver"));
         std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o700)).unwrap();
         assert!(check_startup(&s, own, &home, &cfg, Some(&abs)).is_ok());
+    }
+
+    fn sep_home() -> (tempfile::TempDir, std::path::PathBuf, u32) {
+        let t = tempfile::tempdir().unwrap();
+        let home = t.path().join("h");
+        std::fs::create_dir(&home).unwrap();
+        std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o750)).unwrap();
+        let own = std::fs::metadata(&home).unwrap().uid();
+        (t, home, own)
+    }
+
+    #[test]
+    fn startup_checks_every_home_file() {
+        let (_t, home, own) = sep_home();
+        let cfg = home.join("config.toml");
+        for f in home_files(&home).iter().skip(1) {
+            std::fs::write(f, "").unwrap();
+            std::fs::set_permissions(f, std::fs::Permissions::from_mode(0o666)).unwrap();
+            let e = check_startup(&su(), own, &home, &cfg, None).unwrap_err();
+            assert!(e.contains("writable"), "{}: {e}", f.display());
+            std::fs::set_permissions(f, std::fs::Permissions::from_mode(0o600)).unwrap();
+            assert!(check_startup(&su(), own, &home, &cfg, None).is_ok());
+        }
+        let st = home.join("state.json");
+        std::fs::remove_file(&st).unwrap();
+        std::os::unix::fs::symlink("/dev/null", &st).unwrap();
+        assert!(check_startup(&su(), own, &home, &cfg, None)
+            .unwrap_err()
+            .contains("symlink"));
+    }
+
+    #[test]
+    fn startup_walks_every_parent_of_home_and_approver() {
+        let (t, _, own) = sep_home();
+        let a = t.path().join("a");
+        let home = a.join("b/h");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o750)).unwrap();
+        std::fs::set_permissions(&a, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let cfg = home.join("config.toml");
+        assert!(check_startup(&su(), own, &home, &cfg, None)
+            .unwrap_err()
+            .contains("parent dir"));
+        std::fs::set_permissions(&a, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(check_startup(&su(), own, &home, &cfg, None).is_ok());
+        // approver at a/b/c/approver with a loose grandparent
+        let c = a.join("b/c");
+        std::fs::create_dir(&c).unwrap();
+        let bin = c.join("approver");
+        std::fs::write(&bin, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let argv = vec![bin.display().to_string()];
+        assert!(check_startup(&su(), own, &home, &cfg, Some(&argv)).is_ok());
+        std::fs::set_permissions(a.join("b"), std::fs::Permissions::from_mode(0o775)).unwrap();
+        assert!(check_startup(&su(), own, &home, &cfg, Some(&argv))
+            .unwrap_err()
+            .contains("parent dir"));
+    }
+
+    #[test]
+    fn startup_refuses_interpreter_approvers() {
+        let (_t, home, own) = sep_home();
+        let cfg = home.join("config.toml");
+        for i in [
+            "/bin/sh",
+            "/usr/bin/env",
+            "/usr/bin/python3.12",
+            "/usr/bin/perl",
+        ] {
+            let argv = vec![i.to_string(), "/tmp/x".to_string()];
+            assert!(
+                check_startup(&su(), own, &home, &cfg, Some(&argv))
+                    .unwrap_err()
+                    .contains("interpreter"),
+                "{i}"
+            );
+        }
+        assert!(!is_interpreter(Path::new("/opt/g2h/bin/g2h-approver")));
+    }
+
+    #[test]
+    fn euid_is_the_process_uid() {
+        let t = tempfile::tempdir().unwrap();
+        assert_eq!(euid(), std::fs::metadata(t.path()).unwrap().uid());
     }
 
     #[test]

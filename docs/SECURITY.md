@@ -4,7 +4,7 @@
 bot's text from being treated as instructions by the other (framing, hop limit, caps, owner-approved ops). It is
 **not** a security boundary against a bot that already has a shell as your user: such a bot can change g2h's config
 or skip g2h entirely. That is the default. Running `g2hd` as a separate OS user is implemented as an opt-in mode
-(`[separate_user]`; not yet run in production): its config, state and approval step are then out of the bots' reach.
+(`[separate_user]`; not yet run in production): its config, state and approval step are then out of the bots' reach, provided the binaries, home and approver sit in root-owned paths and you approve from a session the bots cannot modify (see the conditions there).
 Setup: [G2H-SEPARATE-USER.md](G2H-SEPARATE-USER.md). `g2h doctor` says which mode is running.
 
 g2h connects two bots that act for the same owner on one machine: a Grok Bot (through its computer connector) and a

@@ -86,7 +86,9 @@ pub struct DaemonOptions {
     /// A one-time op approval code expires after this (10 min).
     pub code_ttl: Duration,
     /// Tests only: treat every connection as coming from this uid, to
-    /// simulate the bots' user without a second OS account.
+    /// simulate the bots' user without a second OS account. Exists only with
+    /// the non-default `test-hooks` feature, so release g2hd cannot have it.
+    #[cfg(feature = "test-hooks")]
     pub peer_uid_override: Option<u32>,
 }
 
@@ -99,6 +101,7 @@ impl DaemonOptions {
             post_timeout: Duration::from_secs(10),
             probe_ttl: Duration::from_secs(15 * 60),
             code_ttl: Duration::from_secs(10 * 60),
+            #[cfg(feature = "test-hooks")]
             peer_uid_override: None,
             paths,
             config,
@@ -147,7 +150,7 @@ pub struct Bound {
     opts: DaemonOptions,
     listener: std::os::unix::net::UnixListener,
     _lock: File,
-    /// g2hd's own uid (the owner of the lock file it just created).
+    /// g2hd's own uid (its effective uid).
     uid: u32,
 }
 
@@ -171,7 +174,9 @@ pub fn bind(opts: &DaemonOptions) -> Result<Bound, String> {
             p.lock().display()
         ));
     }
-    let uid = std::os::unix::fs::MetadataExt::uid(&lock.metadata().map_err(|e| e.to_string())?);
+    // the real euid, not the lock file's owner: a lock left by an earlier run
+    // would otherwise let g2hd under root pass as the g2h user
+    let uid = isolation::euid();
     if let Some(s) = sep {
         let approver = opts
             .config
@@ -1573,10 +1578,9 @@ impl<B: PeerBackend + 'static> Broker<B> {
 
     async fn serve_conn(self: Rc<Self>, stream: tokio::net::UnixStream) {
         let sep = self.opts.config.separate_user.clone();
-        let peer = self
-            .opts
-            .peer_uid_override
-            .or_else(|| stream.peer_cred().ok().map(|c| c.uid()));
+        let peer = stream.peer_cred().ok().map(|c| c.uid());
+        #[cfg(feature = "test-hooks")]
+        let peer = self.opts.peer_uid_override.or(peer);
         if !isolation::peer_allowed(sep.as_ref(), self.uid, peer) {
             self.logw(json!({"event": "peer_refused", "uid": peer}));
             return;
