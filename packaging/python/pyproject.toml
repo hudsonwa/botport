@@ -1,0 +1,29 @@
+# Python wheel that bundles the prebuilt botport binary, so `pipx install botport` needs no Rust toolchain.
+# Build: see docs/RELEASING.md ("Python wheel"). Not published to PyPI yet.
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "botport"
+description = "Port, sync and bridge AI bots between Grok Bot and Hermes"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+classifiers = [
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Rust",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+]
+# The version comes from Cargo.toml.
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/hudsonwa/botport"
+
+[tool.maturin]
+# The root crate's binaries only: botport and its grok2hermes alias.
+# g2h/g2hd live in crates/g2h (a separate package) and are not in the wheel; see docs/INSTALL.md.
+bindings = "bin"
+manifest-path = "../../Cargo.toml"

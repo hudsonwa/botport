@@ -63,7 +63,7 @@ message it should send you, and how to keep secrets out of the chat.
 For a Grok Bot exporting itself, use [docs/AGENT-EXPORT.md](docs/AGENT-EXPORT.md).
 
 ## Manual quickstart (about 5 minutes)
-1. Install: see [docs/INSTALL.md](docs/INSTALL.md), or build from source with `cargo build --release` and add
+1. Install: see [docs/INSTALL.md](docs/INSTALL.md) (curl script, or `pipx install botport` once it is on PyPI), or build from source with `cargo build --release` and add
    `target/release` to your `PATH` (`export PATH="$PWD/target/release:$PATH"`).
 2. Try it on the example bot. Nothing here touches your real Hermes setup:
    ```sh
