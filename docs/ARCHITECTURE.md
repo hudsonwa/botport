@@ -24,7 +24,7 @@ source (`--bundle`), so a new source adapter also needs a way to be selected the
 | Item | Status |
 |---|---|
 | Grok Bot ↔ Hermes export/import, sync and drift | done |
-| g2h talk bridge (`g2h` + `g2hd`, running as your user) | done; optional companion, feature-frozen for v0.x |
+| g2h talk bridge (`g2h` + `g2hd`, running as your user) | done; optional, experimental companion, feature-frozen for v0.1 |
 | Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | done (v0.1.0) |
 | OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |

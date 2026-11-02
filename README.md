@@ -68,7 +68,7 @@ today) that implements the rules in [docs/OWNERSHIP.md](docs/OWNERSHIP.md); the 
 Hermes-specific code.
 
 **g2h is an optional, experimental companion and is feature-frozen for v0.1**: bug fixes only, no new features;
-separate-user hardening (#17, #18) is post-launch.
+separate-user hardening (#17) is post-launch.
 
 Details in [ROADMAP.md](ROADMAP.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#today-vs-target).
 
@@ -113,7 +113,7 @@ For a Grok Bot exporting itself, use [docs/AGENT-EXPORT.md](docs/AGENT-EXPORT.md
 ## What it does
 Two tools: **botport** ports and syncs the bot; **g2h** (`g2h` CLI, `g2hd` daemon) is an optional, experimental
 companion that lets the two copies talk. botport works on its own: you do not need to install or run g2h to port, sync
-or test a bot. g2h is feature-frozen for v0.1 (bug fixes only, no new features); separate-user hardening (#17, #18)
+or test a bot. g2h is feature-frozen for v0.1 (bug fixes only, no new features); separate-user hardening (#17)
 is post-launch.
 - **Port.** `export` makes a bundle from a Grok Bot: skills, memory, chat history (read-only), and a checklist of
   what it can't copy. `plan` and `apply` turn that bundle into a Hermes profile. A short spec file says which parts

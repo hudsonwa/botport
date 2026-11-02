@@ -21,7 +21,7 @@ Two kinds of longer-term help would matter most:
    [docs/OWNERSHIP.md](docs/OWNERSHIP.md) (see "Adding a platform" below).
 
 g2h is an optional, experimental companion and is feature-frozen for v0.1: bug fixes only, no new features.
-Separate-user hardening (#17, #18) is post-launch.
+Separate-user hardening (#17) is post-launch.
 
 You don't need to be a Rust expert for everything else: docs, test cases and bug reports with the `--json` output
 attached all help.

@@ -41,12 +41,12 @@ written up in [docs/MODEL.md](docs/MODEL.md).
 
 ## g2h scope
 g2h (`g2h` CLI, `g2hd` daemon) is an optional, experimental companion to botport, and is **feature-frozen for v0.1**:
-bug fixes only, no new features. Separate-user hardening (#17, #18) is post-launch.
+bug fixes only, no new features. Separate-user hardening (#17) is post-launch.
 - **`g2hd` as a separate OS user** (implemented, opt-in, not yet run in production). By default g2h runs as your
   user and is not a security boundary against a bot with a shell as that user; the opt-in `[separate_user]` mode
   and its setup recipe are in [docs/G2H-SEPARATE-USER.md](docs/G2H-SEPARATE-USER.md).
 
-## Planned: a development tier for ops
+## Planned after v0.1: a development tier for ops
 Not implemented yet. The idea: let the Grok-side bot run a few development ops (for example applying an update or
 porting a template) at the auto tier, reading files only from one owner-chosen updates directory, with:
 - a kill switch (a `PAUSE` file in the g2h home stops all such ops);

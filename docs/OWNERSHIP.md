@@ -25,7 +25,8 @@ The writing rule is `should_write`: an item is written when its state is `create
 `conflict` flagged `unrecorded` and `--adopt` was passed; the `export` item is never written (`apply` filters `area !=
 "export"`). A conflict that has a record is never written, with or without `--adopt`. Not every conflict without a
 record is flagged `unrecorded`: a live skill unit the export no longer has, malformed SOUL markers, a name used by two
-cron jobs, and a Hermes-origin skill changed on both sides stay conflicts even with `--adopt`.
+cron jobs stay conflicts even with `--adopt`. So does a skill that originated on the Hermes side and was changed on the
+Grok side since it was sent (it has an `h2g_skills` record; `hermes_origin_item`).
 
 Two `update` items do not fit the "equals the record" meaning: the `export` item from `plan_source` (the source changed
 since the last run; informational, never written), and the manual checklist (`plan_manual`, no record). Spec cron jobs
@@ -57,7 +58,8 @@ There is no record for the USER.md seed, for the spec's own cron jobs, or for th
   With markers: each wanted section is `create` (missing), `in-sync`, `update` (live section equals its record) or
   `conflict`. Without markers, when the spec has no SOUL template and only the persona's instructions are wanted
   (`soul_append`): each section is `in-sync` if its text is already in the file, else `create` (appended). Without
-  markers otherwise: `in-sync` if the file equals the template, `update` if it equals the `__file__` record, else
+  markers otherwise: `in-sync` only when the wanted SOUL is a single section (a template without markers and no
+  persona section added) and the file equals it, `update` if it equals the `__file__` record, else
   `conflict`.
 - **Config leaves** (`plan_config`, `config_item`). Only leaves of the spec's template, minus `preserve`, are owned,
   plus `skills.disabled` when the spec sets `disable_other_skills` (added even if the template lacks it). A list keeps
@@ -128,7 +130,9 @@ The exceptions, stated plainly:
 - an `unrecorded` conflict is overwritten when you pass `--adopt`; that is what the flag is for;
 - config.yaml comments and formatting are not kept when botport writes the file (see Config leaves);
 - updating a skill unit removes files in it that the export no longer has (only when the unit is `update`, i.e.
-  untouched since botport wrote it).
+  untouched since botport wrote it, or an unrecorded conflict you take over with `--adopt`);
+- a live skill unit that is a symlink is read and written through, and the restore point does not hold its files
+  (`files_sorted` skips symlinks): tracked in #18.
 
 ## Hermes -> Grok (`twoway.rs`)
 `collect` builds the bundle for the Grok side: facts the Grok side does not already hold (`norm`, `union_new`), skills
@@ -143,6 +147,6 @@ last sync is a `conflict`: reported, not exported. `record` writes `h2g_skills`,
   those files holds something that looks like a secret, no restore point is written and nothing is applied. An error
   after this point names the restore point and says earlier changes in the run were written.
 - **Operation lock** (`OpLock`, `src/core/util.rs`): an OS file lock (`flock`) on `<profile>/.botport.lock`. `apply`,
-  `sync` and the Hermes -> Grok record take it before they plan; a second writer fails fast naming the holder. A
+  `sync` and the Hermes -> Grok record take it before the plan they write from; a second writer fails fast naming the holder. A
   read-only profile dir with no lock file runs without one (`try_acquire` returns `None`, with a note). The kernel
   releases it when the process exits. `plan` and `drift` never take it.
