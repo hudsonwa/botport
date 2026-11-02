@@ -1,6 +1,7 @@
 # Contributing to botport
 
-Thanks for looking. botport is an early v0.1 by one maintainer. There is no team behind it yet. Two kinds of help
+Thanks for looking. botport is an early v0.1 by one maintainer. There is no team behind it yet, and no outside pull
+request has been merged so far, so the first contributors will help shape how review works here. Two kinds of help
 would matter most:
 1. **A co-maintainer who runs Grok Bots daily**, to own the export brief ([docs/AGENT-EXPORT.md](docs/AGENT-EXPORT.md))
    and the Grok side. The brief is a contract with a closed platform that changes without notice; it needs someone

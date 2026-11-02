@@ -41,7 +41,7 @@ commands as you.
   delivered, yet its generation has already been paid for. Treat the cap as a daily brake, not a budget.
 - **Session map is not pruned:** `sessions.json` in the g2h home keeps per-conversation metadata (stored session id,
   rotation and turn counters, and the truncated last exchanges used for the rotation recap) for every conversation
-  ever seen; nothing removes old entries today, so the file grows slowly and keeps that recap text. Deleting it while `g2hd` is stopped is safe (conversations then start fresh peer sessions).
+  ever seen; nothing removes old entries today, so the file grows slowly and keeps that recap text. Deleting it while `g2hd` is stopped is safe, but a conversation still in use may resume its first peer session rather than a fresh one.
 - **Half-closed clients:** a client that half-closes its write side after sending `wait` is treated as gone and gets
   no answer (its messages stay queued). The bundled `g2h` never does this.
 - **Disconnected `ask`:** if the caller of `ask` goes away, the Hermes turn still finishes (and counts against the
