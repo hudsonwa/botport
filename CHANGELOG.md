@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-11-03
 First public release. The tool was called grok2hermes before release; the old names still work (see
 [REFERENCE.md](docs/REFERENCE.md#compatibility-with-the-old-name)).
 
