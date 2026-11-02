@@ -1,8 +1,14 @@
 # g2h security model
 
+**What g2h is, and is not.** g2h is a bridge between two bots you own, both running as your user. It stops one
+bot's text from being treated as instructions by the other (framing, hop limit, caps, owner-approved ops). It is
+**not** a security boundary against a bot that already has a shell as your user: such a bot can change g2h's config
+or skip g2h entirely. Running `g2hd` as a separate OS user is on the roadmap (status: planned).
+
 g2h connects two bots that act for the same owner on one machine: a Grok Bot (through its computer connector) and a
 Hermes bot. It assumes either bot may be confused or prompt-injected by the other, and that the machine's other users
-are not trusted.
+are not trusted. The defaults below are about those two threats, not about containing a bot that already runs
+commands as you.
 
 ## Assets
 - The routine **webhook URL + sender key**. Anyone holding them can run the owner's routine and spend credit, and
@@ -39,7 +45,7 @@ are not trusted.
 - **Ops threat model:** the allowlist defends against peer-message injection, not against a bot that already has a
   shell as the owner's user. Both bots run as that user, so such a bot can edit `config.toml`, change the approver,
   restart g2hd or act without g2h. The approval code is only as strong as the approver channel's separation from the
-  bots. Use `auto` only for read-only ops (export, battery). For stronger isolation, run g2hd as a separate OS user.
+  bots. Use `auto` only for read-only ops (export, battery). Running g2hd as a separate OS user (planned) would add real isolation.
 
 Waking an idle bot is capped separately by `max_wakes_per_day` (configurable,
 default 10). `g2h status` shows today's op count per tier, e.g.

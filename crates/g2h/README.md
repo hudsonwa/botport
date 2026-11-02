@@ -3,6 +3,11 @@
 The g2h talk bridge (Grok Bot <-> Hermes bot direct chat): the core library plus the `g2hd` daemon and the `g2h` CLI.
 The daemon talks to the bots over a local Unix socket and HTTP wake calls; it opens no network listener.
 
+**What g2h is, and is not.** g2h is a bridge between two bots you own, both running as your user. It stops one
+bot's text from being treated as instructions by the other (framing, hop limit, caps, owner-approved ops). It is
+**not** a security boundary against a bot that already has a shell as your user: such a bot can change g2h's config
+or skip g2h entirely. Running `g2hd` as a separate OS user is on the roadmap (status: planned).
+
 | module | purpose |
 |---|---|
 | `paths` | home dir (`$G2H_HOME`, else `~/.g2h`); socket, log, state, config, credentials paths; `check_perms` refuses a credentials file that is not 0600 |
@@ -116,8 +121,8 @@ bot cannot run an op that the owner did not allow, and cannot approve one. They 
 already has a shell as the owner's user: such a bot can edit `config.toml` (add an op as `auto`, or point
 `[ops_approver]` at itself), restart g2hd, or skip g2h and act directly. The one-time code only helps while the
 approver channel reaches the human and the bot cannot read it. So use `auto` only for read-only ops (export,
-battery), keep the approver on a channel neither bot can read, and for stronger isolation run `g2hd` as a separate
-OS user that owns its config and home.
+battery) and keep the approver on a channel neither bot can read. Running `g2hd` as a separate OS user that owns
+its config and home would add real isolation; it is planned, not built.
 
 **Sending.**
 - `g2h send-op <op> --args '<json object>'` sends a request. It prints the request_id and a status: `done` (handed to

@@ -8,8 +8,8 @@ the hub; adapters are spokes. Every adapter does two things:
 
 **What works today.** A new adapter can read its platform into a `BotModel` (and write one back) and pass the
 conformance suite below. It does **not** yet feed `plan`, `apply` or `sync`: those still run on the Grok bundle through
-Hermes-specific code (see [ARCHITECTURE.md](ARCHITECTURE.md)). Routing them through `BotModel` is separate, planned
-work, so a new adapter on its own does not make `plan` port that platform to Hermes yet.
+Hermes-specific code (see [ARCHITECTURE.md](ARCHITECTURE.md)). Routing them through `BotModel` is in progress
+(see the roadmap in [ARCHITECTURE.md](ARCHITECTURE.md#today-vs-target)), so a new adapter on its own does not make `plan` port that platform to Hermes yet.
 
 ## The trait
 

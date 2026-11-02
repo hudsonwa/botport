@@ -20,6 +20,7 @@ Hand these to an agent and it can do the job for you.
 - [MODEL.md](MODEL.md): the neutral bot model and how each platform maps onto it.
 - [ADAPTERS.md](ADAPTERS.md): write an adapter for another platform; conformance tests.
 - [SECURITY.md](SECURITY.md): the g2h threat model and its known limits.
+- [PLATFORM-CHANGES.md](PLATFORM-CHANGES.md): Grok Bot and Hermes behaviour changes, and how botport adapted.
 - [CI.md](CI.md): continuous integration.
 - [g2h README](../crates/g2h/README.md): the talk bridge crate.
 

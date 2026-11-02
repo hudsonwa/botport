@@ -84,6 +84,16 @@ then logs a dry-run wake (nothing is sent). `g2h selftest --wake-only` checks ju
 
 ## Building release archives
 
-`scripts/build-release.sh [TARGET ...]` writes `dist/release/botport-<target>.tar.gz` + `.sha256`.
-`.github/workflows/release.yml` runs it on every `v*` tag for aarch64/x86_64 macOS and aarch64/x86_64 Linux musl
-and publishes the archives with a combined `SHA256SUMS`.
+`scripts/build-release.sh [TARGET ...]` writes, per target, `dist/release/botport-<target>.tar.gz`,
+`botport-<target>.tar.gz.sha256` (the archive's checksum) and `botport-<target>.sha256` (the checksum of the bare
+`botport` binary, renamed `botport-<target>`). `.github/workflows/release.yml` runs it on every `v*` tag and
+publishes these files plus a combined `SHA256SUMS` (archives only). The release assets are exactly:
+
+| Target | Archive | Checksums |
+|---|---|---|
+| `aarch64-apple-darwin` | `botport-aarch64-apple-darwin.tar.gz` | `.tar.gz.sha256`, `botport-aarch64-apple-darwin.sha256` |
+| `x86_64-apple-darwin` | `botport-x86_64-apple-darwin.tar.gz` | `.tar.gz.sha256`, `botport-x86_64-apple-darwin.sha256` |
+| `x86_64-unknown-linux-musl` | `botport-x86_64-unknown-linux-musl.tar.gz` | `.tar.gz.sha256`, `botport-x86_64-unknown-linux-musl.sha256` |
+| `aarch64-unknown-linux-musl` | `botport-aarch64-unknown-linux-musl.tar.gz` | `.tar.gz.sha256`, `botport-aarch64-unknown-linux-musl.sha256` |
+
+plus `SHA256SUMS`. Each archive holds a `botport-<target>/` directory with `botport`, `grok2hermes`, `g2h` and `g2hd`.
