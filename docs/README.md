@@ -29,7 +29,7 @@ Hand these to an agent and it can do the job for you.
 ## Glossary
 - **botport**: the porting tool (`plan`, `apply`, `sync`, `drift`…). **g2h**: the talk bridge (`g2h` CLI, `g2hd` daemon).
 - **g2h / h2g** (as sync directions): Grok → Hermes and Hermes → Grok. `drift` reports each one.
-- **bundle**: what `export` writes from a Grok Bot (skills, memory, history, checklist); the input to `plan`/`apply`.
+- **bundle**: what `export` writes from a Grok Bot (skills, memory, checklist; chat history only with `--with-history`; personal data, kept private); the input to `plan`/`apply`.
 - **owned leaves**: the parts of the Hermes profile the port spec says botport manages; everything else is left alone.
 - **conflict**: an owned part edited on the Hermes side since the last apply. It is reported, never overwritten.
 - **manual item**: something that can't be copied as a file (a connector, a credential); it goes on the checklist.

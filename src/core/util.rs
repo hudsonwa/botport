@@ -416,6 +416,42 @@ pub fn plain_name(what: &str, s: &str) -> Res<()> {
     Ok(())
 }
 
+/// Write a bundle file that may hold personal data (memories, facts, chat history, the bot's description): the file
+/// 0600, and `root` plus every directory below it on the way to the file 0700. A directory on the way that is a
+/// symlink or not a directory is refused.
+pub fn write_private(root: &Path, rel: &str, data: &[u8]) -> Res<()> {
+    safe_rel("bundle file", rel)?;
+    fs::create_dir_all(root).map_err(|e| format!("mkdir {}: {e}", root.display()))?;
+    private_dir(root, fs::metadata(root).ok())?;
+    let mut d = root.to_path_buf();
+    let parts: Vec<&str> = rel.split('/').collect();
+    for c in &parts[..parts.len() - 1] {
+        d.push(c);
+        let m = fs::symlink_metadata(&d).ok();
+        if m.is_none() {
+            fs::create_dir(&d).map_err(|e| format!("mkdir {}: {e}", d.display()))?;
+        }
+        private_dir(&d, m.or_else(|| fs::symlink_metadata(&d).ok()))?;
+    }
+    write_atomic(&root.join(rel), data, Some(0o600))
+}
+
+fn private_dir(d: &Path, m: Option<fs::Metadata>) -> Res<()> {
+    if !m.is_some_and(|m| m.is_dir()) {
+        return err(format!(
+            "{} is not a directory (or is a symlink)",
+            d.display()
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(d, fs::Permissions::from_mode(0o700))
+            .map_err(|e| format!("chmod {}: {e}", d.display()))?;
+    }
+    Ok(())
+}
+
 /// A relative path that stays below its root: not empty, not absolute, every `/`-separated component non-empty
 /// and not `.` or `..`, no `\` or NUL.
 pub fn safe_rel(what: &str, rel: &str) -> Res<()> {

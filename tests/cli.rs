@@ -380,6 +380,7 @@ fn credential_in_history_is_kept_out() {
         "export",
         "--from-dir",
         s(&g),
+        "--with-history",
         "--history-sqlite",
         s(&h),
         "--out",
@@ -2097,4 +2098,100 @@ fn unwritable_details_report_warns_once_and_keeps_the_exit_code() {
     );
     assert!(err.contains(&bad.display().to_string()), "{err}");
     assert!(!String::from_utf8_lossy(&o.stdout).contains("details:"));
+}
+
+#[cfg(unix)]
+#[test]
+fn clear_out_never_follows_a_symlink() {
+    // A tampered old export lists link/victim while `link` points outside the export dir: the victim must survive.
+    let t = Tmp::new("clrlink");
+    let (g, _) = fixture(&t.0);
+    let outside = t.0.join("outside");
+    w(&outside.join("victim"), "keep me\n");
+    let out = t.0.join("b");
+    fs::create_dir_all(&out).unwrap();
+    std::os::unix::fs::symlink(&outside, out.join("link")).unwrap();
+    w(
+        &out.join("manifest.json"),
+        r#"{"tool":"botport","files":{"link/victim":"x"}}"#,
+    );
+    let (rc, o) = run(&["export", "--from-dir", s(&g), "--out", s(&out)]);
+    assert_eq!(
+        fs::read_to_string(outside.join("victim")).unwrap(),
+        "keep me\n"
+    );
+    assert_ne!(rc, 0, "{o}");
+    assert!(o.contains("link/victim"), "skipped path reported: {o}");
+}
+
+#[cfg(unix)]
+#[test]
+fn bundle_is_private_and_history_is_opt_in() {
+    use std::os::unix::fs::PermissionsExt;
+    let t = Tmp::new("priv");
+    let (g, _) = fixture(&t.0);
+    let h = t.0.join("chat.sqlite");
+    w(&h, "SQLite format 3\0 private chat\n");
+    let describe = t.0.join("d.md");
+    w(&describe, "## Instructions\nBe kind.\n");
+    // default: no history, even when a history file is named; an explicit history path without the flag is refused
+    let out = t.0.join("b");
+    let (rc, o) = run(&[
+        "export",
+        "--from-dir",
+        s(&g),
+        "--describe",
+        s(&describe),
+        "--out",
+        s(&out),
+    ]);
+    assert_eq!(rc, 0, "{o}");
+    assert!(o.contains("history off"), "{o}");
+    assert!(!out.join("history").exists());
+    let (rc, o) = run(&[
+        "export",
+        "--from-dir",
+        s(&g),
+        "--history-sqlite",
+        s(&h),
+        "--out",
+        s(&t.0.join("b2")),
+    ]);
+    assert_eq!(rc, 2, "{o}");
+    assert!(o.contains("--with-history"), "{o}");
+    // opt in: history is written, and every bundle file is 0600 in 0700 dirs
+    let (rc, o) = run(&[
+        "export",
+        "--from-dir",
+        s(&g),
+        "--describe",
+        s(&describe),
+        "--with-history",
+        "--history-sqlite",
+        s(&h),
+        "--out",
+        s(&out),
+    ]);
+    assert_eq!(rc, 0, "{o}");
+    assert!(out.join("history/chat.sqlite").is_file(), "{o}");
+    fn walk(d: &Path, n: &mut usize) {
+        let m = fs::metadata(d).unwrap().permissions().mode() & 0o777;
+        assert_eq!(m, 0o700, "{}", d.display());
+        for e in fs::read_dir(d).unwrap().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, n);
+            } else {
+                *n += 1;
+                let m = fs::metadata(&p).unwrap().permissions().mode() & 0o777;
+                assert_eq!(m, 0o600, "{}", p.display());
+            }
+        }
+    }
+    let mut n = 0;
+    walk(&out, &mut n);
+    assert!(n >= 6, "{n}");
+    // verify still accepts the private bundle
+    let (rc, o) = run(&["verify", "--bundle", s(&out)]);
+    assert_eq!(rc, 0, "{o}");
 }

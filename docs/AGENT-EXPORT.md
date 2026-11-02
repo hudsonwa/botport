@@ -94,11 +94,14 @@ botport routes or refuses values that look like secrets instead of writing them,
   --describe /workspace/exports/describe.md \
   --out /workspace/exports/NAME-g2h-bundle --strict
 /workspace/botport verify --bundle /workspace/exports/NAME-g2h-bundle
-tar -czf /workspace/exports/NAME-g2h-bundle.tgz -C /workspace/exports NAME-g2h-bundle
+(umask 077; tar -czf /workspace/exports/NAME-g2h-bundle.tgz -C /workspace/exports NAME-g2h-bundle)
 ```
-(`--agent-data` defaults to `/home/box/agent-data`, the memory drop to `/workspace/exports/memory-drop`, history to
-`/home/box/agent-data/search-index.db`.) If `--strict` stops on a warning — stale or missing memory drop, missing
-describe file — fix it and re-run. Warnings about redacted history messages are fine.
+(`--agent-data` defaults to `/home/box/agent-data`, the memory drop to `/workspace/exports/memory-drop`.) Chat
+history is **not** exported unless the owner asked for it: then add `--with-history` (it reads
+`/home/box/agent-data/search-index.db`; Hermes doesn't need it). If `--strict` stops on a warning — stale or missing
+memory drop, missing describe file — fix it and re-run. Warnings about redacted history messages are fine.
+The bundle holds the owner's personal data (memories, your description, and history if asked for); its files are
+written `0600`. Hand it only to the owner, as below.
 
 ## Step 6 — hand it over
 Send the owner `/workspace/exports/NAME-g2h-bundle.tgz` and paste the `export` and `verify` summaries (≤ 10 lines

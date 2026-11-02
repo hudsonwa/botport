@@ -15,7 +15,7 @@ use util::*;
 
 const USAGE: &str = "botport <command> [options]   (v{V}; --version prints it)
   export  --out DIR [--from-dir DIR | --agent-data DIR] [--agent-id ID] [--memory-drop DIR]
-          [--history-db FILE | --history-sqlite FILE] [--describe FILE] [--max-memory-age-days 2] [--strict]
+          [--with-history [--history-db FILE | --history-sqlite FILE]] [--describe FILE] [--max-memory-age-days 2] [--strict]
   verify  --bundle DIR
   (a grok-bot-export can also be read as --bundle - (stdin) or --clipboard; it is saved under the state dir first)
   describe --bundle DIR [--describe FILE] [--out FILE|-] [--json]   NOT_CAPTURED.md -> describe.json (default ./describe.json; - = stdout)
@@ -67,6 +67,7 @@ const FLAGS: &[&str] = &[
     "no-cron",
     "version",
     "clipboard",
+    "with-history",
 ];
 
 struct Report {
@@ -392,6 +393,7 @@ fn cmd_export(a: &Args) -> Res<Report> {
             .path("memory-drop")
             .or_else(|| std::env::var_os("BOTPORT_MEMORY_DROP").map(PathBuf::from))
             .unwrap_or_else(|| PathBuf::from("/workspace/exports/memory-drop")),
+        with_history: a.has("with-history"),
         history_db: a.path("history-db"),
         history_sqlite: a.path("history-sqlite"),
         describe: a.path("describe"),
@@ -445,7 +447,13 @@ fn cmd_describe(a: &Args) -> Res<Report> {
         botport::core::secrets::guard("describe.json", json_sorted(&v).as_bytes())?;
         print!("{}", json_sorted(&v));
     } else {
-        write_atomic(&out, json_sorted(&v).as_bytes(), Some(0o644))?;
+        write_atomic(&out, json_sorted(&v).as_bytes(), Some(0o600))?;
+        // write_atomic keeps an existing file's mode; describe.json holds personal data, so force 0600
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| e.to_string())?;
+        }
     }
     let n = |k: &str| v[k].as_array().map_or(0, |x| x.len());
     let other = v["schedules"]
