@@ -3,8 +3,9 @@
 The g2h talk bridge (Grok Bot <-> Hermes bot direct chat): the core library plus the `g2hd` daemon and the `g2h` CLI.
 The daemon talks to the bots over a local Unix socket and HTTP wake calls; it opens no network listener.
 
-**What g2h is, and is not.** g2h is a bridge between two bots you own, both running as your user. It stops one
-bot's text from being treated as instructions by the other (framing, hop limit, caps, owner-approved ops). It is
+**What g2h is, and is not.** g2h is a bridge between two bots you own, both running as your user. It reduces
+the chance that one bot treats the other's text as instructions (framing, hop limit, caps, owner-approved ops); a
+language model can still follow framed text, so this is defence in depth, not a guarantee. It is
 **not** a security boundary against a bot that already has a shell as your user: such a bot can change g2h's config
 or skip g2h entirely. That is the default. Running `g2hd` as a separate OS user is implemented as an opt-in mode
 (`[separate_user]`; not yet run in production): its config, state and approval step are then out of the bots' reach.
@@ -15,7 +16,7 @@ Setup: [G2H-SEPARATE-USER.md](../../docs/G2H-SEPARATE-USER.md). `g2h doctor` say
 | `paths` | home dir (`$G2H_HOME`, else `~/.g2h`); socket, log, state, config, credentials paths; `check_perms` refuses a credentials file that is not 0600 |
 | `isolation` | opt-in `[separate_user]` mode: startup ownership checks, peer-uid check on the socket, `approve` only from the g2h user or root; the `g2h doctor` isolation line |
 | `envelope` | `Envelope` wire type (UUIDv7 id, RFC3339 UTC ts, kind msg/end/error/timeout/ack), canonical JSON + sha256 |
-| `guard` | hop limit (default 3), daily caps (200 msgs / 200k tokens / 10 wakes, local-day rollover), one in-flight turn per direction; injectable clock |
+| `guard` | hop limit (default 3), daily caps (200 msgs / 200k tokens / 10 wakes, local-day rollover), one in-flight Grok-to-Hermes turn per conversation (separate conversations may run concurrently); injectable clock |
 | `framing` | wraps peer text as untrusted data; body cannot forge the closing marker |
 | `secrets` | redacts common key shapes and fingerprinted `.env` values (hashes only) |
 | `log` | append-only JSONL with size rotation; every string redacted first |
