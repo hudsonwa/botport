@@ -35,7 +35,7 @@ Platform changes we hit and how the brief or tool adapted are logged in
 | Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | done (v0.1.0) |
 | OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |
-| `g2hd` running as a separate OS user | planned |
+| `g2hd` running as a separate OS user | implemented, opt-in (not yet run in production) |
 
 The OpenClaw and OpenBot adapters are what the `BotModel` seam is for: plan/apply/sync/drift now run on the neutral
 model, so each new platform needs one adapter that reads into (and writes from) that model. Neither adapter has code yet.
@@ -63,7 +63,7 @@ message it should send you, and how to keep secrets out of the chat.
 For a Grok Bot exporting itself, use [docs/AGENT-EXPORT.md](docs/AGENT-EXPORT.md).
 
 ## Manual quickstart (about 5 minutes)
-1. Install: see [docs/INSTALL.md](docs/INSTALL.md), or build from source with `cargo build --release` and add
+1. Install: see [docs/INSTALL.md](docs/INSTALL.md) (curl script, or `pipx install botport` once it is on PyPI), or build from source with `cargo build --release` and add
    `target/release` to your `PATH` (`export PATH="$PWD/target/release:$PATH"`).
 2. Try it on the example bot. Nothing here touches your real Hermes setup:
    ```sh

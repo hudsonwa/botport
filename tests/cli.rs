@@ -1390,3 +1390,85 @@ fn verify_check_routines_warns_on_missing_and_never_fails() {
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stdout).contains("no Grok desktop cache found; skipped"));
 }
+
+#[test]
+fn profile_names_must_be_plain() {
+    let t = Tmp::new("profname");
+    let (g, spec) = fixture(&t.0);
+    let hh = t.0.join("hermes");
+    for bad in ["../escape", "a/b", ".hidden", ".."] {
+        for cmd in ["plan", "apply"] {
+            let (rc, out) = run(&[
+                cmd,
+                "--bundle",
+                s(&g),
+                "--spec",
+                s(&spec),
+                "--hermes-home",
+                s(&hh),
+                "--profile",
+                bad,
+            ]);
+            assert_ne!(rc, 0, "{cmd} {bad}: {out}");
+            assert!(out.contains("plain name"), "{cmd} {bad}: {out}");
+        }
+    }
+    assert!(!t.0.join("escape").exists());
+    assert!(!hh.join("profiles").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn unlisted_symlinked_skill_dir_is_refused_by_verify_plan_and_apply() {
+    let t = Tmp::new("symskill");
+    let (g, spec) = fixture(&t.0);
+    let hh = t.0.join("hermes");
+    w(
+        &t.0.join("outside/evil/SKILL.md"),
+        "---\nname: evil\n---\nx\n",
+    );
+    w(&t.0.join("outside/evil/diary.txt"), "private\n");
+    let b = t.0.join("B");
+    let (rc, out) = run(&["export", "--from-dir", s(&g), "--out", s(&b)]);
+    assert_eq!(rc, 0, "{out}");
+    let (rc, out) = run(&["verify", "--bundle", s(&b)]);
+    assert_eq!(rc, 0, "{out}");
+    std::os::unix::fs::symlink(t.0.join("outside/evil"), b.join("normalized/skills/evil")).unwrap();
+    // the legacy layout gets the same no-follow check
+    std::os::unix::fs::symlink(t.0.join("outside/evil"), g.join("skills/evil")).unwrap();
+    let (rc, out) = run(&["verify", "--bundle", s(&b)]);
+    assert_ne!(rc, 0, "{out}");
+    assert!(out.contains("normalized/skills/evil"), "{out}");
+    for bundle in [&b, &g] {
+        for cmd in ["plan", "apply"] {
+            let (rc, out) = run(&[
+                cmd,
+                "--bundle",
+                s(bundle),
+                "--spec",
+                s(&spec),
+                "--hermes-home",
+                s(&hh),
+            ]);
+            assert_ne!(rc, 0, "{cmd} {}: {out}", bundle.display());
+            assert!(out.contains("skills/evil"), "{cmd}: {out}");
+        }
+    }
+    assert!(!hh.join("profiles").exists());
+}
+
+#[test]
+fn test_profile_name_must_be_plain() {
+    let t = Tmp::new("testprof");
+    let (rc, out) = run(&[
+        "test",
+        "--profile",
+        "../escape",
+        "--battery",
+        s(&t.0.join("none.json")),
+        "--hermes-bin",
+        "false",
+    ]);
+    assert_ne!(rc, 0, "{out}");
+    assert!(out.contains("plain name"), "{out}");
+}

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 use g2h::config::Config;
 use g2h::daemon::{self, AnyBackend, DaemonOptions};
 use g2h::paths::Paths;

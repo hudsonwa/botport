@@ -9,7 +9,7 @@
 //!
 //! A directory without manifest.json is read as a legacy hand export (profile.json, settings.json, MEMORY.md,
 //! skills/<name>/SKILL.md at its top level, like `examples/acme/grok/`) and normalized in memory.
-use crate::util::*;
+use crate::core::util::*;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::fs;
@@ -75,74 +75,91 @@ pub fn load(dir: &Path) -> Res<Bundle> {
         return err(format!("bundle not found: {}", dir.display()));
     }
     let exported = dir.join("manifest.json").is_file();
-    if exported {
-        let v = verify(dir)?;
+    // Exported: only the manifest-listed regular files verify read and hash-checked. Legacy: no symlink or
+    // special entry anywhere, and every read is no-follow and confined to the bundle root.
+    let bytes: BTreeMap<String, Vec<u8>> = if exported {
+        let (v, good) = verify_read(dir)?;
         if !v.ok {
             return err(format!(
                 "bundle fails verify ({}); re-export it",
                 v.problems.join("; ")
             ));
         }
-    }
-    let base = if exported {
-        dir.join("normalized")
+        good
     } else {
-        dir.to_path_buf()
-    };
-    let mut read = BTreeMap::new();
-    let mut get = |rel: &str| -> Res<Option<Vec<u8>>> {
-        let p = base.join(rel);
-        if !p.is_file() {
-            return Ok(None);
+        let bad = special_entries(dir);
+        if !bad.is_empty() {
+            return err(format!(
+                "bundle holds symlinks or special files ({}); refusing to read it",
+                bad.join(", ")
+            ));
         }
-        let b = read_bytes_rec(&p)?;
-        read.insert(rel.to_string(), sha256_hex(&b));
-        Ok(Some(b))
+        let root = dir
+            .canonicalize()
+            .map_err(|e| format!("{}: {e}", dir.display()))?;
+        let mut out = BTreeMap::new();
+        for rel in files_sorted(dir) {
+            let r = rel_str(&rel);
+            match read_confined(&root, dir, &r) {
+                Ok(b) => {
+                    out.insert(r, b);
+                }
+                Err(e) => return err(format!("{r}: refusing to read ({e:?})")),
+            }
+        }
+        out
     };
-    let profile: Value = match get("profile.json")? {
+    let base = if exported { "normalized/" } else { "" };
+    let mut read = BTreeMap::new();
+    let mut get = |rel: &str| -> Option<Vec<u8>> {
+        let b = bytes.get(&format!("{base}{rel}"))?.clone();
+        read.insert(rel.to_string(), sha256_hex(&b));
+        Some(b)
+    };
+    let profile: Value = match get("profile.json") {
         Some(b) => serde_json::from_slice(&b).map_err(|e| format!("profile.json: {e}"))?,
         None => json!({}),
     };
-    get("settings.json")?;
-    let mut memory_md = match get("MEMORY.md")? {
+    get("settings.json");
+    let mut memory_md = match get("MEMORY.md") {
         Some(b) => Some(String::from_utf8(b).map_err(|_| "MEMORY.md is not UTF-8")?),
         None => None,
     };
-    let mut skills = BTreeMap::new();
-    let sroot = base.join("skills");
-    if sroot.is_dir() {
-        let mut names: Vec<_> = fs::read_dir(&sroot)
-            .map_err(|e| e.to_string())?
-            .flatten()
-            .filter(|e| e.path().join("SKILL.md").is_file())
-            .map(|e| e.file_name().to_string_lossy().to_string())
-            .collect();
-        names.sort();
-        for n in names {
-            let mut files = BTreeMap::new();
-            for rel in files_sorted(&sroot.join(&n)) {
-                let r = rel_str(&rel);
-                let key = format!("skills/{n}/{r}");
-                let b = get(&key)?.unwrap_or_default();
-                let b = if !exported && r.ends_with(".md") {
-                    unescape(&String::from_utf8_lossy(&b)).into_bytes()
-                } else {
-                    b
-                };
-                files.insert(r, b);
-            }
-            skills.insert(n, files);
+    // skills/<n>/... for every <n> holding a SKILL.md, from the confined file set only
+    let spre = format!("{base}skills/");
+    let mut skill_files: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for k in bytes.keys() {
+        if let Some((n, r)) = k.strip_prefix(&spre).and_then(|t| t.split_once('/')) {
+            skill_files
+                .entry(n.to_string())
+                .or_default()
+                .push(r.to_string());
         }
+    }
+    let mut skills = BTreeMap::new();
+    for (n, rels) in skill_files {
+        if !rels.iter().any(|r| r == "SKILL.md") {
+            continue;
+        }
+        let mut files = BTreeMap::new();
+        for r in rels {
+            let b = get(&format!("skills/{n}/{r}")).unwrap_or_default();
+            let b = if !exported && r.ends_with(".md") {
+                unescape(&String::from_utf8_lossy(&b)).into_bytes()
+            } else {
+                b
+            };
+            files.insert(r, b);
+        }
+        skills.insert(n, files);
     }
     let mut facts: Vec<String> = memory_md
         .iter()
         .flat_map(|m| m.lines().map(String::from))
         .collect();
-    let p = dir.join("memory/memory.jsonl");
-    if p.is_file() {
-        let b = crate::util::read(&p)?;
-        read.insert("memory/memory.jsonl".into(), sha256_hex(&b));
-        let rows = parse_jsonl(&String::from_utf8_lossy(&b));
+    if let Some(b) = bytes.get("memory/memory.jsonl") {
+        read.insert("memory/memory.jsonl".into(), sha256_hex(b));
+        let rows = parse_jsonl(&String::from_utf8_lossy(b));
         facts.extend(
             rows.iter()
                 .filter_map(|r| r["fact"].as_str().map(String::from)),
@@ -151,18 +168,13 @@ pub fn load(dir: &Path) -> Res<Bundle> {
             memory_md = Some(render_memory(&rows));
         }
     }
-    let (agent_id, name) = if exported {
-        let m: Value = serde_json::from_slice(&read_bytes_rec(&dir.join("manifest.json"))?)
+    let name = profile["name"].as_str().unwrap_or("").to_string();
+    let agent_id = if exported {
+        let m: Value = serde_json::from_slice(bytes.get("manifest.json").map_or(&[][..], |b| b))
             .map_err(|e| format!("manifest.json: {e}"))?;
-        (
-            m["agent_id"].as_str().unwrap_or("").to_string(),
-            profile["name"].as_str().unwrap_or("").to_string(),
-        )
+        m["agent_id"].as_str().unwrap_or("").to_string()
     } else {
-        (
-            String::new(),
-            profile["name"].as_str().unwrap_or("").to_string(),
-        )
+        String::new()
     };
     Ok(Bundle {
         root: dir.to_path_buf(),
@@ -176,10 +188,6 @@ pub fn load(dir: &Path) -> Res<Bundle> {
         instructions: String::new(),
         user_facts: vec![],
     })
-}
-
-fn read_bytes_rec(p: &Path) -> Res<Vec<u8>> {
-    read(p)
 }
 
 // ---------------------------------------------------------------- memory-drop contract (from grok-bot-backup)
@@ -628,10 +636,10 @@ pub fn export(o: &ExportOpts) -> Res<ExportResult> {
         not_captured(&describe, &excluded).as_bytes(),
     )?;
     if !describe.trim().is_empty() {
-        let d = crate::describe::parse(&describe);
+        let d = crate::adapters::grok_bot::describe::parse(&describe);
         out.put(
             "normalized/describe.json",
-            crate::util::json_sorted(&d).as_bytes(),
+            crate::core::util::json_sorted(&d).as_bytes(),
         )?;
     }
     // 6. manifest (no timestamps: identical input -> identical bytes)
@@ -744,35 +752,62 @@ pub struct VerifyResult {
 }
 
 pub fn verify(dir: &Path) -> Res<VerifyResult> {
-    let man = dir.join("manifest.json");
-    if !man.is_file() && dir.join("profile.json").is_file() {
+    verify_read(dir).map(|(v, _)| v)
+}
+
+/// [`verify`], plus the bytes of every listed file that passed (read once, no-follow, hash checked), keyed by
+/// manifest path, with `manifest.json` itself. [`load`] uses exactly these bytes.
+fn verify_read(dir: &Path) -> Res<(VerifyResult, BTreeMap<String, Vec<u8>>)> {
+    if !dir.join("manifest.json").is_file() && dir.join("profile.json").is_file() {
         return Err(
             "no manifest.json: this is a legacy hand export; verify needs an `export` bundle"
                 .into(),
         );
     }
-    let m: Value =
-        serde_json::from_slice(&read(&man)?).map_err(|e| format!("manifest.json: {e}"))?;
+    let root = dir
+        .canonicalize()
+        .map_err(|e| format!("{}: {e}", dir.display()))?;
+    let mb = match read_confined(&root, dir, "manifest.json") {
+        Ok(b) => b,
+        Err(Confined::NotRegular) | Err(Confined::Outside) => {
+            return err("manifest.json is not a regular file in the bundle (symlink or special)")
+        }
+        Err(e) => return err(format!("manifest.json: {e:?}")),
+    };
+    let m: Value = serde_json::from_slice(&mb).map_err(|e| format!("manifest.json: {e}"))?;
     let files = m["files"].as_object().ok_or("manifest has no files")?;
     let mut problems = vec![];
     let mut seen = BTreeMap::new();
+    let mut good = BTreeMap::new();
+    // Every symlink or special entry anywhere in the bundle, listed or not: nothing is ever read through one.
+    for r in special_entries(dir) {
+        problems.push(format!("not a regular file (symlink or special): {r}"));
+    }
     for (rel, sha) in files {
-        if rel.split('/').any(|c| c == ".." || c.is_empty()) || rel.starts_with('/') {
+        seen.insert(rel.clone(), sha.as_str().unwrap_or("").to_string());
+        if crate::core::util::safe_rel("manifest", rel).is_err() {
             problems.push(format!("unsafe path in manifest: {rel}"));
             continue;
         }
-        match fs::read(dir.join(rel)) {
+        // Only regular files read through no symlink, confined to the bundle root (not a link to /etc/hosts).
+        match read_confined(&root, dir, rel) {
             Ok(b) if bundle_secret(&b) => {
                 let why = crate::core::secrets::guard(rel, &b)
                     .err()
                     .unwrap_or_default();
                 problems.push(format!("credential-like content: {why}"))
             }
-            Ok(b) if Some(sha256_hex(&b).as_str()) == sha.as_str() => {}
+            Ok(b) if Some(sha256_hex(&b).as_str()) == sha.as_str() => {
+                good.insert(rel.clone(), b);
+            }
             Ok(_) => problems.push(format!("hash mismatch: {rel}")),
-            Err(_) => problems.push(format!("missing: {rel}")),
+            Err(Confined::Missing) => problems.push(format!("missing: {rel}")),
+            Err(Confined::NotRegular) => {
+                problems.push(format!("not a regular file (symlink or special): {rel}"))
+            }
+            Err(Confined::Outside) => problems.push(format!("outside the bundle: {rel}")),
+            Err(Confined::Io(e)) => problems.push(format!("unreadable: {rel}: {e}")),
         }
-        seen.insert(rel.clone(), sha.as_str().unwrap_or("").to_string());
     }
     for rel in files_sorted(dir) {
         let r = rel_str(&rel);
@@ -787,17 +822,59 @@ pub fn verify(dir: &Path) -> Res<VerifyResult> {
     if m["digest"].as_str() != Some(digest.as_str()) {
         problems.push("manifest digest does not match its file list".into());
     }
-    Ok(VerifyResult {
-        ok: problems.is_empty(),
-        problems,
-        files: files.len(),
-        digest,
-    })
+    good.insert("manifest.json".into(), mb);
+    Ok((
+        VerifyResult {
+            ok: problems.is_empty(),
+            problems,
+            files: files.len(),
+            digest,
+        },
+        good,
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn verify_rejects_symlinks_out_of_the_bundle() {
+        let d = std::env::temp_dir().join(format!("botport-verify-link-{}", std::process::id()));
+        let b = d.join("bundle");
+        fs::create_dir_all(b.join("sub")).unwrap();
+        let outside = d.join("outside.txt");
+        fs::write(&outside, "outside\n").unwrap();
+        std::os::unix::fs::symlink(&outside, b.join("a.txt")).unwrap();
+        // a link through a symlinked directory, too
+        std::os::unix::fs::symlink(&d, b.join("sub/up")).unwrap();
+        let sha = sha256_hex(b"outside\n");
+        let files: BTreeMap<String, String> = [
+            ("a.txt".to_string(), sha.clone()),
+            ("sub/up/outside.txt".to_string(), sha),
+        ]
+        .into();
+        let man = serde_json::json!({"files": files, "digest": digest_pairs(&files)});
+        fs::write(b.join("manifest.json"), serde_json::to_vec(&man).unwrap()).unwrap();
+        let r = verify(&b).unwrap();
+        assert!(!r.ok, "{:?}", r.problems);
+        assert!(
+            r.problems
+                .iter()
+                .any(|p| p.contains("a.txt") && p.contains("not a regular file")),
+            "{:?}",
+            r.problems
+        );
+        assert!(
+            r.problems
+                .iter()
+                .any(|p| p.contains("sub/up/outside.txt") && p.contains("outside the bundle")),
+            "{:?}",
+            r.problems
+        );
+        fs::remove_dir_all(&d).unwrap();
+    }
 
     #[test]
     fn secrets_by_name_and_content() {

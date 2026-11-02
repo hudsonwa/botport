@@ -94,14 +94,10 @@ fn an_adapter_that_drops_unscheduled_items_fails() {
 }
 
 #[test]
-#[should_panic(expected = "dropped")]
-fn an_adapter_that_drops_connectors_fails() {
-    // the profile's config.yaml (kept whole in `extras`) also holds the server, so drop both
-    let drop = Dropping(|m| {
-        m.connectors.clear();
-        m.extras.clear();
-    });
-    c::round_trips_connectors(&drop, &fixture("hermes"));
+#[should_panic(expected = "(bare true): connector")]
+fn an_adapter_that_keeps_connectors_only_in_extras_fails() {
+    // the profile's config.yaml (kept whole in `extras`) still holds the server, so only the bare pass catches it
+    c::round_trips_connectors(&Dropping(|m| m.connectors.clear()), &fixture("hermes"));
 }
 
 #[test]
@@ -147,4 +143,31 @@ fn the_grok_adapter_dropping_connectors_fails_too() {
 fn the_grok_adapter_dropping_credential_names_fails_too() {
     let drop = GrokDropping(|m| m.credentials.clear());
     c::round_trips_credential_names(&drop, &fixture("grok-bot"));
+}
+
+#[test]
+fn adapter_write_refuses_unsafe_skill_names_and_paths() {
+    let adapters: [(&dyn Adapter, &str); 2] = [(&GrokBot, "grok-bot"), (&HermesProfile, "hermes")];
+    for (a, id) in adapters {
+        let base =
+            std::env::temp_dir().join(format!("botport-unsafe-write-{id}-{}", std::process::id()));
+        let good = a.read(&fixture(id)).unwrap();
+        let mut by_name = good.clone();
+        let mut s = good.skills[0].clone();
+        s.name = "../../evil".into();
+        by_name.skills.push(s);
+        let mut by_rel = good.clone();
+        by_rel.skills[0]
+            .files
+            .insert("../../../escaped.md".into(), "x\n".into());
+        for m in [by_name, by_rel] {
+            let d = base.join("out/dest");
+            assert!(a.write(&m, &d).is_err(), "{id}");
+            assert!(
+                !base.join("evil").exists() && !base.join("escaped.md").exists(),
+                "{id}"
+            );
+        }
+        std::fs::remove_dir_all(&base).ok();
+    }
 }

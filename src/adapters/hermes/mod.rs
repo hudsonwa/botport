@@ -149,16 +149,71 @@ impl Adapter for HermesProfile {
             out.push(("memories/USER.md".into(), user.into_bytes()));
         }
         for s in &m.skills {
+            plain_name("skill name", &s.name)?;
             for (rel, body) in s.bytes() {
+                safe_rel("skill file path", &rel)?;
                 out.push((format!("skills/{}/{rel}", s.name), body));
             }
         }
-        let (jobs, mcp, manual) = sync::from_described(m, &[], &[], &[]);
+        let kept = m.extras.get(ID).and_then(|x| x.get("config")).cloned();
+        // Each model connector goes under a kept `mcp_servers` key with its own name (skipped when that entry
+        // already says the same, as `read_connectors` reads it), else under its slug, else (the slug is a
+        // different kept server) under the first free `<slug>-N`: a kept server is never merged into another.
+        let servers = kept
+            .as_ref()
+            .and_then(|c| c.get("mcp_servers")?.as_object().cloned())
+            .unwrap_or_default();
+        let mut m = m.clone();
+        let connectors = std::mem::take(&mut m.connectors);
+        let (jobs, mut mcp, mut manual) = sync::from_described(&m, &[], &[], &[]);
+        let mut taken: Vec<String> = servers.keys().cloned().collect();
+        for c in connectors {
+            let key = match servers.get(&c.name) {
+                Some(v) => {
+                    let tools: Vec<&str> = v["tools"]["include"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|t| t.as_str())
+                        .collect();
+                    if v["url"].as_str() == c.url.as_deref() && tools == c.tools {
+                        continue;
+                    }
+                    Some(c.name.clone())
+                }
+                None => None,
+            };
+            let one = BotModel {
+                connectors: vec![c.clone()],
+                schedules: vec![],
+                credentials: vec![],
+                manual: vec![],
+                ..m.clone()
+            };
+            let (_, entries, items) = sync::from_described(&one, &[], &[], &[]);
+            manual.extend(items);
+            for (id, entry) in entries {
+                let id = key.clone().unwrap_or_else(|| {
+                    let free = |k: &String| !taken.contains(k);
+                    std::iter::once(id.clone())
+                        .chain((2..).map(|n| format!("{id}-{n}")))
+                        .find(free)
+                        .unwrap()
+                });
+                taken.push(id.clone());
+                mcp.push((id, entry));
+            }
+        }
+        manual.sort();
+        manual.dedup_by(|a, b| a.0 == b.0);
         if !jobs.is_empty() {
+            // names stay as the schedules have them: the `<Bot>: ` prefix is for jobs in a shared live profile
+            let prefix = format!("{}: ", sync::bot_name(&m));
             let jobs: Vec<serde_json::Value> = jobs
                 .iter()
                 .map(|j| {
-                    json!({"name": j.name, "prompt": j.prompt, "deliver": j.deliver, "enabled": false,
+                    let name = j.name.strip_prefix(&prefix).unwrap_or(&j.name);
+                    json!({"name": name, "prompt": j.prompt, "deliver": j.deliver, "enabled": false,
                     "schedule": {"kind": "cron", "expr": j.schedule}, "paused_reason": j.paused_reason})
                 })
                 .collect();
@@ -167,13 +222,20 @@ impl Adapter for HermesProfile {
                 json_sorted(&json!({ "jobs": jobs })).into_bytes(),
             ));
         }
-        let kept = m.extras.get(ID).and_then(|x| x.get("config")).cloned();
         if !mcp.is_empty() || kept.is_some() {
             let mut cfg: Y = match kept {
                 Some(v) => serde_yaml::to_value(v).map_err(|e| e.to_string())?,
                 None => Y::Mapping(Default::default()),
             };
             for (id, entry) in mcp {
+                // the model's url and tools replace a kept entry's (other kept fields, e.g. headers, stay)
+                if let Some(Y::Mapping(e)) = cfg.get_mut("mcp_servers").and_then(|s| s.get_mut(&id))
+                {
+                    e.remove("url");
+                    if let Some(Y::Mapping(t)) = e.get_mut("tools") {
+                        t.remove("include");
+                    }
+                }
                 let mut ls = vec![];
                 sync::leaves(&entry, &mut vec!["mcp_servers".into(), id], &mut ls);
                 for (path, v) in ls {
@@ -186,7 +248,16 @@ impl Adapter for HermesProfile {
             ));
         }
         if !manual.is_empty() {
-            out.push((sync::MANUAL.into(), sync::manual_text(&manual).into_bytes()));
+            // items a human ticked off stay ticked
+            let mut text = sync::manual_text(&[]);
+            for (n, todo) in &manual {
+                let done = m
+                    .manual
+                    .iter()
+                    .any(|x| x.done && x.item == *n && x.todo == *todo);
+                text += &format!("- [{}] {n}: {todo}\n", if done { "x" } else { " " });
+            }
+            out.push((sync::MANUAL.into(), text.into_bytes()));
         }
         for (rel, b) in &out {
             write_atomic(&dest.join(rel), b, None)?;
@@ -262,22 +333,53 @@ fn read_manual(src: &Path) -> (Vec<CredentialRef>, Vec<ManualItem>) {
         else {
             continue;
         };
-        let Some((item, todo)) = rest.split_once(": ") else {
+        let Some((item, todo)) = split_manual(rest) else {
             continue;
         };
         match item.strip_prefix("credential ") {
             Some(n)
                 if !n.starts_with('(') && crate::core::secrets::credential_name(n).is_none() =>
             {
-                creds.push(CredentialRef::new(n))
+                creds.push(CredentialRef::new(n));
+                // a ticked credential line stays ticked: `write` finds its tick among the manual items
+                if !l.starts_with("- [ ]") {
+                    manual.push(ManualItem {
+                        done: true,
+                        ..ManualItem::new(item, todo)
+                    });
+                }
             }
             _ => manual.push(ManualItem {
-                item: item.into(),
-                todo: todo.into(),
+                done: !l.starts_with("- [ ]"),
+                ..ManualItem::new(item, todo)
             }),
         }
     }
     (creds, manual)
+}
+
+/// `<item>: <todo>` split at the `": "` before a todo botport writes (names and todos may hold `": "` too), else
+/// at the first one.
+fn split_manual(rest: &str) -> Option<(&str, &str)> {
+    const TODOS: [&str; 5] = [
+        "not imported: ",
+        "event-triggered on the Grok side",
+        "set it on the Hermes side by hand",
+        "runs on another machine",
+        "app without an MCP url",
+    ];
+    let known = |t: &str| {
+        TODOS.iter().any(|p| t.starts_with(p))
+            || (t.starts_with("no ")
+                && t.contains(" in the description: create the Hermes cron job"))
+            || t.split_once(' ').is_some_and(|(k, r)| {
+                !k.contains(':') && r.starts_with("connector: enable the matching")
+            })
+    };
+    rest.match_indices(": ")
+        .map(|(i, _)| (&rest[..i], &rest[i + 2..]))
+        .find(|(_, t)| known(t))
+        .or_else(|| rest.split_once(": "))
 }
 
 /// Profile data the model has no field for: config.yaml (secret-looking keys dropped) and the cron jobs.
