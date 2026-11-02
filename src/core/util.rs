@@ -47,6 +47,70 @@ pub fn files_sorted(root: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// Every entry under `root` that is neither a directory nor a regular file (symlinks included, never followed),
+/// as relative paths, sorted.
+pub fn special_entries(root: &Path) -> Vec<String> {
+    fn walk(base: &Path, dir: &Path, out: &mut Vec<String>) {
+        let Ok(rd) = fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            let p = e.path();
+            match fs::symlink_metadata(&p).map(|m| m.file_type()) {
+                Ok(ft) if ft.is_dir() => walk(base, &p, out),
+                Ok(ft) if ft.is_file() => {}
+                _ => out.push(rel_str(p.strip_prefix(base).unwrap_or(&p))),
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, &mut out);
+    out.sort();
+    out
+}
+
+/// Why [`read_confined`] refused a path.
+#[derive(Debug, PartialEq)]
+pub enum Confined {
+    Missing,
+    NotRegular,
+    Outside,
+    Io(String),
+}
+
+/// Read `dir/rel` only if it is a regular file reached through no symlink and inside `root` (the canonical
+/// `dir`). The opened file must be the same inode `lstat` saw, so a swap to a symlink in between is refused.
+pub fn read_confined(root: &Path, dir: &Path, rel: &str) -> Result<Vec<u8>, Confined> {
+    if safe_rel("path", rel).is_err() {
+        return Err(Confined::Outside);
+    }
+    let p = dir.join(rel);
+    let md = match fs::symlink_metadata(&p) {
+        Ok(m) => m,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(Confined::Missing),
+        Err(e) => return Err(Confined::Io(e.to_string())),
+    };
+    if !md.file_type().is_file() {
+        return Err(Confined::NotRegular);
+    }
+    if !p.canonicalize().is_ok_and(|c| c.starts_with(root)) {
+        return Err(Confined::Outside);
+    }
+    let mut f = fs::File::open(&p).map_err(|e| Confined::Io(e.to_string()))?;
+    let fmd = f.metadata().map_err(|e| Confined::Io(e.to_string()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if (fmd.dev(), fmd.ino()) != (md.dev(), md.ino()) {
+            return Err(Confined::NotRegular);
+        }
+    }
+    if !fmd.is_file() {
+        return Err(Confined::NotRegular);
+    }
+    let mut b = Vec::new();
+    std::io::Read::read_to_end(&mut f, &mut b).map_err(|e| Confined::Io(e.to_string()))?;
+    Ok(b)
+}
+
 pub fn rel_str(p: &Path) -> String {
     p.components()
         .map(|c| c.as_os_str().to_string_lossy())
@@ -92,30 +156,100 @@ pub fn write_atomic(p: &Path, data: &[u8], mode: Option<u32>) -> Res<()> {
 fn write_unguarded(p: &Path, data: &[u8], mode: Option<u32>) -> Res<()> {
     let dir = p.parent().ok_or("no parent")?;
     fs::create_dir_all(dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
-    let tmp = dir.join(format!(
-        ".{}.g2h-new",
-        p.file_name().unwrap().to_string_lossy()
-    ));
-    {
-        let mut f = fs::File::create(&tmp).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-        f.write_all(data)
-            .map_err(|e| format!("write {}: {e}", tmp.display()))?;
-        f.sync_all().ok();
-    }
+    // An existing file keeps its permission bits; otherwise `mode`; set on the new file before any data is written.
     #[cfg(unix)]
-    {
+    let m = {
         use std::os::unix::fs::PermissionsExt;
-        let m = fs::metadata(p)
+        fs::metadata(p)
             .ok()
             .map(|m| m.permissions().mode())
-            .or(mode);
-        if let Some(m) = m {
-            fs::set_permissions(&tmp, fs::Permissions::from_mode(m & 0o7777)).ok();
-        }
-    }
+            .or(mode)
+    };
     #[cfg(not(unix))]
     let _ = mode;
-    fs::rename(&tmp, p).map_err(|e| format!("rename {}: {e}", p.display()))
+    // Unpredictable temp name, created exclusively (O_EXCL): never opens or follows a file or symlink already there.
+    p.file_name().ok_or("no file name")?;
+    let (tmp, mut f) = loop {
+        let tmp = dir.join(format!(".botport-tmp.{}", random_hex()));
+        let mut o = fs::OpenOptions::new();
+        o.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            o.mode(m.unwrap_or(0o666) & 0o7777);
+        }
+        match o.open(&tmp) {
+            Ok(f) => break (tmp, f),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("write {}: {e}", tmp.display())),
+        }
+    };
+    let done = (|| -> std::io::Result<()> {
+        #[cfg(unix)]
+        if let Some(m) = m {
+            // the umask may have narrowed the creation mode; set it exactly, on the open file
+            use std::os::unix::fs::PermissionsExt;
+            f.set_permissions(fs::Permissions::from_mode(m & 0o7777))?;
+        }
+        f.write_all(data)?;
+        f.sync_all().ok();
+        Ok(())
+    })();
+    drop(f);
+    if let Err(e) = done
+        .map_err(|e| format!("write {}: {e}", tmp.display()))
+        .and_then(|_| fs::rename(&tmp, p).map_err(|e| format!("rename {}: {e}", p.display())))
+    {
+        fs::remove_file(&tmp).ok();
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// 128 random bits as hex (the OS RNG; a time/pid/counter hash only if /dev/urandom is unreadable).
+fn random_hex() -> String {
+    let mut b = [0u8; 16];
+    let ok = fs::File::open("/dev/urandom")
+        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut b))
+        .is_ok();
+    if !ok {
+        static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let h = Sha256::digest(format!("{t}:{}:{n}:{:p}", std::process::id(), &b).as_bytes());
+        b.copy_from_slice(&h[..16]);
+    }
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// A plain name for one path component (a profile, a skill category or name): not empty, no `/` or `\`, no
+/// leading `.` (so neither `.` nor `..`), no NUL.
+pub fn plain_name(what: &str, s: &str) -> Res<()> {
+    if s.is_empty() || s.starts_with('.') || s.contains(['/', '\\', '\0']) {
+        return err(format!(
+            "invalid {what} {s:?}: must be a plain name (no '/', no leading '.', not empty)"
+        ));
+    }
+    Ok(())
+}
+
+/// A relative path that stays below its root: not empty, not absolute, every `/`-separated component non-empty
+/// and not `.` or `..`, no `\` or NUL.
+pub fn safe_rel(what: &str, rel: &str) -> Res<()> {
+    if rel.is_empty()
+        || rel.contains(['\\', '\0'])
+        || rel
+            .split('/')
+            .any(|c| c.is_empty() || c == "." || c == "..")
+    {
+        return err(format!(
+            "unsafe {what} path {rel:?}: must stay below its directory"
+        ));
+    }
+    Ok(())
 }
 
 /// Pretty JSON with sorted keys (serde_json::Map is a BTreeMap here) and a trailing newline.
@@ -249,6 +383,59 @@ pub fn unhex(s: &str) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn plain_names_and_safe_rels() {
+        for ok in ["demo", "my-bot_2", "a.b"] {
+            assert!(super::plain_name("profile", ok).is_ok(), "{ok}");
+        }
+        for bad in ["", ".", "..", ".hidden", "a/b", "../x", "a\\b"] {
+            assert!(super::plain_name("profile", bad).is_err(), "{bad}");
+        }
+        for ok in ["SKILL.md", "references/x.md"] {
+            assert!(super::safe_rel("skill file", ok).is_ok(), "{ok}");
+        }
+        for bad in ["", "/etc/x", "../x", "a/../../x", "a//b", "./a", "a\\..\\b"] {
+            assert!(super::safe_rel("skill file", bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn write_atomic_handles_a_212_byte_file_name() {
+        let d = std::env::temp_dir().join(format!("botport-longname-{}", std::process::id()));
+        let p = d.join(format!("{}.md", "r".repeat(212)));
+        super::write_atomic(&p, b"long", None).unwrap();
+        assert_eq!(std::fs::read(&p).unwrap(), b"long");
+        assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_atomic_never_follows_a_planted_temp_symlink() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = std::env::temp_dir().join(format!("botport-atomic-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let outside = d.join("outside.txt");
+        std::fs::write(&outside, "keep").unwrap();
+        // the old predictable temp name, and any name an attacker might guess
+        for t in [".f.txt.g2h-new", ".f.txt.botport-tmp"] {
+            std::os::unix::fs::symlink(&outside, d.join(t)).unwrap();
+        }
+        super::write_atomic(&d.join("f.txt"), b"new", Some(0o600)).unwrap();
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "keep");
+        assert_eq!(std::fs::read_to_string(d.join("f.txt")).unwrap(), "new");
+        assert!(!std::fs::symlink_metadata(d.join("f.txt"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        let m = std::fs::metadata(d.join("f.txt"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(m & 0o777, 0o600);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
     use super::*;
 
     #[test]

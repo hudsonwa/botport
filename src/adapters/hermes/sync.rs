@@ -392,13 +392,6 @@ Load before answering questions about its own facts, setup or history.\n---\n# M
     }
 }
 
-fn plain_name(what: &str, n: &str) -> Res<()> {
-    if n.is_empty() || n.contains('/') || n.contains('\\') || n.starts_with('.') {
-        return err(format!("{what} {n:?} must be a plain directory name"));
-    }
-    Ok(())
-}
-
 pub fn want(c: &Ctx) -> Res<Want> {
     let cat = c.spec.category(&c.model.persona.name);
     plain_name("skill_category", &cat)?;
@@ -469,6 +462,16 @@ fn want_skills(c: &Ctx, cat: &str) -> (Vec<Item>, Units, Vec<(String, String)>) 
         // Loop prevention: a skill this profile exported comes back in the Grok export; it already lives here.
         if let Some(sent) = lk.h2g_skills.get(n) {
             origin.push(hermes_origin_item(c, cat, n, files, sent, &lk.h2g_history));
+            continue;
+        }
+        // a skill name or file path that would leave skills/<cat>/<name>/ goes to the checklist, unread and unwritten
+        if let Err(e) = plain_name("skill name", n).and_then(|_| {
+            files
+                .keys()
+                .filter(|f| !(f.is_empty() && files.len() == 1)) // a single-file skill
+                .try_for_each(|f| safe_rel("skill file", f))
+        }) {
+            manual.push((format!("skill {n}"), format!("not imported: {e}")));
             continue;
         }
         // a skill file that would fail the write guard goes to the checklist (name and reason), not into the profile
@@ -909,6 +912,7 @@ pub fn other_skills(skills_root: &Path, cat: &str) -> Vec<String> {
 }
 
 pub fn live_unit(dest: &Path, unit: &str) -> Option<BTreeMap<String, Vec<u8>>> {
+    safe_rel("skill", unit).ok()?;
     let p = dest.join("skills").join(unit);
     if p.is_file() {
         return Some([(String::new(), fs::read(&p).ok()?)].into());
@@ -1643,19 +1647,19 @@ fn should_write(i: &Item, adopt: bool) -> bool {
 pub fn restore_point(dest: &Path, cat: &str, keep: usize) -> Res<PathBuf> {
     use std::io::Write;
     let dir = dest.join(BACKUPS);
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let stamp = utc_stamp();
-    let mut n = 0;
-    let mut path = dir.join(format!("restore-{stamp}-{n:02}.zip"));
-    while path.exists() {
-        n += 1;
-        path = dir.join(format!("restore-{stamp}-{n:02}.zip"));
-    }
     let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let opts = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
     let mut add = |rel: String| -> Res<()> {
         let b = read(&dest.join(&rel))?;
+        // The archive is compressed, so the write guard cannot see into it: guard each entry's plaintext here. A hit
+        // refuses the restore point (and so the apply, before any change): a secret never reaches disk, not even zipped.
+        if let Some(at) = secrets::find_secret(&rel, &b) {
+            return Err(format!(
+                "live file {rel}: {at}. botport will not copy it into a restore point, so no restore point was \
+                 written and nothing was applied. Move the value to the profile's .env, then retry"
+            ));
+        }
         z.start_file(rel, opts).map_err(|e| e.to_string())?;
         z.write_all(&b).map_err(|e| e.to_string())
     };
@@ -1678,6 +1682,15 @@ pub fn restore_point(dest: &Path, cat: &str, keep: usize) -> Res<PathBuf> {
         add(format!("skills/{cat}/{}", rel_str(&rel)))?;
     }
     let zip = z.finish().map_err(|e| e.to_string())?.into_inner();
+    // directories only once every entry passed the guard: a refused restore point leaves nothing behind
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let stamp = utc_stamp();
+    let mut n = 0;
+    let mut path = dir.join(format!("restore-{stamp}-{n:02}.zip"));
+    while path.exists() {
+        n += 1;
+        path = dir.join(format!("restore-{stamp}-{n:02}.zip"));
+    }
     write_atomic(&path, &zip, Some(0o600))?;
     // keep the newest `keep`
     let mut all: Vec<PathBuf> = fs::read_dir(&dir)
@@ -1772,6 +1785,7 @@ fn apply_skills(
 ) -> Res<()> {
     let stamp = utc_stamp();
     for i in todo.iter().filter(|i| i.area == "skills") {
+        safe_rel("skill", &i.name)?;
         let unit_path = c.dest.join("skills").join(&i.name);
         if i.status == St::Retire {
             let tgt = c
@@ -1795,6 +1809,7 @@ fn apply_skills(
                 }
             }
             for (rel, b) in files {
+                safe_rel("skill file", rel)?;
                 write_atomic(&unit_path.join(rel), b, Some(0o644))?;
             }
         }
@@ -2204,6 +2219,72 @@ fn split_dotted(dotted: &str, v: &Y) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unsafe_skill_names_and_paths_are_neither_read_nor_written() {
+        let d = std::env::temp_dir().join(format!("botport-skillpath-{}", std::process::id()));
+        let m: BotModel = serde_json::from_value(json!({
+            "schema": "botport.model/v1",
+            "persona": {"name": "Bot", "instructions": ""},
+            "skills": [
+                {"name": "ok", "files": {"SKILL.md": "fine\n"}},
+                {"name": "../../evil", "files": {"SKILL.md": "x\n"}},
+                {"name": ".hidden", "files": {"SKILL.md": "x\n"}},
+                {"name": "deep", "files": {"SKILL.md": "x\n", "../../../outside.md": "x\n"}},
+                {"name": "abs", "files": {"/tmp/abs.md": "x\n"}}
+            ]
+        }))
+        .unwrap();
+        let src = Source {
+            path: d.clone(),
+            id: "t".into(),
+            files_read: BTreeMap::new(),
+            excluded: BTreeSet::new(),
+        };
+        let o = super::super::Opts {
+            spec: Spec::default(),
+            profile: "t".into(),
+            real_home: false,
+            hermes_bin: "hermes".into(),
+            hermes_home: None,
+        };
+        let c = Ctx::new(&m, &src, &d, &o);
+        let (_, units, manual) = want_skills(&c, "cat");
+        assert_eq!(units.keys().collect::<Vec<_>>(), ["cat/ok"]);
+        assert_eq!(manual.len(), 4, "{manual:?}");
+        assert!(manual
+            .iter()
+            .all(|(_, why)| why.starts_with("not imported:")));
+        assert!(live_unit(&d, "../x").is_none());
+    }
+
+    #[test]
+    fn restore_point_refuses_a_live_secret_and_writes_nothing() {
+        let d = std::env::temp_dir().join(format!("botport-rp-{}", std::process::id()));
+        fs::create_dir_all(d.join("skills/cat/s")).unwrap();
+        fs::write(d.join("config.yaml"), "model: x\n").unwrap();
+        fs::write(
+            d.join("skills/cat/s/SKILL.md"),
+            "PROVIDER=sk-0123456789abcdef0123456789\n",
+        )
+        .unwrap();
+        let e = restore_point(&d, "cat", 5).unwrap_err();
+        assert!(
+            e.contains("skills/cat/s/SKILL.md") && e.contains("no restore point"),
+            "{e}"
+        );
+        assert!(!e.contains("0123456789abcdef"), "{e}");
+        assert!(
+            !e.contains("refusing to write") && !e.contains("checklist"),
+            "{e}"
+        );
+        // not even an empty backups directory is created
+        assert!(!d.join("backups").exists());
+        // without the secret it works
+        fs::write(d.join("skills/cat/s/SKILL.md"), "hello\n").unwrap();
+        assert!(restore_point(&d, "cat", 5).unwrap().is_file());
+        fs::remove_dir_all(&d).unwrap();
+    }
 
     #[test]
     fn soul_sections_roundtrip_keeps_outside_text() {

@@ -342,6 +342,7 @@ fn cmd_profile(a: &Args, cmd: &str) -> Res<Report> {
             let d = if p == "default" {
                 hh.clone()
             } else {
+                botport::core::util::plain_name("profile name", &p)?;
                 hh.join("profiles").join(&p)
             };
             // an explicit --hermes-bin (e.g. a test double) also manages cron in a non-default home
@@ -690,6 +691,7 @@ fn profile_report(
 
 fn cmd_test(a: &Args) -> Res<Report> {
     let profile = a.get("profile").ok_or("--profile is required")?;
+    plain_name("profile", profile)?;
     let bp = a.path("battery").ok_or("--battery is required")?;
     let b = battery::load(&bp)?;
     let only: Vec<String> = a
