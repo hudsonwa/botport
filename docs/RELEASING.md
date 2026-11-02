@@ -14,9 +14,10 @@ mode: the wheel holds only the compiled `botport` and `grok2hermes` binaries (no
 step; it is not in `release.yml` and nothing is uploaded to PyPI yet.
 
     python3 -m venv /tmp/mat && /tmp/mat/bin/pip install 'maturin>=1.5,<2'
-    cd packaging/python
-    /tmp/mat/bin/maturin build --release --out ../../dist/wheels                 # this machine's platform
-    /tmp/mat/bin/maturin build --release --target x86_64-apple-darwin --out ../../dist/wheels
+    PATH=/tmp/mat/bin:$PATH packaging/python/build-wheel.sh                          # this machine's platform
+    PATH=/tmp/mat/bin:$PATH packaging/python/build-wheel.sh --target x86_64-apple-darwin
+    # build-wheel.sh sets --remap-path-prefix so no host path ($HOME, ~/.cargo, the checkout) ends up in the binary;
+    # check with: unzip -p dist/wheels/botport-*.whl '*/scripts/botport' | strings | grep -c "$HOME"   (must be 0)
     # Linux (manylinux/musllinux): run maturin in its Docker image, or add --zig
 
 Wheel names look like `botport-0.1.0-py3-none-macosx_11_0_arm64.whl`; the version comes from `Cargo.toml`.
