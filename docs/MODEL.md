@@ -74,7 +74,7 @@ changes additively (a new optional field, together with the types). A breaking c
 | Bundle | Model | Lossy notes |
 |---|---|---|
 | `profile.json` `name` | `persona.name` | — |
-| agent instructions / role text | `persona.instructions` | — |
+| `profile.json` `instructions` (a hand export; exported bundles carry none) | `persona.instructions` | the whole profile.json is also kept in `extras["grok-bot"].profile` |
 | `memory-agent.jsonl` rows | `memory[]` (`source` = file, `date` from row) | tier not recorded → omitted |
 | `MEMORY.md` facts | `memory[]` `tier: core` | free-form prose split per entry |
 | `MEMORY.md` as a whole | `memory_text` | verbatim |
@@ -92,6 +92,7 @@ grok-bot-export file: a `describe.json` beside it). Merged with the export's rou
 | describe.json | Model | Lossy notes |
 |---|---|---|
 | `schedules[]` `name`/`cron`/`timezone`/`prompt` (`side: grok`) | `schedules[]` `kind: scheduled`, `tz` (empty when not given), `action`, `enabled` (false when `paused`, set when the line says "(paused)") | suspicious schedules are in `manual[]`, not here |
+| `schedules[]` `kind: event` (a line whose time is "on an event" or "event-triggered", optional "(paused)" and prompt) | `schedules[]` `kind: event`, no `cron`, `action`, `enabled` | never turned into a cron; Hermes lists it on the manual checklist |
 | `schedules[]` `side: other` | `manual[]` `schedule <name>` | runs off Grok: moved by hand |
 | `connectors[]` `kind: mcp` + http(s) `url` | `connectors[]` `kind: mcp-http`, `tools` | suspicious connectors are in `manual[]`, not here |
 | `connectors[]` other kinds (`builtin`, `url`, `unknown`, `mcp` without URL) | `connectors[]` with that kind | not set up automatically |
@@ -106,7 +107,7 @@ as its reason; every other line, and every written string, goes through rule (B)
 (token shapes, url credentials, a secret-named `key=value`; no entropy check), with no keyword rule.
 
 Write (Grok side): the model's schedules/connectors/credentials become a `NOT_CAPTURED.md` description in the same
-form, which reads back to the same model (event routines as prose).
+form, which reads back to the same model (an event routine as `- **Name**: on an event — prompt: "..."`).
 
 ### 2. grok-bot-export v1 (upstream agent-importers `grok_bot.py`; code: `src/adapters/grok_bot/export_json.rs`)
 
