@@ -7,7 +7,7 @@ would matter most.
 | Item | Status |
 |---|---|
 | Grok Bot ↔ Hermes export/import, sync and drift | done |
-| g2h talk bridge, running as your user | done; optional companion, feature-frozen for v0.x |
+| g2h talk bridge, running as your user | done; optional, experimental companion, feature-frozen for v0.1 |
 | Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | done (v0.1.0) |
 | OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |
@@ -40,8 +40,8 @@ for it (Hermes is the only one) that keeps the rules in [docs/OWNERSHIP.md](docs
 written up in [docs/MODEL.md](docs/MODEL.md).
 
 ## g2h scope
-g2h (`g2h` CLI, `g2hd` daemon) is an optional companion to botport, and is **feature-frozen for v0.x**: bug fixes and
-the open hardening issues only, no new features, until botport has outside users.
+g2h (`g2h` CLI, `g2hd` daemon) is an optional, experimental companion to botport, and is **feature-frozen for v0.1**:
+bug fixes only, no new features. Separate-user hardening (#17, #18) is post-launch.
 - **`g2hd` as a separate OS user** (implemented, opt-in, not yet run in production). By default g2h runs as your
   user and is not a security boundary against a bot with a shell as that user; the opt-in `[separate_user]` mode
   and its setup recipe are in [docs/G2H-SEPARATE-USER.md](docs/G2H-SEPARATE-USER.md).
