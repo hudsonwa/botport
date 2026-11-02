@@ -9,8 +9,14 @@
 //! - a 5-field cron expression (numbers, `*`, `-`, `,`, `/`, JAN-DEC, SUN-SAT) -> cron
 //! - an ISO timestamp or `in <duration>` -> one-shot (a routine repeats, so botport does not import these)
 //!
-//! Stricter than Hermes on purpose: cron must have exactly 5 fields (croniter reads a 6th as seconds) and
-//! croniter extensions (`L`, `#`, `?`, wrap-around ranges) are refused; both go to the manual checklist.
+//! Stricter than Hermes on purpose (all go to the manual checklist):
+//! - cron must have exactly 5 fields (croniter reads a 6th as seconds);
+//! - croniter extensions are refused: `L`, `R` and wrap-around ranges (`10-5`, `fri-mon`); `#` and `?` Hermes
+//!   rejects itself;
+//! - a day of month no listed month has (`0 0 30 2 *`): croniter finds no next run and `hermes cron create` fails;
+//! - an interval of 0 minutes, or over [`MAX_MINUTES`] (Hermes' `now + timedelta` overflows on huge values);
+//! - a timestamp is a one-shot only in the `datetime.fromisoformat` forms botport checks
+//!   (`YYYY-MM-DD[(T| )HH:MM[:SS[.f]]][Z|±HH:MM]`); other text with a `T` or a leading date Hermes rejects too.
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Parsed {
@@ -18,6 +24,9 @@ pub enum Parsed {
     Interval(u32),
     Once,
 }
+
+/// The longest interval botport accepts: one year.
+pub const MAX_MINUTES: u32 = 525_600;
 
 fn duration(s: &str) -> Option<u32> {
     let s = s.trim().to_ascii_lowercase();
@@ -168,16 +177,124 @@ fn cron_field(f: &str, field: usize) -> bool {
     })
 }
 
-fn cron(s: &str) -> Option<String> {
-    let parts: Vec<&str> = s.split_whitespace().collect();
-    (parts.len() == 5 && parts.iter().enumerate().all(|(i, f)| cron_field(f, i)))
-        .then(|| parts.join(" "))
+/// The values a valid field lists (`*` -> the whole range).
+fn cron_values(f: &str, field: usize) -> Vec<u32> {
+    let (lo, hi) = [(0, 59), (0, 23), (1, 31), (1, 12), (0, 7)][field];
+    let mut out = vec![];
+    for part in f.split(',') {
+        let (base, step) = match part.split_once('/') {
+            Some((b, s)) => (b, s.parse().unwrap_or(1)),
+            None => (part, 1),
+        };
+        let (a, b) = match base {
+            "*" => (lo, hi),
+            _ => {
+                let (a, b) = base.split_once('-').unwrap_or((base, base));
+                let a = cron_value(a, field).unwrap_or(lo);
+                // croniter reads `5/15` as `5-max/15`
+                let b = match (base.contains('-'), part.contains('/')) {
+                    (false, true) => hi,
+                    _ => cron_value(b, field).unwrap_or(a),
+                };
+                (a, b)
+            }
+        };
+        out.extend((a..=b).step_by(step as usize));
+    }
+    out
 }
 
-fn iso(s: &str) -> bool {
+fn cron(s: &str) -> Option<String> {
+    let parts: Vec<&str> = s.split_whitespace().collect();
+    if parts.len() != 5 || !parts.iter().enumerate().all(|(i, f)| cron_field(f, i)) {
+        return None;
+    }
+    // with a weekday field croniter fires on day OR weekday; otherwise some listed month must have a listed day
+    const DAYS_IN: [u32; 12] = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if parts[4] == "*" {
+        let first_day = *cron_values(parts[2], 2).iter().min()?;
+        if !cron_values(parts[3], 3)
+            .iter()
+            .any(|m| first_day <= DAYS_IN[*m as usize - 1])
+        {
+            return None;
+        }
+    }
+    Some(parts.join(" "))
+}
+
+fn digits(b: &[u8]) -> bool {
+    !b.is_empty() && b.iter().all(u8::is_ascii_digit)
+}
+
+/// The `datetime.fromisoformat` forms botport recognises: a real date, an optional time and an optional offset.
+fn valid_iso(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() < 10
+        || !digits(&b[..4])
+        || b[4] != b'-'
+        || !digits(&b[5..7])
+        || b[7] != b'-'
+        || !digits(&b[8..10])
+    {
+        return false;
+    }
+    let (y, mo, d): (u32, u32, u32) = (
+        s[..4].parse().unwrap(),
+        s[5..7].parse().unwrap(),
+        s[8..10].parse().unwrap(),
+    );
+    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    let max = match mo {
+        2 if leap => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        1..=12 => 31,
+        _ => return false,
+    };
+    if y == 0 || d == 0 || d > max {
+        return false;
+    }
+    let rest = &s[10..];
+    if rest.is_empty() {
+        return true;
+    }
+    let Some(t) = rest.strip_prefix('T').or_else(|| rest.strip_prefix(' ')) else {
+        return false;
+    };
+    let (t, off) = match t.find(['Z', '+', '-']) {
+        Some(i) => t.split_at(i),
+        None => (t, ""),
+    };
+    let two = |x: &str, max: u32| {
+        x.len() == 2 && digits(x.as_bytes()) && x.parse::<u32>().is_ok_and(|v| v <= max)
+    };
+    let off_ok = match off {
+        "" | "Z" => true,
+        o => o[1..]
+            .split_once(':')
+            .is_some_and(|(h, m)| two(h, 23) && two(m, 59)),
+    };
+    let (hms, frac) = t.split_once('.').unwrap_or((t, "0"));
+    let f: Vec<&str> = hms.split(':').collect();
+    off_ok
+        && digits(frac.as_bytes())
+        && (2..=3).contains(&f.len())
+        && two(f[0], 23)
+        && two(f[1], 59)
+        && f.get(2).is_none_or(|x| two(x, 59))
+}
+
+/// Text Hermes sends down its timestamp branch: it contains `T` or starts with `dddd-dd-dd`.
+fn iso_like(s: &str) -> bool {
     let b = s.as_bytes();
     s.contains('T')
-        || (b.len() >= 10 && b[..4].iter().all(u8::is_ascii_digit) && b[4] == b'-' && b[7] == b'-')
+        || (b.len() >= 10
+            && digits(&b[..4])
+            && b[4] == b'-'
+            && digits(&b[5..7])
+            && b[7] == b'-'
+            && digits(&b[8..10]))
 }
 
 /// `parse_schedule`: what Hermes makes of `s`, or `None` when Hermes would reject it.
@@ -194,12 +311,12 @@ pub fn parse(s: &str) -> Option<Parsed> {
     if s.split_whitespace().count() >= 5 {
         return cron(s).map(Parsed::Cron);
     }
-    if iso(s)
-        || lower
-            .strip_prefix("in ")
-            .is_some_and(|d| duration(d).is_some())
-    {
-        return Some(Parsed::Once);
+    if iso_like(s) {
+        // Hermes raises on a timestamp `fromisoformat` rejects; it never falls through to a duration
+        return valid_iso(s).then_some(Parsed::Once);
+    }
+    if let Some(d) = lower.strip_prefix("in ") {
+        return duration(d).map(|_| Parsed::Once);
     }
     duration(s).map(Parsed::Interval)
 }
@@ -207,10 +324,11 @@ pub fn parse(s: &str) -> Option<Parsed> {
 /// The schedule botport hands to `hermes cron create`, in the form Hermes stores and `cron_expr` reads back:
 /// a cron expression, or `every Nm` for an interval. `Err` is the reason for the manual checklist.
 pub fn normalize(s: &str) -> Result<String, String> {
+    // any run of whitespace (tabs, NBSP) becomes one space: Hermes gets the same schedule in its plain-space form
     let one: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
     match parse(&one) {
         Some(Parsed::Cron(c)) => Ok(c),
-        Some(Parsed::Interval(m)) if m >= 1 => Ok(format!("every {m}m")),
+        Some(Parsed::Interval(m)) if (1..=MAX_MINUTES).contains(&m) => Ok(format!("every {m}m")),
         Some(Parsed::Once) => Err(format!(
             "not imported: '{one}' runs once, not on a schedule; set it by hand"
         )),
@@ -308,6 +426,62 @@ mod tests {
         assert_eq!(parse("2026-02-03T14:00:00"), Some(Parsed::Once));
         assert_eq!(parse("in 30m"), Some(Parsed::Once));
         assert!(n("in 2h").unwrap_err().contains("runs once"));
+        for once in [
+            "2026-02-29T09:00",
+            "2028-02-29",
+            "2026-11-02 07:30:00.5+08:00",
+            "2026-11-02T07:30Z",
+        ] {
+            assert_eq!(
+                parse(once),
+                (!once.starts_with("2026-02")).then_some(Parsed::Once),
+                "{once}"
+            );
+        }
+        // Hermes raises "Invalid timestamp" on these: not a one-shot, not a schedule
+        for bad in [
+            "Thursdays 9am",
+            "Twice a day",
+            "Tea time",
+            "2026-13-45",
+            "2026-04-31",
+            "2026-11-02T25:00",
+        ] {
+            assert_eq!(
+                n(bad).unwrap_err(),
+                format!("not imported: '{bad}' is not a schedule Hermes accepts; set it by hand")
+            );
+        }
+    }
+
+    #[test]
+    fn crons_with_no_next_run_and_huge_intervals_are_refused() {
+        for bad in [
+            "0 0 30 2 *",
+            "0 0 31 4 *",
+            "0 0 31 2,4,6 *",
+            "0 0 30-31 feb *",
+        ] {
+            assert!(n(bad).is_err(), "{bad}");
+        }
+        for ok in [
+            "0 0 29 2 *",
+            "0 0 31 1-12 *",
+            "0 0 30 2 1",
+            "0 0 */10 2 *",
+            "0 0 31 2,3 *",
+        ] {
+            assert_eq!(n(ok), Ok(ok.into()), "{ok}");
+        }
+        assert_eq!(n("every 365d"), Ok("every 525600m".into()));
+        for bad in [
+            "every 366d",
+            "every 4294967295m",
+            "every 99999999999m",
+            "every 0m",
+        ] {
+            assert!(n(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]
