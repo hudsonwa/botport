@@ -1,7 +1,8 @@
 # Installing botport
 
-botport ships four binaries: `botport`, `grok2hermes` (the former name; same program), `g2h` and `g2hd`
-(the talk bridge, see crates/g2h/README.md).
+botport ships four binaries: `botport`, `grok2hermes` (the former name; same program), `g2h` and `g2hd`.
+`g2h` and `g2hd` are the optional talk bridge (see crates/g2h/README.md). `botport` alone is enough to export,
+import, sync, drift-check and test a bot; install the bridge only if you want the two bots to message each other.
 
 ## Requirements
 
@@ -21,7 +22,8 @@ botport ships four binaries: `botport`, `grok2hermes` (the former name; same pro
     curl -fsSL https://raw.githubusercontent.com/hudsonwa/botport/main/install.sh | sh
 
 The script downloads `botport-<target>.tar.gz` for your platform from the latest GitHub Release, verifies its
-SHA-256 checksum, installs `botport`, `g2h` and `g2hd` into `~/.local/bin` and links `grok2hermes -> botport`.
+SHA-256 checksum, installs `botport`, `g2h` and `g2hd` into `~/.local/bin` and links `grok2hermes -> botport`. The bridge binaries
+do nothing until you run `g2h setup`; if you don't want them, delete `g2h` and `g2hd` or use cargo below.
 Options (environment variables):
 
 | Variable | Default | Meaning |
@@ -32,7 +34,8 @@ Options (environment variables):
 | `BOTPORT_BASE_URL` | (GitHub Releases) | a mirror holding the same archive + `.sha256` files |
 
 Prefer to read before you run? Download `install.sh`, read it, then `sh install.sh`. Or install by hand: download
-the archive and `SHA256SUMS` from the Releases page, `shasum -a 256 -c SHA256SUMS --ignore-missing`, unpack, and
+the archive and `SHA256SUMS` from the Releases page, `shasum -a 256 -c SHA256SUMS --ignore-missing` (supported by macOS
+`shasum` and GNU `sha256sum -c --ignore-missing`; it skips the archives you did not download), unpack, and
 copy the binaries onto your `PATH`.
 
 ## From source with cargo
@@ -40,7 +43,7 @@ copy the binaries onto your `PATH`.
 Needs a Rust toolchain (stable, via rustup):
 
     cargo install --git https://github.com/hudsonwa/botport --locked botport          # botport + grok2hermes
-    cargo install --git https://github.com/hudsonwa/botport --locked g2h               # g2h + g2hd
+    cargo install --git https://github.com/hudsonwa/botport --locked g2h               # optional: g2h + g2hd
 
 Or from a checkout: `cargo build --release` builds all four into `target/release/`;
 add that directory to your `PATH` (`export PATH="$PWD/target/release:$PATH"`).

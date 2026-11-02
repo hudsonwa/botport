@@ -87,6 +87,9 @@ fn github_actions_are_pinned_by_commit_sha() {
     for wf in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
         for line in read(wf).lines().filter(|l| l.contains("uses:")) {
             let r = line.split("uses:").nth(1).unwrap().trim();
+            if r.starts_with("./") {
+                continue; // a workflow in this repo, pinned by the commit itself
+            }
             let sha = r
                 .split('@')
                 .nth(1)

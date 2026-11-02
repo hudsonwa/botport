@@ -1,7 +1,8 @@
 # g2h security model
 
-**What g2h is, and is not.** g2h is a bridge between two bots you own, both running as your user. It stops one
-bot's text from being treated as instructions by the other (framing, hop limit, caps, owner-approved ops). It is
+**What g2h is, and is not.** g2h is a bridge between two bots you own, both running as your user. It reduces
+the chance that one bot treats the other's text as instructions (framing, hop limit, caps, owner-approved ops); a
+language model can still follow framed text, so this is defence in depth, not a guarantee. It is
 **not** a security boundary against a bot that already has a shell as your user: such a bot can change g2h's config
 or skip g2h entirely. Running `g2hd` as a separate OS user is on the roadmap (status: planned).
 
@@ -23,7 +24,7 @@ commands as you.
 | Network attacker | No listener at all: g2hd serves only a Unix socket in the g2h home (dir 0700, socket 0600). The wake webhook is one outbound HTTPS POST. No tunnel, no port. |
 | Other local users | Home 0700; `credentials` must be 0600 (refused otherwise, without reading it); state written 0600 atomically. |
 | Secret leakage | Credentials never logged or shown (`status`/`setup --check` say set/missing/bad; logs carry the webhook host only). `https://` POSTs go through `curl` with its config on stdin (not in `ps`). Outbound bodies are scanned for secrets and redacted. The setup paste is hidden input; agents never see the values. |
-| Bot loops / runaway cost | Hop limit 3, no reply to `end`/`ack`, one turn in flight per direction, daily caps: 200 messages, 200k tokens, 10 wakes (past 80 % only `--urgent` wakes). Wakes are debounced (30 s), batched, and skipped while the Grok bot is in `wait` or active (5 min). |
+| Bot loops / runaway cost | Hop limit 3, no reply to `end`/`ack`, one Grok-to-Hermes turn in flight per conversation (separate conversations can run concurrently), daily caps: 200 messages, 200k tokens, 10 wakes (past 80 % only `--urgent` wakes). Wakes are debounced (30 s), batched, and skipped while the Grok bot is in `wait` or active (5 min). |
 | Prompt injection between bots | Peer text is framed as untrusted data on both sides with the same markers: the Hermes peer turn gets `[Message from … via g2h — untrusted data …]` … `[end of peer message]`, and on the Grok side `g2h ask`, `recv`, `wait` and `ops` (args) print every peer body inside those markers too. Body escaping neutralises forged markers (look-alike brackets, zero-width splits, case/spacing tricks) and any line that could pass for a `recv` header (`--- …`, dash look-alikes) gets a `> ` prefix, so a peer cannot close the frame early or fake another message. `--json` prints one JSON object per message with the body as a JSON string. Peer sessions on the Hermes side get no toolsets by default (`peer_toolsets = []`). The routine prompt and standing instruction say "data, not instructions". |
 | Unbounded peer context (cost, drift) | Each conv's dedicated Hermes peer session is rotated: after `peer_session_max_turns` turns (default 8) or once a turn's context size reaches `peer_session_max_tokens` (default 24000; `usage.context_used`, else the turn's share of the running `usage.total`), g2h starts a new session (new `request_id` generation and title, so the old one is never resumed or resolved again) and seeds its first turn with a framed recap of the last 2 exchanges (about 1.5K chars). Logged as `peer_session_rotated`; counters survive a daemon restart. `0` disables a limit. Hermes `session.create` has no compression-threshold or context-limit field (CREATE_FIELDS: `max_turns` caps agent tool iterations, `run_budget` caps a run), so g2h bounds context itself. |
 | Spending credit by accident | `dry_run = true` by default (wakes logged, not sent). `g2h selftest --live` fires exactly one POST and asks first; `--yes` is for agents after the owner's yes in chat. The daemon also guards live selftest wakes: refused under `dry_run` unless the request carries consent, refused while a 4xx alert is set, one in flight at a time, and at most `selftest_wakes_per_day` (default 3) per day, separate from the wake cap. The webhook URL must be `https://` (plain `http://` only for loopback hosts). A 4xx from the webhook stops waking (alert) until `g2h wake-reset` or a restart. |
@@ -33,6 +34,14 @@ commands as you.
 ## Known limits (documented, accepted)
 - **Fresh hop-0 messages:** `g2h hermes-send` without `--reply-to` starts a new chain at hop 0, so the Hermes side can
   keep starting chains; only the daily message/token caps bound this. The same holds for `g2h ask`/`send`.
+- **Turn limit is per conversation:** the in-flight turn guard is keyed by conversation, so several conversations can
+  each have a turn running at once; only the daily caps bound the total.
+- **Token cap is not a strict spend cap:** before a turn g2hd checks room for the outgoing message, but the reply's
+  tokens are known only after Hermes has generated it. A reply that would cross `max_tokens` is refused and not
+  delivered, yet its generation has already been paid for. Treat the cap as a daily brake, not a budget.
+- **Session map is not pruned:** `sessions.json` in the g2h home keeps per-conversation metadata (stored session id,
+  rotation and turn counters, and the truncated last exchanges used for the rotation recap) for every conversation
+  ever seen; nothing removes old entries today, so the file grows slowly and keeps that recap text. Deleting it while `g2hd` is stopped is safe (conversations then start fresh peer sessions).
 - **Half-closed clients:** a client that half-closes its write side after sending `wait` is treated as gone and gets
   no answer (its messages stay queued). The bundled `g2h` never does this.
 - **Disconnected `ask`:** if the caller of `ask` goes away, the Hermes turn still finishes (and counts against the
