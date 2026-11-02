@@ -12,6 +12,19 @@ with one **adapter** per platform. Adding a platform means adding an adapter; th
                                          └────────────────────┘
 ```
 
+## Today vs target
+The diagram above is the target. Today the Grok Bot and Hermes adapters exist and pass conformance, but the CLI
+commands still call the Hermes modules directly with a Grok bundle (see below).
+
+| Item | Status |
+|---|---|
+| Grok Bot ↔ Hermes export/import, sync and drift (Hermes modules called directly) | done |
+| g2h talk bridge (`g2h` + `g2hd`, running as your user) | done |
+| Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | in progress (lands in v0.1.0) |
+| OpenClaw adapter | planned |
+| OpenBot adapter | planned |
+| `g2hd` running as a separate OS user | planned |
+
 ## The `Adapter` trait (`src/core/adapter.rs`)
 
 ```rust

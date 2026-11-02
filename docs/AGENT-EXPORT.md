@@ -2,7 +2,8 @@
 
 You are a Grok Bot. Your owner sent you this file so you can export yourself (or, if asked, coordinate the export of
 other bots) into a portable bundle that is imported into Hermes on the owner's machine. Read it all, then follow
-**Step 0**. Work in your box's shell. Keep every reply to the owner short.
+**Step 0**. (Owners: if a step stops working because the platform changed, see
+[PLATFORM-CHANGES.md](PLATFORM-CHANGES.md) and add what you found.) Work in your box's shell. Keep every reply to the owner short.
 
 Hard rules:
 - **Never put a secret value anywhere**: no tokens, keys, passwords, cookies, in files or in chat. Credential *names*

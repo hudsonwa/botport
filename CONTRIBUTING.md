@@ -1,7 +1,15 @@
 # Contributing to botport
 
-Thanks for looking. botport is small and young, so a focused contribution makes a real difference. You don't need
-to be a Rust expert: docs, test cases and bug reports with the `--json` output attached all help.
+Thanks for looking. botport is an early v0.1 by one maintainer. There is no team behind it yet. Two kinds of help
+would matter most:
+1. **A co-maintainer who runs Grok Bots daily**, to own the export brief ([docs/AGENT-EXPORT.md](docs/AGENT-EXPORT.md))
+   and the Grok side. The brief is a contract with a closed platform that changes without notice; it needs someone
+   who notices first. Changes go in [docs/PLATFORM-CHANGES.md](docs/PLATFORM-CHANGES.md).
+2. **Rust contributors for adapters, once the adapter seam lands** (plan/apply/sync/drift routed through `BotModel` +
+   `Adapter`; status in [ROADMAP.md](ROADMAP.md)).
+
+You don't need to be a Rust expert for everything else: docs, test cases and bug reports with the `--json` output
+attached all help.
 
 ## Build
 You need a stable Rust toolchain (`rustup` is easiest).
@@ -42,7 +50,8 @@ three fresh-context Claude critique passes reviewed the repo. The history was sq
 
 ## Adding a platform
 New platforms are added as adapters. Today an adapter reads its platform into the neutral model, writes it back and
-passes the conformance tests; `plan`/`apply`/`sync` are still Hermes-specific code that does not use adapters yet. Read [docs/ADAPTERS.md](docs/ADAPTERS.md) (the trait, mapping rules and the
+passes the conformance tests; `plan`/`apply`/`sync`/`drift` do not go through adapters yet (in progress), so a new
+adapter cannot port a platform end to end until that lands. Read [docs/ADAPTERS.md](docs/ADAPTERS.md) (the trait, mapping rules and the
 conformance tests every adapter must pass) and [docs/MODEL.md](docs/MODEL.md) (the neutral model and the planned
 OpenClaw and OpenBot mappings).
 
@@ -51,7 +60,7 @@ OpenClaw and OpenBot mappings).
 - Comment on the issue that you're taking it, so two people don't do the same work. If you go quiet for two weeks,
   someone else may pick it up; that's fine, and you're welcome back.
 - Unsure about an approach? Open a draft PR early, or ask on the issue.
-- Areas without an owner yet are listed in [ROADMAP.md](ROADMAP.md).
+- What is done, in progress and planned is in [ROADMAP.md](ROADMAP.md).
 
 ## Security
 Please don't report security problems in public issues. Open a private security advisory on GitHub

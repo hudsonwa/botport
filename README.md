@@ -1,11 +1,45 @@
 # botport
 
-**botport moves an AI bot from one platform to another, keeps both copies in step, and lets the two copies talk.**
-Today it moves Grok Bots (custom bots on xAI's [Grok](https://grok.com)) to [Hermes Agent](https://github.com/NousResearch/hermes-agent),
-Nous Research's open-source agent that runs on your own machine. Adapters for OpenClaw and OpenBot are planned.
+**botport connects a Grok Bot (a custom bot on xAI's [Grok](https://grok.com)) with a
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) bot (Nous Research's open-source agent that runs on
+your own machine).**
 
-It's for people who built a bot on one platform and want it on another, without retyping its memory, skills and
-schedules by hand, and without a sync job that quietly overwrites their edits.
+## What works today, between a Grok Bot and a Hermes bot
+1. **Export and import, both directions.** The Grok Bot exports itself into a bundle and `botport apply` turns it
+   into a Hermes profile; `botport export-hermes` sends what the Hermes bot learned back as a bundle the Grok Bot
+   loads. How: [user guide](docs/USER-GUIDE.md), [export brief](docs/AGENT-EXPORT.md),
+   [import brief](docs/AGENT-IMPORT.md).
+2. **Sync both directions, with drift detection.** `botport sync` re-applies only what changed and `botport drift`
+   checks both directions. An edit you made on the Hermes side is reported as a conflict and never overwritten.
+   How: [sync and drift](docs/USER-GUIDE.md), [ownership rules](docs/REFERENCE.md).
+3. **Direct chat between the two bots.** The `g2h` bridge lets them message each other, sub-second per exchange on
+   a warm connection. How: [bridge setup brief](docs/AGENT-SETUP.md), [g2h README](crates/g2h/README.md).
+
+g2h is a bridge between two bots **you own**, both running as your user. It stops one bot's text from being treated
+as instructions by the other. It is **not** a security boundary against a bot that already has a shell as your user;
+see [SECURITY.md](docs/SECURITY.md).
+
+### Tried on a real bot (2 Nov 2026)
+- A real Grok Bot ran the in-box export.
+- The bundle was imported into a Hermes bot and synced; `drift` reported IN SYNC in both directions.
+- The two bots exchanged messages live over g2h: 10 of 10 back-and-forth exchanges passed, 0.6–1.5 s each.
+- A live owner-approved operation: one bot asked the other to export itself, and it did.
+- Upstream Hermes' own Grok Bot importer was tested on the same bot, and a bug was fixed.
+
+Platform changes we hit and how the brief or tool adapted are logged in
+[docs/PLATFORM-CHANGES.md](docs/PLATFORM-CHANGES.md).
+
+## Where it's going (roadmap)
+| Item | Status |
+|---|---|
+| Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | in progress (lands in v0.1.0) |
+| OpenClaw adapter | planned |
+| OpenBot adapter | planned |
+| `g2hd` running as a separate OS user | planned |
+
+Details in [ROADMAP.md](ROADMAP.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#today-vs-target).
+
+## Demos
 
 ![Porting the example bot: plan, apply, drift in sync, a Hermes-side edit, drift reports a conflict, sync leaves it alone](docs/assets/demo.gif)
 
@@ -54,7 +88,8 @@ Two tools: **botport** ports and syncs the bot; **g2h** (`g2h` CLI, `g2hd` daemo
 - **Parity tests.** `test` runs a small battery of questions against the Hermes copy, to check that the persona,
   memory and routines came across. See the [worked example](docs/examples/daily-wisdom.md).
 - **Talk bridge (`g2h`).** `g2hd` is a local broker on a Unix socket, with no network listener. It lets the Grok Bot
-  and the Hermes bot message each other, with daily caps and an owner approval step for actions. See
+  and the Hermes bot message each other, with daily caps and an owner approval step for actions. It is a bridge
+  between two bots you own, not a security boundary between them. See
   [crates/g2h/README.md](crates/g2h/README.md) and the [security model](docs/SECURITY.md).
 
 Output is terse: 10 lines or fewer per command, or `--json`. Full detail goes to a file. The same input gives
@@ -72,13 +107,14 @@ detector, not a guarantee (see [the security model](docs/SECURITY.md)).
 - **g2h needs both bots running.** `g2h selftest` needs a live Hermes gateway (`g2h selftest --wake-only` does not;
   see [trying the bridge locally](docs/INSTALL.md#try-the-bridge-locally-no-service-installed)), and waking the Grok
   side needs a Grok routine webhook. It runs on macOS and Linux only; there is no Windows support yet.
-- Only Grok Bot → Hermes (and back) works today. OpenClaw and OpenBot exist only on paper, in
+- Only Grok Bot ↔ Hermes works today. OpenClaw and OpenBot are planned; their mappings exist only on paper, in
   [docs/MODEL.md](docs/MODEL.md).
 
 ## Status
-**v0.1, early.** One maintainer, used daily on a small number of bots. The file formats are versioned
-(`bot-model/1`), but expect rough edges. Bug reports with the `--json` output attached are very welcome.
-See the [roadmap](ROADMAP.md) for areas that need an owner, and the [changelog](CHANGELOG.md).
+**v0.1, early, one maintainer.** Tried end to end on a real Grok Bot and Hermes bot (see above). The file formats
+are versioned (`bot-model/1`), but expect rough edges. Bug reports with the `--json` output attached are very
+welcome. The project is looking for a co-maintainer who runs Grok Bots daily; see [CONTRIBUTING.md](CONTRIBUTING.md),
+the [roadmap](ROADMAP.md) and the [changelog](CHANGELOG.md).
 
 ## How this was built
 The code and docs were written by Claude agents, directed by Josh, the maintainer. Each change was checked by a
@@ -88,8 +124,8 @@ the repo. The history was squashed into one commit for the public release.
 
 ## Docs and contributing
 - [docs/README.md](docs/README.md): every guide, in one list.
-- [CONTRIBUTING.md](CONTRIBUTING.md): build, test, and send a pull request. Adapters for new platforms are welcome;
-  today they read a platform and pass conformance, while `plan`/`apply` are still Hermes-specific.
+- [CONTRIBUTING.md](CONTRIBUTING.md): build, test, and send a pull request. Rust help with adapters is welcome
+  once the adapter seam lands (see the roadmap above).
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License and credits

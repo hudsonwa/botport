@@ -1,31 +1,36 @@
 # Roadmap
 
-botport is at v0.1. This page lists what comes next and, more importantly, the **areas that need an owner**. An
-owner reviews PRs in that area, keeps its docs true, and decides small design questions. If one of these interests
-you, say so on an issue or in a PR.
+botport is an early v0.1 built by one maintainer. This page says what works, what is being built, and where help
+would matter most.
 
-## Areas that need an owner
-### The Grok side
-Grok Bots have no export API, so the bot exports itself by following [docs/AGENT-EXPORT.md](docs/AGENT-EXPORT.md),
-and loads updates with [docs/AGENT-IMPORT.md](docs/AGENT-IMPORT.md). This needs someone who uses Grok Bots daily to:
-- keep the briefs working as the Grok platform changes;
-- grow the grok-bot-export v1 support (`src/adapters/grok_bot/export_json.rs`);
-- port more public templates (see the [worked example](docs/examples/daily-wisdom.md)).
+## Status
+| Item | Status |
+|---|---|
+| Grok Bot ↔ Hermes export/import, sync and drift | done |
+| g2h talk bridge, running as your user | done |
+| Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | in progress |
+| OpenClaw adapter | planned |
+| OpenBot adapter | planned |
+| `g2hd` running as a separate OS user | planned |
 
-### Hermes adapters
-The Hermes adapter (`src/adapters/hermes/`) owns parts of a profile and must never overwrite a user's edit. Open work:
-- keep data the model can't place yet instead of dropping it;
-- follow new Hermes releases (config keys, cron, skills layout);
-- the `shim/` source for NousResearch agent-importers.
+## Help wanted
+1. **A co-maintainer who runs Grok Bots daily**, to own the export brief and the Grok side. Grok Bots have no export
+   API, so the bot exports itself by following [docs/AGENT-EXPORT.md](docs/AGENT-EXPORT.md) and loads updates with
+   [docs/AGENT-IMPORT.md](docs/AGENT-IMPORT.md). Those briefs depend on paths and behaviour inside a closed platform;
+   fixture tests stay green when it changes. This needs someone who sees the changes first, keeps the briefs working
+   and records each change in [docs/PLATFORM-CHANGES.md](docs/PLATFORM-CHANGES.md).
+2. **Rust contributors for adapters, once the seam lands.** Until plan/apply/sync/drift go through `BotModel` +
+   `Adapter`, a new adapter can read a platform but cannot port it. After that, OpenClaw and OpenBot are the next
+   adapters.
 
-### g2h, the talk bridge
-`crates/g2h` is a local broker between the two bots. Open work:
-- run and test the systemd user unit on more Linux distributions;
-- a status view (`g2h status` as a small TUI);
-- a clear answer for Windows (it uses Unix sockets today).
+Smaller open work: keep data the model can't place yet instead of dropping it; follow new Hermes releases; test the
+g2h systemd user unit on more Linux distributions; an answer for Windows (g2h uses Unix sockets today).
 
 ## Next platforms
-- **OpenClaw** and **OpenBot** adapters. Their mappings are already written up in [docs/MODEL.md](docs/MODEL.md).
+- **OpenClaw** and **OpenBot** adapters (planned, after the seam). Their mappings are written up in
+  [docs/MODEL.md](docs/MODEL.md); no code yet.
+- **`g2hd` as a separate OS user** (planned). Today g2h runs as your user and is not a security boundary against a
+  bot with a shell as that user; see [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Planned: a development tier for ops
 Not implemented yet. The idea: let the Grok-side bot run a few development ops (for example applying an update or
