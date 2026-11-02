@@ -1087,3 +1087,167 @@ fn op_to_grok_validates_and_bad_status_is_refused() {
         d.stop().await;
     });
 }
+
+/// Separate-user mode, simulated: g2hd runs as the test's uid (standing in for
+/// the g2h user) and `peer_uid_override` stands in for the bots' user.
+fn start_sep(home: &Path, cfg: Config, be: Rec, peer: Option<u32>) -> D {
+    let mut o = DaemonOptions::new(Paths::new(home), cfg);
+    o.peer_uid_override = peer;
+    let bound = daemon::bind(&o).unwrap();
+    let shutdown = Rc::new(Notify::new());
+    let sd = shutdown.clone();
+    let task = tokio::task::spawn_local(async move { bound.run(be, sd).await.unwrap() });
+    D {
+        socket: o.paths.socket(),
+        home: o.paths.home.clone(),
+        shutdown,
+        task,
+    }
+}
+
+fn sep_cfg(dir: &Path, bots_uid: u32) -> (Config, PathBuf) {
+    use std::os::unix::fs::MetadataExt;
+    let gid = std::fs::metadata(dir).unwrap().gid();
+    // the approver must be absolute and owned by g2hd's uid, not writable by others
+    let bin = dir.join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = dir.join("approver.out");
+    let script = bin.join("approver");
+    std::fs::write(&script, format!("#!/bin/sh\ncat >> '{}'\n", out.display())).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let mut cfg = Config::default();
+    cfg.peers = vec!["grok".into()];
+    cfg.ops_approver = Some(g2h::config::OpsApprover {
+        command: vec![script.display().to_string()],
+    });
+    cfg.ops.insert("export".into(), Tier::Approve);
+    cfg.separate_user = Some(g2h::isolation::SeparateUser {
+        allowed_uids: vec![bots_uid],
+        socket_gid: gid,
+    });
+    (cfg, out)
+}
+
+fn own_uid(dir: &Path) -> u32 {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(dir).unwrap().uid()
+}
+
+#[test]
+fn separate_user_bots_uid_can_talk_but_cannot_approve() {
+    run(async {
+        let t = tempfile::tempdir().unwrap();
+        let home = t.path().join("g2h");
+        let me = own_uid(t.path());
+        let bots = me + 1000;
+        let (cfg, out) = sep_cfg(t.path(), bots);
+        let be = Rec::default();
+        let d = start_sep(&home, cfg.clone(), be.clone(), Some(bots));
+        assert_eq!(
+            std::fs::metadata(&d.socket).unwrap().permissions().mode() & 0o777,
+            0o660
+        );
+        assert_eq!(
+            std::fs::metadata(&home).unwrap().permissions().mode() & 0o777,
+            0o750
+        );
+        assert!(matches!(d.call(Request::Status).await, Response::Status(_)));
+        let (st, rid) = op_status(&d.call(send_op("export", serde_json::json!({}))).await);
+        assert_eq!(st, OpStatus::PendingApproval);
+        // even with the right code, the bots' uid is refused
+        let code = code_for(&out, &rid).await;
+        let r = d.call(approve(&rid, &code)).await;
+        assert!(
+            matches!(&r, Response::Error { code, .. } if code == "not_owner"),
+            "{r:?}"
+        );
+        settle().await;
+        assert!(be.0.lock().unwrap().is_empty(), "nothing ran");
+        match d.call(Request::Doctor).await {
+            Response::Doctor { checks } => {
+                let iso = checks.iter().find(|c| c.name == "isolation").unwrap();
+                assert!(iso.detail.starts_with("separate-user"), "{}", iso.detail);
+                assert!(
+                    checks.iter().all(|c| c.name == "credentials" || c.ok),
+                    "{checks:?}"
+                );
+            }
+            o => panic!("{o:?}"),
+        }
+        d.stop().await;
+        assert!(d_log(&home).contains("approve_refused_uid"));
+
+        // the g2h user itself (here: the real uid) approves with the code
+        let d = start_sep(&home, cfg, be.clone(), None);
+        let (_, rid) = op_status(&d.call(send_op("export", serde_json::json!({}))).await);
+        let code = code_for(&out, &rid).await;
+        let (st, _) = op_status(&d.call(approve(&rid, &code)).await);
+        assert_eq!(st, OpStatus::Done);
+        d.stop().await;
+    });
+}
+
+fn d_log(home: &Path) -> String {
+    std::fs::read_to_string(Paths::new(home).log()).unwrap_or_default()
+}
+
+#[test]
+fn separate_user_refuses_unlisted_uids() {
+    run(async {
+        let t = tempfile::tempdir().unwrap();
+        let home = t.path().join("g2h");
+        let me = own_uid(t.path());
+        let (cfg, _) = sep_cfg(t.path(), me + 1000);
+        let d = start_sep(&home, cfg, Rec::default(), Some(me + 2000));
+        assert!(client::call(&d.socket, &Request::Status).await.is_err());
+        d.stop().await;
+        assert!(d_log(&home).contains("peer_refused"));
+    });
+}
+
+#[test]
+fn separate_user_refuses_to_start_when_misconfigured() {
+    let t = tempfile::tempdir().unwrap();
+    let home = t.path().join("g2h");
+    let me = own_uid(t.path());
+    // g2hd's own uid listed as a client = same user in disguise
+    let (cfg, _) = sep_cfg(t.path(), me);
+    let e = daemon::bind(&DaemonOptions::new(Paths::new(&home), cfg.clone()))
+        .err()
+        .unwrap();
+    assert!(e.contains("allowed_uids"), "{e}");
+    // a config the clients could write
+    let mut cfg = cfg;
+    cfg.separate_user.as_mut().unwrap().allowed_uids = vec![me + 1000];
+    std::fs::write(home.join("config.toml"), "").unwrap();
+    std::fs::set_permissions(
+        home.join("config.toml"),
+        std::fs::Permissions::from_mode(0o666),
+    )
+    .unwrap();
+    let e = daemon::bind(&DaemonOptions::new(Paths::new(&home), cfg))
+        .err()
+        .unwrap();
+    assert!(e.contains("writable"), "{e}");
+}
+
+#[test]
+fn same_user_doctor_warns_it_is_not_a_boundary() {
+    run(async {
+        let t = tempfile::tempdir().unwrap();
+        let d = start(&t.path().join("g2h"), Config::default(), Rec::default());
+        match d.call(Request::Doctor).await {
+            Response::Doctor { checks } => {
+                let iso = checks.iter().find(|c| c.name == "isolation").unwrap();
+                assert!(
+                    iso.detail.contains("NOT a security boundary"),
+                    "{}",
+                    iso.detail
+                );
+            }
+            o => panic!("{o:?}"),
+        }
+        d.stop().await;
+    });
+}

@@ -12,6 +12,7 @@ pub mod framing;
 pub mod guard;
 pub mod hermes;
 pub mod ipc;
+pub mod isolation;
 pub mod log;
 pub mod ops;
 pub mod paths;

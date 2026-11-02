@@ -11,7 +11,7 @@ would matter most.
 | Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | in progress (lands in v0.1.0) |
 | OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |
-| `g2hd` running as a separate OS user | planned |
+| `g2hd` running as a separate OS user | implemented, opt-in (not yet run in production) |
 
 ## Help wanted
 1. **A co-maintainer who runs Grok Bots daily**, to own the export brief and the Grok side. Grok Bots have no export
@@ -33,8 +33,9 @@ g2h systemd user unit on more Linux distributions; an answer for Windows (g2h us
 These two are what the `BotModel` seam is for. Once plan/apply/sync/drift go through it, an adapter that reads a
 platform into the model and writes it back can port that bot to and from every other adapter. Their mappings are
 written up in [docs/MODEL.md](docs/MODEL.md); no code yet.
-- **`g2hd` as a separate OS user** (planned). Today g2h runs as your user and is not a security boundary against a
-  bot with a shell as that user; see [docs/SECURITY.md](docs/SECURITY.md).
+- **`g2hd` as a separate OS user** (implemented, opt-in, not yet run in production). By default g2h runs as your
+  user and is not a security boundary against a bot with a shell as that user; the opt-in `[separate_user]` mode
+  and its setup recipe are in [docs/G2H-SEPARATE-USER.md](docs/G2H-SEPARATE-USER.md).
 
 ## Planned: a development tier for ops
 Not implemented yet. The idea: let the Grok-side bot run a few development ops (for example applying an update or

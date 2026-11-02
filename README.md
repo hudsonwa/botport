@@ -36,7 +36,7 @@ Platform changes we hit and how the brief or tool adapted are logged in
 | Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | in progress (lands in v0.1.0) |
 | OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |
-| `g2hd` running as a separate OS user | planned |
+| `g2hd` running as a separate OS user | implemented, opt-in (not yet run in production) |
 
 The OpenClaw and OpenBot adapters are what the `BotModel` seam is for: once it lands, each new platform needs one
 adapter that reads into and writes from the neutral model, and it can then port to and from every other adapter.

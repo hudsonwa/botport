@@ -23,7 +23,7 @@ commands still call the Hermes modules directly with a Grok bundle (see below).
 | Neutral `BotModel` + `Adapter` seam routing plan/apply/sync/drift | in progress (lands in v0.1.0) |
 | OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |
-| `g2hd` running as a separate OS user | planned |
+| `g2hd` running as a separate OS user | implemented, opt-in (not yet run in production) |
 
 ## The `Adapter` trait (`src/core/adapter.rs`)
 

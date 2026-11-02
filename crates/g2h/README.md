@@ -6,11 +6,14 @@ The daemon talks to the bots over a local Unix socket and HTTP wake calls; it op
 **What g2h is, and is not.** g2h is a bridge between two bots you own, both running as your user. It stops one
 bot's text from being treated as instructions by the other (framing, hop limit, caps, owner-approved ops). It is
 **not** a security boundary against a bot that already has a shell as your user: such a bot can change g2h's config
-or skip g2h entirely. Running `g2hd` as a separate OS user is on the roadmap (status: planned).
+or skip g2h entirely. That is the default. Running `g2hd` as a separate OS user is implemented as an opt-in mode
+(`[separate_user]`; not yet run in production): its config, state and approval step are then out of the bots' reach.
+Setup: [G2H-SEPARATE-USER.md](../../docs/G2H-SEPARATE-USER.md). `g2h doctor` says which mode is running.
 
 | module | purpose |
 |---|---|
 | `paths` | home dir (`$G2H_HOME`, else `~/.g2h`); socket, log, state, config, credentials paths; `check_perms` refuses a credentials file that is not 0600 |
+| `isolation` | opt-in `[separate_user]` mode: startup ownership checks, peer-uid check on the socket, `approve` only from the g2h user or root; the `g2h doctor` isolation line |
 | `envelope` | `Envelope` wire type (UUIDv7 id, RFC3339 UTC ts, kind msg/end/error/timeout/ack), canonical JSON + sha256 |
 | `guard` | hop limit (default 3), daily caps (200 msgs / 200k tokens / 10 wakes, local-day rollover), one in-flight turn per direction; injectable clock |
 | `framing` | wraps peer text as untrusted data; body cannot forge the closing marker |
@@ -121,8 +124,10 @@ bot cannot run an op that the owner did not allow, and cannot approve one. They 
 already has a shell as the owner's user: such a bot can edit `config.toml` (add an op as `auto`, or point
 `[ops_approver]` at itself), restart g2hd, or skip g2h and act directly. The one-time code only helps while the
 approver channel reaches the human and the bot cannot read it. So use `auto` only for read-only ops (export,
-battery) and keep the approver on a channel neither bot can read. Running `g2hd` as a separate OS user that owns
-its config and home would add real isolation; it is planned, not built.
+battery) and keep the approver on a channel neither bot can read. The opt-in separate-user mode
+(`[separate_user]`, [setup recipe](../../docs/G2H-SEPARATE-USER.md)) runs g2hd as its own user that owns its config,
+home and approver; the socket checks each peer uid, and `approve` is accepted only from the g2h user or root, so a bot
+running as your user cannot approve its own op. Implemented and tested with a simulated uid; not yet run in production.
 
 **Sending.**
 - `g2h send-op <op> --args '<json object>'` sends a request. It prints the request_id and a status: `done` (handed to

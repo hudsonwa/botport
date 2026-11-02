@@ -35,12 +35,13 @@ use crate::framing::frame;
 use crate::guard::{Guard, LocalClock, OpOutcome, Refusal};
 use crate::hermes::{A2aBackend, GatewayWsBackend, Health, PeerBackend, PeerError, Reply};
 use crate::ipc::{self, Check, Request, Response, StatusInfo, MAX_TIMEOUT_SECS};
+use crate::isolation::{self, Mode};
 use crate::log::Logger;
 use crate::ops::{
     parse_op_body, Allowlist, Decision, OpGuard, OpRequest, OpResult, OpStatus, Origin, PendingOp,
     SystemClock, Tier, TO_GROK_KEEP,
 };
-use crate::paths::{ensure_home, Paths};
+use crate::paths::{ensure_home_mode, Paths};
 use crate::secrets::{redact, Fingerprints};
 use crate::store::State;
 use crate::wake::{self, PostOutcome};
@@ -84,6 +85,9 @@ pub struct DaemonOptions {
     pub probe_ttl: Duration,
     /// A one-time op approval code expires after this (10 min).
     pub code_ttl: Duration,
+    /// Tests only: treat every connection as coming from this uid, to
+    /// simulate the bots' user without a second OS account.
+    pub peer_uid_override: Option<u32>,
 }
 
 impl DaemonOptions {
@@ -95,6 +99,7 @@ impl DaemonOptions {
             post_timeout: Duration::from_secs(10),
             probe_ttl: Duration::from_secs(15 * 60),
             code_ttl: Duration::from_secs(10 * 60),
+            peer_uid_override: None,
             paths,
             config,
         }
@@ -142,11 +147,15 @@ pub struct Bound {
     opts: DaemonOptions,
     listener: std::os::unix::net::UnixListener,
     _lock: File,
+    /// g2hd's own uid (the owner of the lock file it just created).
+    uid: u32,
 }
 
 pub fn bind(opts: &DaemonOptions) -> Result<Bound, String> {
     let p = &opts.paths;
-    ensure_home(&p.home).map_err(|e| format!("g2h home: {e}"))?;
+    let sep = opts.config.separate_user.as_ref();
+    let mode = Mode::of(sep);
+    ensure_home_mode(&p.home, mode.home_mode()).map_err(|e| format!("g2h home: {e}"))?;
     let lock = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -162,6 +171,22 @@ pub fn bind(opts: &DaemonOptions) -> Result<Bound, String> {
             p.lock().display()
         ));
     }
+    let uid = std::os::unix::fs::MetadataExt::uid(&lock.metadata().map_err(|e| e.to_string())?);
+    if let Some(s) = sep {
+        let approver = opts
+            .config
+            .ops_approver
+            .as_ref()
+            .map(|a| a.command.as_slice());
+        isolation::check_startup(s, uid, &p.home, &p.config(), approver)?;
+        std::os::unix::fs::chown(&p.home, None, Some(s.socket_gid)).map_err(|e| {
+            format!(
+                "chgrp {} {}: {e} (g2hd's user must be in that group)",
+                s.socket_gid,
+                p.home.display()
+            )
+        })?;
+    }
     let sock = p.socket();
     if std::fs::symlink_metadata(&sock).is_ok() {
         // we hold the lock, so any socket file left here is stale
@@ -169,13 +194,18 @@ pub fn bind(opts: &DaemonOptions) -> Result<Bound, String> {
     }
     let listener = std::os::unix::net::UnixListener::bind(&sock)
         .map_err(|e| format!("bind {}: {e}", sock.display()))?;
-    std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o600))
+    if let Some(s) = sep {
+        std::os::unix::fs::chown(&sock, None, Some(s.socket_gid))
+            .map_err(|e| format!("chgrp {} {}: {e}", s.socket_gid, sock.display()))?;
+    }
+    std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(mode.socket_mode()))
         .map_err(|e| e.to_string())?;
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     Ok(Bound {
         opts: opts.clone(),
         listener,
         _lock: lock,
+        uid,
     })
 }
 
@@ -222,6 +252,8 @@ struct Broker<B> {
     /// request_id -> one-time approval code. Memory only: never stored,
     /// logged (only a sha256 prefix) or returned; a restart drops them.
     codes: RefCell<HashMap<String, ApprovalCode>>,
+    /// g2hd's own uid; see `isolation`.
+    uid: u32,
 }
 
 struct ApprovalCode {
@@ -1465,28 +1497,35 @@ impl<B: PeerBackend + 'static> Broker<B> {
             ok: true,
             detail: format!("running (pid {})", std::process::id()),
         }];
+        let sep = self.opts.config.separate_user.as_ref();
+        let (want_home, want_sock) = (Mode::of(sep).home_mode(), Mode::of(sep).socket_mode());
+        checks.push(Check {
+            name: "isolation".into(),
+            ok: true,
+            detail: isolation::describe(sep, self.uid),
+        });
         let hm = mode(&p.home);
         checks.push(Check {
             name: "home perms".into(),
-            ok: hm == Some(0o700),
+            ok: hm == Some(want_home),
             detail: format!(
                 "{:o}{}",
                 hm.unwrap_or(0),
-                if hm == Some(0o700) {
-                    ""
+                if hm == Some(want_home) {
+                    String::new()
                 } else {
-                    " — fix: chmod 700 <g2h home>"
+                    format!(" — fix: chmod {want_home:o} <g2h home>")
                 }
             ),
         });
         let sm = mode(&p.socket());
         checks.push(Check {
             name: "socket perms".into(),
-            ok: sm == Some(0o600),
+            ok: sm == Some(want_sock),
             detail: format!(
                 "{:o}{}",
                 sm.unwrap_or(0),
-                if sm == Some(0o600) {
+                if sm == Some(want_sock) {
                     ""
                 } else {
                     " — fix: restart g2hd"
@@ -1533,6 +1572,15 @@ impl<B: PeerBackend + 'static> Broker<B> {
     }
 
     async fn serve_conn(self: Rc<Self>, stream: tokio::net::UnixStream) {
+        let sep = self.opts.config.separate_user.clone();
+        let peer = self
+            .opts
+            .peer_uid_override
+            .or_else(|| stream.peer_cred().ok().map(|c| c.uid()));
+        if !isolation::peer_allowed(sep.as_ref(), self.uid, peer) {
+            self.logw(json!({"event": "peer_refused", "uid": peer}));
+            return;
+        }
         let (r, mut w) = stream.into_split();
         let mut r = BufReader::new(r);
         loop {
@@ -1567,6 +1615,15 @@ impl<B: PeerBackend + 'static> Broker<B> {
                                 return;
                             }
                         }
+                    }
+                    Ok(Request::Approve { .. })
+                        if !isolation::approve_allowed(sep.as_ref(), self.uid, peer) =>
+                    {
+                        self.logw(json!({"event": "approve_refused_uid", "uid": peer}));
+                        err(
+                            "not_owner",
+                            "separate-user mode: approve runs as the g2h user or root (sudo -u <g2h user> g2h approve …)",
+                        )
                     }
                     Ok(req) => self.handle(req).await,
                     Err(e) => err("bad_request", e),
@@ -1618,6 +1675,7 @@ impl Bound {
         let mut log = Logger::new(p.log(), 16 << 20, 5);
         log.fingerprints = fingerprints.clone();
         let broker = Rc::new(Broker {
+            uid: self.uid,
             opts: self.opts.clone(),
             backend,
             inner: RefCell::new(Inner {
