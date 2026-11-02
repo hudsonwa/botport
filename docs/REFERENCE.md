@@ -128,7 +128,9 @@ flow from the repo.
 `shim/` adds a `grok-bot` source to NousResearch agent-importers **older than 1.2.0** (1.2.0 and later have their own
 official `grok-bot` importer, and installing the shim there would replace it; don't): `shim/agent-importers-grok-bot.patch` (4 small
 edits) + `shim/grok_bot.py`, which calls this binary. Then `hermes import-agent grok-bot --source BUNDLE`
-and `hermes import-agent --sync` work. Test: `uv run --with pytest --with pyyaml python -m pytest shim/`.
+and `hermes import-agent --sync` work. Test: `AGENT_IMPORTERS_SRC=<agent-importers checkout, older than 1.2.0> uv run --with pytest
+--with pyyaml python -m pytest shim/ -rs`. The integration test needs that upstream source, which is not in this repo: without it it
+is **skipped** (CI has no copy, so CI skips it; the two unit tests still run; `SHIM_REQUIRE_SRC=1` makes a missing source a failure).
 
 ## g2h: live chat between the Grok Bot and the Hermes bot
 `crates/g2h` builds `g2hd` (a local broker on a Unix socket, no network listener) and `g2h` (its CLI). The Grok Bot

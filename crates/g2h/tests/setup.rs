@@ -549,3 +549,132 @@ fn selftest_wake_only_needs_no_gateway() {
     );
     assert_no_secret(&s);
 }
+
+#[test]
+fn uninstall_never_follows_a_corrupted_manifest_outside() {
+    let e = env();
+    assert!(setup(&e).status.success());
+    let outside = e._t.path().join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    let victim = outside.join("precious.txt");
+    let victim_unit = outside.join("other.plist");
+    let link_target = outside.join("linked.txt");
+    for f in [&victim, &victim_unit, &link_target] {
+        std::fs::write(f, "keep me").unwrap();
+    }
+    let mpath = e.home.join("setup-manifest.json");
+    let mut m: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&mpath).unwrap()).unwrap();
+    m["created"].as_array_mut().unwrap().extend([
+        serde_json::json!(victim),
+        serde_json::json!(e.home.join("../outside/precious.txt")),
+        serde_json::json!(outside),
+    ]);
+    m["service"][1] = serde_json::json!(victim_unit);
+    std::fs::write(&mpath, serde_json::to_string(&m).unwrap()).unwrap();
+    // a credentials path that is a symlink to a file outside is not followed or removed
+    std::fs::remove_file(e.home.join("credentials")).unwrap();
+    std::os::unix::fs::symlink(&link_target, e.home.join("credentials")).unwrap();
+    let o = g2h(&e, &["uninstall"], "");
+    assert!(o.status.success(), "{}", all(&o));
+    let s = all(&o);
+    assert!(s.contains("not a file g2h setup writes"), "{s}");
+    assert!(s.contains("a symlink"), "{s}");
+    for f in [&victim, &victim_unit, &link_target] {
+        assert_eq!(
+            std::fs::read_to_string(f).unwrap(),
+            "keep me",
+            "{}",
+            f.display()
+        );
+    }
+    assert!(outside.is_dir());
+    assert!(
+        e.home.join("credentials").symlink_metadata().is_ok(),
+        "symlink left alone"
+    );
+    // the real files setup wrote are still removed
+    assert!(!e.home.join("config.toml").exists());
+    assert!(!service_file(&e).exists());
+}
+
+fn foreign_unit(e: &Env) -> PathBuf {
+    let ext = if cfg!(target_os = "macos") {
+        "plist"
+    } else {
+        "service"
+    };
+    let f = e.svc.join(format!("com.other.app.{ext}"));
+    std::fs::write(&f, "another app's unit\n").unwrap();
+    f
+}
+
+#[test]
+fn uninstall_keeps_and_does_not_stop_a_foreign_unit_named_in_the_manifest() {
+    let e = env();
+    assert!(setup(&e).status.success());
+    let foreign = foreign_unit(&e);
+    let mpath = e.home.join("setup-manifest.json");
+    let mut m: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&mpath).unwrap()).unwrap();
+    m["service"] = serde_json::json!(["com.other.app", foreign]);
+    std::fs::write(&mpath, serde_json::to_string(&m).unwrap()).unwrap();
+    let o = g2h(&e, &["uninstall"], "");
+    assert!(o.status.success(), "{}", all(&o));
+    let s = all(&o);
+    assert_eq!(
+        std::fs::read_to_string(&foreign).unwrap(),
+        "another app's unit\n"
+    );
+    assert!(!s.contains("service com.other.app stopped"), "{s}");
+    assert!(s.contains("not a g2h unit"), "{s}");
+    // the real g2h unit (the config's label) is still stopped and removed
+    assert!(s.contains("service io.g2h.daemon stopped"), "{s}");
+    assert!(!service_file(&e).exists());
+}
+
+#[test]
+fn uninstall_keeps_and_does_not_stop_a_foreign_unit_from_the_config_label() {
+    let e = env();
+    assert!(setup(&e).status.success());
+    let foreign = foreign_unit(&e);
+    let cfg = e.home.join("config.toml");
+    let t = std::fs::read_to_string(&cfg).unwrap();
+    std::fs::write(&cfg, format!("service_label = \"com.other.app\"\n{t}")).unwrap();
+    let mpath = e.home.join("setup-manifest.json");
+    let mut m: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&mpath).unwrap()).unwrap();
+    m["created"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!(foreign));
+    std::fs::write(&mpath, serde_json::to_string(&m).unwrap()).unwrap();
+    let o = g2h(&e, &["uninstall"], "");
+    assert!(o.status.success(), "{}", all(&o));
+    let s = all(&o);
+    assert_eq!(
+        std::fs::read_to_string(&foreign).unwrap(),
+        "another app's unit\n"
+    );
+    assert!(s.contains("did not stop com.other.app"), "{s}");
+    assert!(!s.contains("service com.other.app stopped"), "{s}");
+    assert!(s.contains("service io.g2h.daemon stopped"), "{s}");
+    assert!(!service_file(&e).exists());
+}
+
+#[test]
+fn uninstall_does_not_claim_to_keep_a_config_it_created_under_a_non_canonical_home() {
+    let e = env();
+    assert!(setup(&e).status.success());
+    // the temp dir is not canonical on macOS (/var -> /private/var); make it so elsewhere too
+    let alias = e._t.path().join("alias");
+    std::os::unix::fs::symlink(e._t.path(), &alias).unwrap();
+    let mut e2 = e;
+    let real_home = e2.home.clone();
+    e2.home = alias.join("g2h");
+    let o = g2h(&e2, &["uninstall"], "");
+    assert!(o.status.success(), "{}", all(&o));
+    let s = all(&o);
+    assert!(!s.contains("kept"), "{s}");
+    assert!(!real_home.join("config.toml").exists(), "{s}");
+}

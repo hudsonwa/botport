@@ -6,7 +6,8 @@
 # Opt-in only. Needs a working `hermes` CLI and a configured model. Environment:
 #   BOTPORT_E2E_REAL=1          required, otherwise the script skips (exit 0)
 #   BOTPORT_E2E_CLONE_FROM      existing Hermes profile to clone the model/provider setup from (required)
-#   BOTPORT_E2E_PROFILE         throwaway profile name (default: botport-e2e); it is DELETED at the end
+#   BOTPORT_E2E_PROFILE         throwaway profile name (default: botport-e2e); it must NOT exist yet (the script refuses
+#                               to start otherwise), and only a profile this run created is deleted at the end
 #   BOTPORT_BIN                 botport binary (default: botport on PATH)
 #   HERMES_HOME                  Hermes home (default: $HOME/.hermes)
 #   SKIP_BATTERY=1               skip the battery step
@@ -22,11 +23,18 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EX=$HERE/../../examples/acme
 ID=00000000-0000-4000-8000-000000000001
 GW=""
+CREATED=0
 step() { echo; echo "== $*"; }
 cleanup() {
   if [[ -n "$GW" ]]; then kill "$GW" 2>/dev/null; wait "$GW" 2>/dev/null; echo "gateway $GW stopped"; fi
-  hermes profile delete -y "$P" >/dev/null 2>&1; echo "deleted profile $P: $([[ -d $PD ]] && echo NO || echo yes)"
+  # only ever delete a profile this run created; an existing profile of the same name is never touched
+  if [[ $CREATED == 1 ]]; then
+    hermes profile delete -y "$P" >/dev/null 2>&1; echo "deleted profile $P: $([[ -d $PD ]] && echo NO || echo yes)"
+  else
+    echo "profile $P: not created by this run, not deleted"
+  fi
 }
+if [[ -e $PD ]]; then echo "e2e-real: profile $P already exists ($PD); pick another BOTPORT_E2E_PROFILE" >&2; exit 2; fi
 trap cleanup EXIT
 
 step "fake Grok box from examples/acme/grok (agent tree + workflows), memory drop attested empty"
@@ -43,7 +51,9 @@ printf '\n[hermes_export]\nout = "%s/hermes-export"\n' "$OUT" >> "$SPEC"
 A=(--bundle "$OUT/grok-bundle" --spec "$SPEC")
 
 step "throwaway profile (clone of $BOTPORT_E2E_CLONE_FROM) + g2h sync + temporary gateway"
+[[ -e $PD ]] && { echo "e2e-real: profile $P appeared during the run; not touching it" >&2; exit 2; }
 hermes profile create "$P" --clone-from "$BOTPORT_E2E_CLONE_FROM" --no-alias >/dev/null 2>&1 || exit 1
+CREATED=1
 rm -f "${PD:?}/SOUL.md" "${PD:?}/memories/USER.md" "${PD:?}/memories/MEMORY.md"
 "$G" sync "${A[@]}" --direction g2h --adopt; echo "g2h sync rc=$?"
 mkdir -p "$PD/logs"

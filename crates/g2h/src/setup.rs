@@ -799,39 +799,104 @@ fn url_allowed(url: &str) -> bool {
 /// files setup created (config.toml only if setup created it), runtime state, logs unless `keep_logs`; print the manual Grok-side step.
 pub fn uninstall(p: &Paths, keep_logs: bool) -> i32 {
     let m = Manifest::load(p);
-    let label = Config::load(&p.config()).unwrap_or_default().service_label;
-    let (label, svc) = m
+    let cfg_label = Config::load(&p.config()).unwrap_or_default().service_label;
+    let label = m
         .service
-        .clone()
-        .unwrap_or_else(|| (label.clone(), service_file(&label).unwrap_or_default()));
-    // a label edited into config.yaml never reaches launchctl/systemctl unless it is plain reverse-DNS
-    match check_service_label(&label) {
-        Ok(()) => service_unload(&label),
-        Err(e) => eprintln!("not unloading the service: {e}"),
+        .as_ref()
+        .map_or(cfg_label.clone(), |(l, _)| l.clone());
+    // The manifest is only a hint: a path is removed only if it is one of the exact files setup
+    // writes, recomputed here (g2h home files, and the unit file of a valid label in the service dir
+    // whose content is a g2h unit for this install). A label is unloaded only if its unit is ours.
+    let mut allowed: BTreeSet<PathBuf> = [
+        p.config(),
+        p.credentials(),
+        p.inbox_credentials(),
+        Manifest::path(p),
+    ]
+    .into();
+    let g2hd = g2hd_path();
+    let mut labels: Vec<&String> = vec![&cfg_label];
+    if label != cfg_label {
+        labels.push(&label);
     }
-    let mut gone: Vec<PathBuf> = vec![svc, p.credentials()];
+    for l in labels {
+        if let Err(e) = check_service_label(l) {
+            eprintln!("not unloading the service: {e}");
+            continue;
+        }
+        let Some(f) = service_file(l) else { continue };
+        match std::fs::read_to_string(&f) {
+            Ok(t) if is_g2h_unit(&t, l, &g2hd, &p.home) => {
+                service_unload(l);
+                println!("[ok] service {l} stopped");
+                allowed.insert(f);
+            }
+            Ok(_) => println!(
+                "skipped {} and did not stop {l} (not a g2h unit for this install; left alone)",
+                f.display()
+            ),
+            Err(_) => println!(
+                "not stopping {l}: no unit file {} (nothing to unload)",
+                f.display()
+            ),
+        }
+    }
+    let mut gone: Vec<PathBuf> = service_file(&label).into_iter().collect();
+    gone.push(p.credentials());
+    if let Some((_, svc)) = &m.service {
+        gone.push(svc.clone());
+    }
     gone.extend(m.created.iter().cloned());
-    if !m.created.contains(&p.config()) && p.config().exists() {
+    let cfg_real = real_parent(&p.config());
+    if !m.created.iter().any(|c| real_parent(c) == cfg_real) && p.config().exists() {
         println!(
             "kept {} (it existed before g2h setup)",
             p.config().display()
         );
     }
-    gone.extend([
+    let runtime = [
         Manifest::path(p),
         p.state(),
         p.sessions(),
         p.lock(),
         p.socket(),
-    ]);
+    ];
+    allowed.extend(runtime.iter().cloned());
+    gone.extend(runtime);
     if !keep_logs {
         let log = p.log().to_string_lossy().to_string();
-        gone.push(p.log());
-        gone.extend((1..=9).map(|n| PathBuf::from(format!("{log}.{n}"))));
-        gone.push(p.home.join("g2hd.err"));
+        let mut logs = vec![p.log(), p.home.join("g2hd.err")];
+        logs.extend((1..=9).map(|n| PathBuf::from(format!("{log}.{n}"))));
+        allowed.extend(logs.iter().cloned());
+        gone.extend(logs);
     }
+    let allowed: BTreeSet<PathBuf> = allowed.iter().map(|f| real_parent(f)).collect();
     let mut removed = 0;
+    let mut seen = BTreeSet::new();
     for f in gone.iter().filter(|f| !f.as_os_str().is_empty()) {
+        let f = &real_parent(f);
+        if !seen.insert(f.clone()) {
+            continue;
+        }
+        if !allowed.contains(f) {
+            println!(
+                "skipped {} (in the manifest, but not a file g2h setup writes; left alone)",
+                f.display()
+            );
+            continue;
+        }
+        match std::fs::symlink_metadata(f) {
+            Ok(md) if md.file_type().is_symlink() => {
+                println!("skipped {} (a symlink; left alone)", f.display());
+                continue;
+            }
+            Ok(md) if md.is_dir() => {
+                println!("skipped {} (a directory; left alone)", f.display());
+                continue;
+            }
+            Ok(_) => {}
+            Err(_) => continue,
+        }
         if std::fs::remove_file(f).is_ok() {
             println!("removed {}", f.display());
             removed += 1;
@@ -841,11 +906,40 @@ pub fn uninstall(p: &Paths, keep_logs: bool) -> i32 {
         println!("removed {}", p.home.display());
     }
     println!(
-        "[ok] service {label} stopped; {removed} file(s) removed{}",
+        "[ok] uninstalled; {removed} file(s) removed{}",
         if keep_logs { " (logs kept)" } else { "" }
     );
     println!("\n{ROUTINE_NOTE}\nHermes side: remove the g2h hermes-send skill/tool text if you added it.");
     0
+}
+
+/// True when `text` is the unit setup writes for `label`, or at least a unit for `label` that runs
+/// this install's `g2hd` (an older g2h's layout). Anything else belongs to another app.
+fn is_g2h_unit(text: &str, label: &str, g2hd: &Path, home: &Path) -> bool {
+    if text == service_text(label, g2hd, home) {
+        return true;
+    }
+    let (g, l) = if cfg!(target_os = "macos") {
+        (
+            format!("<string>{}</string>", xml(&g2hd.to_string_lossy())),
+            format!("<string>{}</string>", xml(label)),
+        )
+    } else {
+        (format!("ExecStart=\"{}\"", g2hd.display()), String::new())
+    };
+    text.contains(&g) && text.contains(&l)
+}
+
+/// `f` with its parent directory resolved (the final component is kept as is, so a symlink stays
+/// a symlink): `/var/x` and `/private/var/x` compare equal, `home/../elsewhere/f` does not match `home/f`.
+fn real_parent(f: &Path) -> PathBuf {
+    match (
+        f.parent().and_then(|d| d.canonicalize().ok()),
+        f.file_name(),
+    ) {
+        (Some(d), Some(n)) => d.join(n),
+        _ => f.to_path_buf(),
+    }
 }
 
 /// `g2h selftest [--live] [--yes] [--timeout S]`.

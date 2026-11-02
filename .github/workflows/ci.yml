@@ -31,8 +31,9 @@ jobs:
         if: runner.os == 'Linux'
         with:
           python-version: "3.12"
-      - name: shim tests
+      - name: shim tests (the integration test skips without the agent-importers source, which CI does not have; the unit tests run)
         if: runner.os == 'Linux'
         run: |
           python -m pip install --quiet pytest pytest-timeout
-          BOTPORT_BIN=target/debug/botport python -m pytest shim/ --timeout=60
+          echo "::notice::the shim integration test needs the agent-importers source; CI has none, so it is skipped (the unit tests run) (see docs/REFERENCE.md)"
+          BOTPORT_BIN=target/debug/botport python -m pytest shim/ --timeout=60 -rs

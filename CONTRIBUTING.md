@@ -48,6 +48,8 @@ it should be empty.
 
 Tests never touch your real `~/.hermes` or `~/.g2h`: they use temp directories. Please keep it that way in new tests.
 `tests/e2e-real/` talks to real bots and is skipped unless you opt in; you don't need it for a normal PR.
+`shim/` (the agent-importers shim): its integration test needs the upstream agent-importers source and is **skipped**
+without it, including in CI (the two unit tests still run); see [docs/REFERENCE.md](docs/REFERENCE.md#agent-importers-source) to run it.
 
 ## Pull requests
 - One change per PR, with a short description of what and why. Link the issue if there is one.
