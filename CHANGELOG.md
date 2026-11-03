@@ -31,6 +31,14 @@ All notable changes to this project are documented here. The format is based on
   Unicode normalisation, and packages over the size limits are refused. Writes go to a temp dir, are read back and
   checked, then swapped in (files `0600`, executables `0700`, in a `0700` folder); a crash in the middle of the
   swap is recovered by the next write or read. Design: [docs/design/MIRROR.md](docs/design/MIRROR.md) section 11.
+- `botport digest write|show|inject`: the activity digest for mirror mode (`botport-digest/1`, design section 5). `write`
+  builds `<profile>/botport/digest-hermes.md` (0600) from the profile's owner sessions in `state.db` (titles only,
+  read-only through the `sqlite3` command), `cron/jobs.json`, skill counts and the mirror state's times and conflict
+  count, capped at 4,500 bytes, cleaned, credential lines dropped, and not rewritten when unchanged. Summary level only:
+  never memories, user facts or message text (only whether a session's last message ends in a question mark).
+  `inject` is a `pre_llm_call` hook that adds the peer's digest as untrusted notes on an
+  owner session's first turn only (a local surface, or a `sender_id` listed with `--owner-user`; anything else, and
+  cron always, gets nothing), or a one-line pointer with `--mode pointer`. v0.1 commands are unchanged.
 
 ## [0.1.2] - 2026-11-03
 

@@ -1,4 +1,6 @@
-//! Hermes adapter: port spec, plan/apply/sync (`sync`), two-way export/drift (`twoway`), and the `Adapter` impl.
+//! Hermes adapter: port spec, plan/apply/sync (`sync`), two-way export/drift (`twoway`), the activity digest
+//! (`digest`), and the `Adapter` impl.
+pub mod digest;
 pub mod mirror;
 pub mod schedule;
 pub mod spec;

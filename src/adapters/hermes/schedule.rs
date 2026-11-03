@@ -422,18 +422,18 @@ mod tests {
 
     #[test]
     fn one_shots_are_recognised_but_not_imported() {
-        assert_eq!(parse("2026-02-03T14:00:00"), Some(Parsed::Once));
+        assert_eq!(parse("2000-02-03T14:00:00"), Some(Parsed::Once));
         assert_eq!(parse("in 30m"), Some(Parsed::Once));
         assert!(n("in 2h").unwrap_err().contains("runs once"));
         for once in [
-            "2026-02-29T09:00",
-            "2028-02-29",
-            "2026-11-02 07:30:00.5+08:00",
-            "2026-11-02T07:30Z",
+            "1999-02-29T09:00",
+            "2000-02-29",
+            "2000-01-02 03:15:00.5+03:00",
+            "2000-01-02T03:15Z",
         ] {
             assert_eq!(
                 parse(once),
-                (!once.starts_with("2026-02")).then_some(Parsed::Once),
+                (!once.starts_with("1999-02")).then_some(Parsed::Once),
                 "{once}"
             );
         }
@@ -442,9 +442,9 @@ mod tests {
             "Thursdays 9am",
             "Twice a day",
             "Tea time",
-            "2026-13-45",
-            "2026-04-31",
-            "2026-11-02T25:00",
+            "2000-13-45",
+            "2000-04-31",
+            "2000-01-02T25:00",
         ] {
             assert_eq!(
                 n(bad).unwrap_err(),

@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn lines_round_trip_and_fields_are_made_safe() {
-        let r = row("2026-01-03T05:00:00Z", "mirror-sync", 212, Some(17));
+        let r = row("2000-01-03T05:00:00Z", "mirror-sync", 212, Some(17));
         assert_eq!(Row::parse(&r.line()).unwrap(), r);
         let mut odd = r.clone();
         odd.pair = "demo,bot\n\"x\"".into();
@@ -349,8 +349,8 @@ mod tests {
     fn append_writes_the_header_once_and_is_private() {
         let d = tmp("append");
         let p = d.join("botport/metrics.csv");
-        append(&p, &row("2026-01-03T05:00:00Z", "mirror-sync", 10, None)).unwrap();
-        append(&p, &row("2026-01-03T05:01:00Z", "mirror-sync", 20, Some(5))).unwrap();
+        append(&p, &row("2000-01-03T05:00:00Z", "mirror-sync", 10, None)).unwrap();
+        append(&p, &row("2000-01-03T05:01:00Z", "mirror-sync", 20, Some(5))).unwrap();
         let t = fs::read_to_string(&p).unwrap();
         assert_eq!(t.lines().next().unwrap(), HEADER);
         assert_eq!(t.lines().count(), 3);
@@ -373,7 +373,7 @@ mod tests {
             // never appends through a symlink
             let q = d.join("botport/link.csv");
             std::os::unix::fs::symlink(&p, &q).unwrap();
-            assert!(append(&q, &row("2026-01-03T05:02:00Z", "x", 1, None)).is_err());
+            assert!(append(&q, &row("2000-01-03T05:02:00Z", "x", 1, None)).is_err());
         }
         assert_eq!(read(&d.join("none.csv")).unwrap(), vec![]);
         fs::remove_dir_all(&d).ok();
@@ -384,13 +384,13 @@ mod tests {
         let mut rows = vec![];
         for (i, ms) in [100u64, 200, 300, 400, 1000].iter().enumerate() {
             rows.push(row(
-                &format!("2026-01-03T05:0{i}:00Z"),
+                &format!("2000-01-03T05:0{i}:00Z"),
                 "mirror-sync",
                 *ms,
                 Some(10 * (i as u64 + 1)),
             ));
         }
-        rows.push(row("2026-01-01T00:00:00Z", "digest-write", 5, None));
+        rows.push(row("2000-01-01T00:00:00Z", "digest-write", 5, None));
         rows.push(row("garbage", "digest-write", 7, None));
         let g = stats(&rows, None);
         assert_eq!(g.len(), 2);
@@ -399,7 +399,7 @@ mod tests {
         assert_eq!((s.p50_tokens, s.p95_tokens), (Some(30), Some(50)));
         let d = g.iter().find(|g| g.cmd == "digest-write").unwrap();
         assert_eq!((d.runs, d.p50_tokens), (2, None));
-        let since = parse_utc_iso("2026-01-02T00:00:00Z").unwrap();
+        let since = parse_utc_iso("2000-01-02T00:00:00Z").unwrap();
         let g = stats(&rows, Some(since));
         assert_eq!(g.len(), 1, "old and unreadable rows are left out");
         assert!(render(&g).contains("mirror-sync"));

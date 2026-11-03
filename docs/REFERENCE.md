@@ -15,6 +15,9 @@ botport drift   --bundle DIR --spec botport.toml [--no-cron]   # exit 1 on any d
 botport export-hermes --bundle DIR --spec botport.toml  # Hermes -> Grok: what the Hermes bot learned
 botport battery init --bundle export --out battery.json   # starter battery for any bot (USER-GUIDE §6)
 botport test    --profile NAME --battery battery.json        # hermes chat --format stream-json + hermes -z
+botport digest write  --hermes-home PROFILEDIR [--pair NAME] [--window-days 7] [--owner-user ID]... [--titles]
+botport digest show   --file F [--pair P --key F]
+botport digest inject --hermes-home PROFILEDIR [--mode full|pointer] [--max-age-days 14] [--peer-file F] [--owner-user ID]...
 ```
 Common: `--profile NAME` / `--hermes-home DIR` (default `~/.hermes`) or `--profile-dir DIR`; `--json`; `--details FILE`
 (default `$XDG_STATE_HOME/botport/<command>-<profile>.json`, or `<command>.json` with no profile); `-h`/`--help`.
@@ -120,6 +123,66 @@ botport mirror apply-pack --pair P --dir PAIRDIR --from EXPORT --stage DIR [--lo
   its stdin, never in argv; one listing call per quiet sync, downloads cached in `<profile>/botport/drive-cache/`;
   or the folder Google Drive for desktop syncs), `hybrid` reads kind by kind from local where complete and sends by Drive.
 - Exit codes: 0 clean; 1 differences (`plan`, `status`); 2 usage or refused; 3 conflicts or approvals remain.
+
+## Activity digest (`digest`, mirror mode)
+A small Markdown note per side (`botport-digest/1`, design: [design/MIRROR.md](design/MIRROR.md) section 5): four
+sections in this order, each with a line budget (Recent activity 12, Open threads 6, Regular routines 10, Key facts
+10), every line at most 160 characters, the whole file at most 4,500 bytes (lines are dropped from the end of the
+longest section until it fits; the header records the final byte count). Every line is cleaned (control characters,
+HTML comments, Markdown headings, links, backticks and code fences removed); a line that looks like a credential is
+dropped, not masked. The same inputs give the same bytes, and an unchanged digest is not rewritten. A digest is
+summary level only: counts, routine names and times (session titles only with `--titles`). It never carries memories, user facts,
+message text, or approval, form or secret payloads.
+
+`--hermes-home` here is the profile's own `HERMES_HOME` (the profile dir, as Hermes runs a hook); add `--profile
+NAME` to name a profile under a Hermes home instead, or give `--profile-dir DIR`.
+
+- `digest write` builds `<profile>/botport/digest-hermes.md` (file 0600, folder 0700, written atomically) from the
+  profile's `state.db` (read with `sqlite3 -readonly -json` and a 200 ms busy timeout; only session title, start/end,
+  message count, and the role and final character of the last message; every session is "session" unless the owner
+  passes `--titles`, since titles are usually generated from the conversation; with it, a session without a title is
+  "untitled session"), `cron/jobs.json` (routines, and how many are enabled), the skill folders under `skills/` (counted, not
+  opened) and, if present, `botport.mirror.json` (only the newest `items.*.at` and the number of `conflicts`). Key
+  facts are those setup facts (`3 skills, 1 routine (1 enabled)`, `last mirror change 01-01 09:00, 1 open conflict`);
+  `memories/` is never read. Only owner sessions are read: source `cli`, `tui`,
+  `desktop` or `local`, or a user id given with `--owner-user` (repeatable); never `cron`. Window: `--window-days`
+  (default 7). Without `sqlite3` or `state.db` the session sections are empty and the command still succeeds; when
+  the database is busy it exits 0 and writes nothing (the next session end writes). No network, no model call, no
+  operation lock. Meant for the `on_session_end` hook.
+- `digest show --file F` checks a digest (header, byte count, the four sections in order, budgets, cap) and prints it,
+  cleaned again; exit 2 if it is not a valid digest.
+- `digest show --file F --pair P --key K` prints a digest copied from the pair folder only when the `F.mac` beside it
+  verifies with the pair key (HMAC-SHA256 over the pair, the file name and the bytes); with a key, `mirror sync`
+  signs the Hermes digest it puts in the folder and reads a Grok digest from it only when signed. A pair without a
+  key reads no digest from the folder.
+- `digest inject` is the `pre_llm_call` hook. It reads the hook's JSON from stdin (`is_first_turn`, `platform`,
+  `sender_id`, at the top level or under `extra`) and prints `{"context": "..."}` only on the first turn of an owner
+  session: `platform` is a local surface (`cli`, `tui`, `desktop`, `local`) or `sender_id` is one of the
+  `--owner-user` ids (repeatable). It fails closed: a gateway platform without a listed sender, a missing platform
+  without a listed sender, or `cron` (always) prints nothing. The context is
+  the peer digest (`<profile>/botport/digest-grok.md`, or `--peer-file`) framed as untrusted notes between
+  delimiters, or with `--mode pointer` one line naming the file by its path inside the profile (never an absolute
+  path). `<profile>/botport/digest-grok.md` is written by botport only from a digest that verified with the pair key
+  (or from the local records); `--peer-file` is for a digest file the owner made or chose on this machine and is read
+  as it is, with no signature check. A missing, invalid or stale peer digest (older than
+  `--max-age-days`, default 14, by the older of its `written=` stamp and the file's mtime) prints nothing. It always
+  exits 0 and writes nothing. An owner who wants no digest text in a model's context at all uses `--mode pointer` in
+  the hook (or leaves the inject hook out).
+- **External programs.** `sqlite3`, `curl` and the token command run by absolute path: a bare name is looked up in
+  `PATH`, skipping an entry that is itself a link, and an entry unless every folder in it, from the root down, is
+  owned by root or the user and writable by no one else (a sticky folder such as /tmp is not trusted; a link on the
+  way is followed only if root made it, as on systems where `/bin` points to `/usr/bin`, and its target is checked
+  the same way; a Nix store, which its build group can write, is therefore not trusted); the program file must
+  be owned and protected the same way, and one reached through a link must also sit in such a folder, and `sqlite3` (3.33 or later) and `curl` (7.52 or later) must be new enough, also when given
+  with a full path. The check and the run are separate steps, so a program replaced in between would run (a residual
+  risk on a machine where someone else can write those folders; that is what the check refuses).
+- **Where digests live and how to delete them.** On the host: `<profile>/botport/digest-hermes.md` and
+  `<profile>/botport/digest-grok.md` (0600; rewritten in place, one of each). In the pair folder: `digest/hermes-<n>.md`
+  and, with a key, `digest/hermes-<n>.md.mac`; botport keeps the newest 3 and deletes older ones as it writes new
+  ones. A digest holds routine names and, with `--titles`, session titles, which then reach the other platform and are
+  kept by the folder's provider (its trash and revision history included) until deleted there. To delete them: remove
+  the digest hooks from the profile's `config.yaml`, delete the two host files, delete `digest/` in the pair folder
+  and empty the provider's trash. `mirror init --undo` stops syncing but leaves digest files in place.
 
 ## The bundle (`export`, run inside the Grok box)
 | Path | What |
