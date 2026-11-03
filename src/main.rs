@@ -40,6 +40,7 @@ const USAGE: &str = "botport <command> [options]   (v{V}; --version prints it)
   mirror restore --pair P ITEM --from SHORT   mirror stats [--since 7d] [--metrics FILE]
   mirror setup --print-charter|--print-skill   the Mirror bot's charter (the owner creates one Mirror bot per account and
           pastes it), or the box-wide mirror-recent skill   mirror applied --pair P ITEM   a listed change was applied by hand
+  mirror doctor --pair P   can you chat with the Hermes twin (its gateway, its model)? exit 1 when not
   mirror recent (--root R | --pair P --dir PAIRDIR --key F)   (in the Grok box) each pair's newest signed Hermes digest
           to <pair>/from-hermes/digest, for the mirror-recent skill
   mirror digest-items --pair P (--agent-id ID [--agent-data DIR] [--with-skills] | --from EXPORT) --out DIR [--log F]

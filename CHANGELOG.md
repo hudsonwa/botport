@@ -69,6 +69,12 @@ All notable changes to this project are documented here. The format is based on
   the box's next state file continues the numbering and carries every blob again.
 
 ### Added
+- Chatting with a twin: `mirror status`, `mirror init` and `mirror sync` start with a loud line when the Hermes twin
+  cannot be chatted with yet (no gateway, parked, not served, no model) and say the fix; `mirror doctor --pair P`
+  checks the gateway and the model. botport reads Hermes' own status files and never starts a gateway. A profile that
+  lands without a model gets the default profile's model settings, keeping only the default/model/name/provider fields
+  and dropping values that look like credentials. The user guide's new "Chatting with
+  your mirrored bots" covers `hermes gateway migrate --multiplex`, its risks and a safe order.
 - The Mirror bot changes no other bot's setup: what the Grok side reads but never writes (a bot's name), and Hermes-side
   changes to kinds it cannot read, go on a per-pair list to apply in the Grok app by hand (`mirror status`, the report;
   `mirror applied ITEM`). The box's shared skills are mirrored only for a pair the owner opts in (`--with-skills`).

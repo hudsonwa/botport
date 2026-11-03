@@ -6,6 +6,8 @@ use std::process::Command;
 fn bin(state: &std::path::Path) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_botport"));
     c.env("XDG_STATE_HOME", state);
+    // never this machine's own Hermes gateway records
+    c.env("HERMES_GATEWAY_LOCK_DIR", state.join("gateway-locks"));
     c
 }
 
@@ -2731,4 +2733,64 @@ fn a_bot_read_from_the_box_gets_only_what_the_owner_approved() {
     assert_eq!(c, 0, "{e}");
     let (_, v, e) = p.sync();
     assert_eq!(v["in_flight"].as_u64(), Some(1), "{v} {e}");
+}
+
+#[test]
+fn a_twin_that_cannot_chat_yet_is_said_loudly_and_doctor_names_the_fix() {
+    let p = Pair::new("mirror-chat-ready");
+    w(
+        &p.export,
+        &export_json("Example instructions.", "Example prompt.", 1, 0),
+    );
+    p.box_digest();
+    p.init();
+    // sync works without a gateway; chatting does not, and every status says so first
+    let (_, v, e) = p.bp(&["mirror", "status"]);
+    let n = v["chat_notice"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{v} {e}"));
+    assert!(
+        n.starts_with(
+            "Synced, but you can't chat with this bot in Hermes yet: no Hermes gateway record was found"
+        ),
+        "{n}"
+    );
+    let (c, v, _) = p.sync();
+    assert!(v["chat_notice"].is_string(), "{c} {v}");
+    let (c, v, e) = p.bp(&["mirror", "doctor"]);
+    assert_eq!(c, 1, "{v} {e}");
+    assert_eq!(v["checks"][0]["name"], "chat", "{v}");
+    assert_eq!(v["checks"][0]["ok"], false, "{v}");
+    assert!(
+        v["checks"][0]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("fix: hermes gateway start"),
+        "{v}"
+    );
+    assert_eq!(v["checks"][1]["name"], "model", "{v}");
+    assert_eq!(v["checks"][1]["ok"], false, "{v}");
+    // a running gateway that serves it, and a model: nothing to say
+    w(
+        &p.hermes.join("gateway_state.json"),
+        &format!(
+            r#"{{"pid": {}, "gateway_state": "running", "served_profiles": ["default"]}}"#,
+            std::process::id()
+        ),
+    );
+    let cfg = std::fs::read_to_string(p.hermes.join("config.yaml")).unwrap_or_default();
+    w(
+        &p.hermes.join("config.yaml"),
+        &format!("model: example-model\n{cfg}"),
+    );
+    let (c, v, e) = p.bp(&["mirror", "doctor"]);
+    if v["checks"][0]["detail"]
+        .as_str()
+        .is_some_and(|d| d.contains("could not check"))
+    {
+        return; // no `kill` here to check a process with
+    }
+    assert_eq!(c, 0, "{v} {e}");
+    let (_, v, e) = p.bp(&["mirror", "status"]);
+    assert!(v["chat_notice"].is_null(), "{v} {e}");
 }

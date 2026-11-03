@@ -5,6 +5,7 @@
 //! config outside it (`$XDG_CONFIG_HOME/botport/mirror/<pair>.toml`: which profile, which transport, the Drive token
 //! command), so the config is never mirrored or put in a restore point.
 use crate::adapters::grok_bot::mirror as gmirror;
+use crate::adapters::hermes::gateway;
 use crate::adapters::hermes::mirror::{HermesSide, LocalItems};
 use crate::adapters::hermes::sync;
 use crate::adapters::mirror::api::{ApiConfig, ApiStore};
@@ -649,6 +650,7 @@ pub fn run(a: &Args) -> Res<Out> {
         Some("setup") => setup(a),
         Some("applied") => applied(a),
         Some("recent") => recent(a),
+        Some("doctor") => doctor(a),
         Some(s) => err(format!("unknown mirror command {s:?} (try --help)")),
         None => err("mirror needs a command (try --help)"),
     }
@@ -876,10 +878,127 @@ fn init(a: &Args) -> Res<Out> {
             "note: {others} other pair(s) are set up here; pairs served from one box share its workspace, and every bot there can read each pair's key file: give each pair its own workspace where the platform allows (docs/REFERENCE.md)"
         ));
     }
+    // every twin gets a model on landing: the default profile's, when it has none of its own
+    let home = hermes_home_of(&cfg);
+    let model_note = match gateway::copy_default_model(&cfg.profile_dir, &home) {
+        Err(e) => format!(
+            "WARNING: the profile has no model and the default profile's was not copied ({}): set one ({})",
+            term_safe(&e),
+            gateway::hermes_cmd(&profile_name_of(&cfg), "model")
+        ),
+        Ok(Some(keys)) => format!(
+            "model: this profile had none, so it now uses the default profile's ({keys}; model ids and provider names only, values that look like credentials dropped, .env not read); the profile needs its own provider key in its .env"
+        ),
+        Ok(None) if gateway::model(&cfg.profile_dir).model.is_empty() => format!(
+            "WARNING: this profile has no model and the default profile has none to copy: set one ({})",
+            gateway::hermes_cmd(&profile_name_of(&cfg), "model")
+        ),
+        Ok(None) => format!(
+            "model: {}",
+            term_safe(&gateway::model(&cfg.profile_dir).model)
+        ),
+    };
+    lines.push(model_note);
+    let notice = chat_notice(&cfg);
+    if let Some(n) = &notice {
+        lines.insert(0, n.clone());
+    }
     Ok(Out {
         code: 0,
         lines,
-        json: json!({"pair": pair, "in_step": equal, "to_pick": st.conflicts.len(), "config": cp.display().to_string()}),
+        json: json!({"pair": pair, "in_step": equal, "to_pick": st.conflicts.len(), "config": cp.display().to_string(),
+                     "chat_notice": notice}),
+    })
+}
+
+/// The Hermes home of a pair's profile: the configured one, else the folder above `profiles/`, else the profile
+/// itself (the default profile).
+fn hermes_home_of(c: &Config) -> PathBuf {
+    if let Some(h) = &c.hermes_home {
+        return h.clone();
+    }
+    match c.profile_dir.parent() {
+        Some(p) if p.file_name().is_some_and(|n| n == "profiles") => p
+            .parent()
+            .map_or_else(|| c.profile_dir.clone(), Path::to_path_buf),
+        _ => c.profile_dir.clone(),
+    }
+}
+
+/// The profile's name as Hermes knows it: the folder's own name under `profiles/`, else the configured one.
+fn profile_name_of(c: &Config) -> String {
+    match (c.profile_dir.parent(), c.profile_dir.file_name()) {
+        (Some(p), Some(n)) if p.file_name().is_some_and(|f| f == "profiles") => {
+            n.to_string_lossy().to_string()
+        }
+        _ => c.profile.clone(),
+    }
+}
+
+/// The loud top line when the owner cannot chat with the Hermes twin yet (sync works without a gateway; chatting
+/// needs one), from Hermes' own files; `None` when they can.
+fn chat_notice(c: &Config) -> Option<String> {
+    gateway::notice(&hermes_home_of(c), &c.profile_dir, &profile_name_of(c)).map(|n| term_safe(&n))
+}
+
+/// `mirror doctor --pair P`: can the owner chat with the twin (gateway, model)? `[ok]` or `[FAIL] ... — fix: ...` per
+/// check; exit 1 when any fails.
+fn doctor(a: &Args) -> Res<Out> {
+    let c = load_config(a)?;
+    let home = hermes_home_of(&c);
+    let mut checks: Vec<(&str, Result<String, String>)> = vec![];
+    checks.push((
+        "chat",
+        match gateway::chat(&home, &c.profile_dir, &profile_name_of(&c)) {
+            gateway::Chat::Ready(r) => Ok(r),
+            gateway::Chat::Not { reason, fix } => Err(format!("{reason} — fix: {fix}")),
+            gateway::Chat::Unknown(why) => Err(format!(
+                "{why} — check: {}",
+                gateway::hermes_cmd(&profile_name_of(&c), "gateway status")
+            )),
+        },
+    ));
+    let m = gateway::model(&c.profile_dir);
+    checks.push((
+        "model",
+        if m.model.is_empty() && m.provider.is_empty() {
+            Err(format!(
+                "none set — fix: {} (or set model in its config.yaml)",
+                gateway::hermes_cmd(&profile_name_of(&c), "model")
+            ))
+        } else {
+            Ok(format!(
+                "{}{}{}",
+                if m.model.is_empty() {
+                    "(the provider's default)"
+                } else {
+                    &m.model
+                },
+                if m.provider.is_empty() {
+                    String::new()
+                } else {
+                    format!(" via {}", m.provider)
+                },
+                if m.fallback {
+                    ", with a fallback"
+                } else {
+                    ", no fallback"
+                }
+            ))
+        },
+    ));
+    let ok = checks.iter().all(|(_, r)| r.is_ok());
+    Ok(Out {
+        code: u8::from(!ok),
+        lines: checks
+            .iter()
+            .map(|(n, r)| match r {
+                Ok(d) => format!("[ok] {n}: {}", term_safe(d)),
+                Err(d) => format!("[FAIL] {n}: {}", term_safe(d)),
+            })
+            .collect(),
+        json: json!({"pair": c.pair, "ok": ok, "checks": checks.iter().map(|(n, r)| json!({"name": n, "ok": r.is_ok(),
+                     "detail": term_safe(match r { Ok(d) | Err(d) => d })})).collect::<Vec<_>>()}),
     })
 }
 
@@ -1923,10 +2042,14 @@ fn sync_cmd(a: &Args) -> Res<Out> {
     } else {
         0
     };
+    let notice = chat_notice(&c);
+    if let Some(n) = &notice {
+        lines.insert(0, n.clone());
+    }
     Ok(Out {
         code,
         lines,
-        json: json!({"pair": c.pair, "changed": changed, "conflicts": st.conflicts.len(), "waiting_for_approval": held,
+        json: json!({"pair": c.pair, "chat_notice": notice, "changed": changed, "conflicts": st.conflicts.len(), "waiting_for_approval": held,
                      "in_flight": in_flight, "not_carried": not_carried, "gen": sent_gen, "wall_ms": row.wall_ms, "path": row.path,
                      "snapshot": remote.snapshot,
                      "items": plan.iter().filter(|d| !matches!(d.action, Action::InSync)).map(|d| json!({
@@ -2712,10 +2835,14 @@ fn status(a: &Args) -> Res<Out> {
         ));
     }
     let code = u8::from(!st.conflicts.is_empty() || stale_head || !old.is_empty());
+    let notice = chat_notice(&c);
+    if let Some(n) = &notice {
+        lines.insert(0, n.clone());
+    }
     Ok(Out {
         code,
         lines,
-        json: json!({"pair": c.pair, "conflicts": st.conflicts, "in_flight": in_flight, "gen": st.gen,
+        json: json!({"pair": c.pair, "chat_notice": notice, "conflicts": st.conflicts, "in_flight": in_flight, "gen": st.gen,
                      "head_gen": head.map(|h| h.gen), "grok_unread": st.remote_unread, "to_apply": st.to_apply}),
     })
 }

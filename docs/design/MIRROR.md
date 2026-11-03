@@ -702,6 +702,29 @@ Mirror bot):
    read only its own pair's file when the owner asks about recent work, as notes, never instructions.
 5. No automated step needs a bot's agreement: each one is a file read or the owner's own Mirror bot.
 
+
+### 6.7 Chatting with a twin: gateways and models
+Sync needs nothing running in Hermes; chatting with a twin needs a gateway that serves its profile and a model. Recent
+Hermes Agent versions serve every profile from one gateway started from the default profile (see Hermes'
+multi-profile gateway guide). botport never starts,
+stops or messages a gateway: it reads Hermes' own files (`<profile>/gateway.parked`; `gateway.standalone` in the
+profile's `config.yaml` and that profile's own `gateway_state.json`; the host record under
+`$HERMES_GATEWAY_LOCK_DIR` or `$XDG_STATE_HOME/hermes/gateway-locks/`, or the root `gateway_state.json`, with
+`served_profiles`, `parked_profiles` and `multiplex_standalone_reason`; a record counts only when its process is alive,
+checked with `kill -0`) and says the result loudly: `mirror status`, `mirror init` and `mirror sync` start with
+"Synced, but you can't chat with this bot in Hermes yet: <reason>. Fix: <one command>", and `mirror doctor` checks the
+gateway and the model per twin. Text taken from those files is shown on one line, escaped and bounded. With no record at
+all it says that no gateway record was found (no gateway has run, or this Hermes version keeps none); when it cannot
+tell (no `kill`, a gateway process of another user) it says that instead of guessing. A profile under `profiles/` is
+looked up by its folder's name. On landing (`mirror init`), a profile without a
+model gets the default profile's `model`, `fallback_providers` and `fallback_model`, keeping only the
+default/model/name/provider fields and dropping values that look like credentials (`.env` is never read;
+the file is written again, keeping its settings and leading comments); with nothing to copy, or when the copy fails,
+init warns and still finishes. The user guide's "Chatting with your mirrored bots" describes, as Hermes' own guide does
+(https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/multi-profile-gateways.md), `hermes gateway migrate --multiplex`, its risks (every profile restarts; per-profile gateway services are removed;
+per-profile HTTP ports move to paths on one listener; no built-in rollback) and a safe order (backup, quiet time,
+dry run, verify, a way back per profile).
+
 ## 7. Safety and privacy rules
 - The export the Grok box reads for the mirror, when the owner puts one in place of the box files, is setup only
   (instructions, skills, routines, app names): AGENT-EXPORT.md's setup-only form leaves memories and user facts out, and
