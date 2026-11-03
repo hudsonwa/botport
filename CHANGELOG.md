@@ -19,6 +19,8 @@ All notable changes to this project are documented here. The format is based on
 - Drive transport for mirror mode: cumulative change packs named by a forward-only `HEAD`, content-addressed blobs,
   rotating digests; the synced-folder backend, or the Drive API through `curl` (token from a command, passed in a
   `0600` config file, never in argv). Design section 6.3.
+- `botport mirror stats`: count and p50/p95 time and payload per command and transport, from a metrics CSV (one row
+  per mirror run, `0600`, never leaves the machine). Design section 8.
 - `core::package`: opaque skill/tool packages (`botport-package/1`) for mirror mode. A package is carried byte for
   byte with its executable bits; its digest covers every path, byte and executable bit; a generated manifest lets a
   receiver check it. Symlinks, special files, setuid/setgid/sticky bits, unsafe paths, paths that collide by case or

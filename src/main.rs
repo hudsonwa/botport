@@ -29,6 +29,7 @@ const USAGE: &str = "botport <command> [options]   (v{V}; --version prints it)
   test    --profile NAME --battery FILE [--only id,id] [--out DIR]
   doctor  [--profile NAME | --profile-dir DIR] [--spec FILE]   check hermes (on PATH, version), profile dir, write access, spec; exit 1 on a failure
   battery init PATH|--bundle PATH [--spec FILE] --out FILE  starter battery (PATH: bundle dir or grok-bot-export file) (docs/USER-GUIDE.md §6)
+  mirror stats [--since 7d] [--metrics FILE]   mirror mode: time and payload per command (docs/design/MIRROR.md)
   --check-routines PATH|auto  (verify/plan/apply/sync/drift; EXPERIMENTAL) warn about routines the Grok desktop
           app's cache knows that the export left out. This reads your Grok desktop app's local conversation transcripts
           (the transcript.replicas files) in full, on this machine only. It keeps only the names of routines from
@@ -57,6 +58,8 @@ const VALUED: &[&str] = &[
     "battery",
     "only",
     "check-routines",
+    "since",
+    "metrics",
 ];
 const FLAGS: &[&str] = &[
     "strict",
@@ -126,6 +129,12 @@ fn main() -> ExitCode {
         "test" => cmd_test(&a),
         "doctor" => cmd_doctor(&a),
         "battery" if a.pos.get(1).map(String::as_str) == Some("init") => cmd_battery_init(&a),
+        "mirror" => botport::mirror::run(&a).map(|o| Report {
+            ok: o.code == 0,
+            code: o.code,
+            lines: o.lines,
+            json: o.json,
+        }),
         _ => Err(format!("unknown command {cmd:?} (try --help)")),
     };
     let r = match (r, a.get("check-routines")) {

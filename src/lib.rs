@@ -24,3 +24,4 @@ pub mod battery;
 mod conformance_tests;
 pub mod core;
 pub mod doctor;
+pub mod mirror;
