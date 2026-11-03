@@ -492,15 +492,12 @@ fn want_skills(c: &Ctx, cat: &str) -> (Vec<Item>, Units, Vec<(String, String)>) 
             continue;
         }
         // a skill file that would fail the write guard goes to the checklist (name and reason), not into the profile
-        if let Some(f) = files.iter().find_map(|(f, b)| {
+        if let Some((f, e)) = files.iter().find_map(|(f, b)| {
             secrets::guard(&format!("skills/{cat}/{n}/{f}"), b)
                 .err()
-                .map(|_| f.clone())
+                .map(|e| (f.clone(), e))
         }) {
-            manual.push((
-                format!("skill {n}"),
-                format!("not imported: {f} looks like it holds a secret; its text was not copied, add it by hand"),
-            ));
+            manual.push((format!("skill {n}"), guard_todo(&f, &e)));
             continue;
         }
         units.insert(format!("{cat}/{n}"), files.clone());
@@ -612,13 +609,15 @@ fn want_config(c: &Ctx) -> Res<Option<ConfigWant>> {
     let Some(cfg) = &c.spec.config else {
         return Ok(None);
     };
-    let text = c.spec.subst(&read_str(&cfg.template)?);
+    let text = c
+        .spec
+        .subst(&crate::core::yaml11::read_yaml_file(&cfg.template)?);
     let head: String = text
         .lines()
         .take_while(|l| l.starts_with('#'))
         .map(|l| format!("{l}\n"))
         .collect();
-    let mut v: Y = serde_yaml::from_str(&crate::core::yaml11::read(&text))
+    let mut v: Y = crate::core::yaml11::parse(&crate::core::yaml11::read(&text))
         .map_err(|e| format!("config template: {e}"))?;
     for (path, file) in &cfg.inherit {
         let segs: Vec<String> = path.split('.').map(String::from).collect();
@@ -664,7 +663,8 @@ fn want_spec_cron(c: &Ctx) -> Res<Vec<CronJob>> {
         #[serde(default)]
         jobs: Vec<CronJob>,
     }
-    let f: F = serde_yaml::from_str(&read_str(&cr.file)?).map_err(|e| format!("cron file: {e}"))?;
+    let f: F = crate::core::yaml11::parse(&crate::core::yaml11::read_yaml_file(&cr.file)?)
+        .map_err(|e| format!("cron file: {e}"))?;
     let mut jobs = f.jobs;
     for j in &mut jobs {
         // the spec is the owner's own file: a schedule Hermes would reject stops the plan instead of failing at apply.
@@ -894,12 +894,24 @@ fn parse_list(v: Option<&Y>) -> Vec<String> {
     }
 }
 
+/// The checklist line for a skill file the write guard refused: the real reason (a secret, or a YAML file that
+/// could not be checked), never the value.
+fn guard_todo(f: &str, err: &str) -> String {
+    match secrets::unchecked_reason(err) {
+        Some(why) => format!("not imported: {f}: {why}; its text was not copied, add it by hand"),
+        None => format!(
+            "not imported: {f} looks like it holds a secret; its text was not copied, add it by hand"
+        ),
+    }
+}
+
 // ---------------------------------------------------------------- live profile reads
 pub fn skill_name(md: &Path) -> String {
-    let text = fs::read_to_string(md).unwrap_or_default();
+    // the front matter is at the start: never read (or allocate) more than the YAML size cap
+    let text = crate::core::yaml11::read_yaml_prefix(md);
     if let Some(rest) = text.strip_prefix("---") {
         if let Some(fm) = rest.split("---").next() {
-            if let Ok(Y::Mapping(m)) = serde_yaml::from_str::<Y>(fm) {
+            if let Ok(Y::Mapping(m)) = crate::core::yaml11::parse::<Y>(fm) {
                 if let Some(n) = m.get(key("name")) {
                     let n = key_str(n).trim().to_string();
                     if !n.is_empty() && n != "~" {
@@ -1002,9 +1014,11 @@ fn load_yaml(p: &Path) -> Res<Option<Y>> {
     if !p.is_file() {
         return Ok(None);
     }
-    serde_yaml::from_str(&crate::core::yaml11::read(&read_str(p)?))
-        .map(Some)
-        .map_err(|e| format!("{}: {e}", p.display()))
+    crate::core::yaml11::parse(&crate::core::yaml11::read(
+        &crate::core::yaml11::read_yaml_file(p)?,
+    ))
+    .map(Some)
+    .map_err(|e| format!("{}: {e}", p.display()))
 }
 
 /// cron/jobs.json: no file = no jobs; an unreadable or malformed file is an error (never read as "no jobs").
@@ -2029,7 +2043,7 @@ fn apply_config(
                 // Rebuild without the conflicting paths: re-plan semantics, applied path by path.
                 let mut new =
                     load_yaml(&c.dest.join("config.yaml"))?.unwrap_or(Y::Mapping(Mapping::new()));
-                let full: Y = serde_yaml::from_str(&crate::core::yaml11::read(text))
+                let full: Y = crate::core::yaml11::parse(&crate::core::yaml11::read(text))
                     .map_err(|e| e.to_string())?;
                 for i in &cfg_todo {
                     let path: Vec<String> = split_dotted(&i.name, &full);
@@ -2323,6 +2337,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_refused_skill_file_gets_its_real_reason() {
+        let unreadable =
+            secrets::guard("skills/c/demo/deploy.yaml", b"a: [unclosed\n").unwrap_err();
+        let t = guard_todo("deploy.yaml", &unreadable);
+        assert!(
+            t.contains("could not be checked as YAML")
+                && !t.contains("looks like it holds a secret"),
+            "{t}"
+        );
+        let secret =
+            secrets::guard("skills/c/demo/notes.md", b"api_key=abc123def456ghi789\n").unwrap_err();
+        let t = guard_todo("notes.md", &secret);
+        assert!(t.contains("looks like it holds a secret"), "{t}");
+        assert!(!t.contains("abc123def456ghi789"));
+    }
+
+    #[test]
     fn schedules_become_paused_jobs_only_when_hermes_accepts_them() {
         use crate::core::model::{Schedule, ScheduleKind};
         let mut m = BotModel::from_json(
@@ -2536,7 +2567,7 @@ mod tests {
 
     #[test]
     fn leaves_and_paths_with_dotted_keys() {
-        let v: Y = serde_yaml::from_str("a:\n  b: 1\n  'x.y': 2\nc: []\n").unwrap();
+        let v: Y = crate::core::yaml11::parse("a:\n  b: 1\n  'x.y': 2\nc: []\n").unwrap();
         let mut l = vec![];
         leaves(&v, &mut vec![], &mut l);
         assert_eq!(l.len(), 3);

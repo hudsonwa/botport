@@ -30,6 +30,10 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 toml = "0.8"
 unicode-normalization = "0.1"
 
+[target.'cfg(unix)'.dependencies]
+# openat/unlinkat through directory handles with O_NOFOLLOW (already in the tree through g2h)
+rustix = { version = "1", default-features = false, features = ["std", "fs"] }
+
 [profile.release]
 opt-level = 3
 lto = true

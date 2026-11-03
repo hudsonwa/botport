@@ -840,6 +840,200 @@ fn an_export_that_leaves_the_persona_out_never_gets_it_replaced() {
 }
 
 #[test]
+fn watch_syncs_when_the_grok_side_writes_a_new_state() {
+    let p = Pair::new("mirror-watch");
+    w(
+        &p.export,
+        &export_with(
+            "Example instructions.",
+            &[("demo-routine", "Example prompt.", true)],
+        ),
+    );
+    p.box_digest();
+    let (c, _, e) = p.init_signed(&["--copy-one-sided"]);
+    assert_eq!(c, 0, "{e}");
+    p.sync();
+    assert_eq!(job(&jobs(&p), "demo-routine")["prompt"], "Example prompt.");
+    // the watcher runs for a few seconds; meanwhile the Grok side changes the (paused) routine's prompt
+    let child = bin(&p.t.0)
+        .args([
+            "mirror",
+            "watch",
+            "--pair",
+            "demo-bot",
+            "--mirror-config",
+            s(&p.cfg),
+            "--interval",
+            "100ms",
+            "--for",
+            "4s",
+            "--json",
+            "--metrics",
+            s(&p.t.0.join("m.csv")),
+        ])
+        .env("FAKE_PROFILE_DIR", &p.hermes)
+        .env("XDG_CONFIG_HOME", p.t.0.join("xdg-config"))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(800));
+    w(
+        &p.export,
+        &export_with(
+            "Example instructions.",
+            &[("demo-routine", "Changed prompt.", true)],
+        ),
+    );
+    p.box_digest();
+    let o = child.wait_with_output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap_or_default();
+    assert!(
+        v["syncs"].as_u64().unwrap_or(0) >= 1,
+        "{v} {}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert_eq!(job(&jobs(&p), "demo-routine")["prompt"], "Changed prompt.");
+}
+
+/// A changed pair configuration that cannot be read is retried on every poll (its change is not taken as seen): once
+/// it can be read, watch reloads it and syncs. Meanwhile it says, once, that it runs on the previous configuration.
+#[cfg(unix)]
+#[test]
+fn watch_retries_a_configuration_it_could_not_read() {
+    use std::os::unix::fs::PermissionsExt;
+    let p = Pair::new("mirror-watch-reload");
+    w(&p.export, &export_with("Example instructions.", &[]));
+    p.box_digest();
+    let (c, _, e) = p.init_signed(&[]);
+    assert_eq!(c, 0, "{e}");
+    p.sync();
+    let child = bin(&p.t.0)
+        .args([
+            "mirror",
+            "watch",
+            "--pair",
+            "demo-bot",
+            "--mirror-config",
+            s(&p.cfg),
+            "--interval",
+            "100ms",
+            "--for",
+            "3s",
+            "--json",
+        ])
+        .env("FAKE_PROFILE_DIR", &p.hermes)
+        .env("XDG_CONFIG_HOME", p.t.0.join("xdg-config"))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(600));
+    // the same configuration plus a comment, swapped in unreadable (one rename, so watch never sees it readable)
+    let text = std::fs::read_to_string(&p.cfg).unwrap();
+    let next = p.cfg.with_extension("next");
+    std::fs::write(&next, format!("{text}\n# demo note\n")).unwrap();
+    std::fs::set_permissions(&next, std::fs::Permissions::from_mode(0o000)).unwrap();
+    std::fs::rename(&next, &p.cfg).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(800));
+    // readable again, with the same stamp: only a retry picks it up
+    std::fs::set_permissions(&p.cfg, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let o = child.wait_with_output().unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap_or_default();
+    assert_eq!(
+        err.matches("still running on the previous configuration")
+            .count(),
+        1,
+        "{err}"
+    );
+    assert!(v["syncs"].as_u64().unwrap_or(0) >= 1, "{v} {err}");
+}
+
+#[test]
+fn check_runs_the_connection_round_trip() {
+    let p = Pair::new("mirror-check");
+    w(&p.export, &export_with("Example instructions.", &[]));
+    p.box_digest();
+    p.init();
+    let run = || p.bp(&["mirror", "check"]);
+    let stage = |r: (i32, serde_json::Value, String)| {
+        (r.0, r.1["stage"].as_str().unwrap_or("").to_string())
+    };
+    // the round folder this machine just made under probe/
+    let round = || {
+        std::fs::read_dir(p.drive.join("probe"))
+            .unwrap()
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .max_by_key(|e| e.metadata().unwrap().modified().unwrap())
+            .unwrap()
+            .path()
+    };
+    let read = |f: &str| std::fs::read_to_string(round().join(f)).unwrap();
+    // the Grok side has not written its probe file yet
+    assert_eq!(stage(run()), (3, "bot-file".into()));
+    w(
+        &p.drive.join("probe/bot.txt"),
+        "botport probe from the bot\n",
+    );
+    assert_eq!(stage(run()), (3, "host-files".into()));
+    assert_eq!(stage(run()), (3, "bot-ack".into()));
+    // an answer created but not filled in yet is still waiting
+    w(&round().join("ack-1.txt"), "");
+    assert_eq!(stage(run()), (3, "bot-ack".into()));
+    let (new, old) = (read("host-new.txt"), read("host-old.txt"));
+    w(&round().join("ack-1.txt"), &format!("{new}{old}"));
+    // this machine overwrites host-old.txt; a bot that hands back the old copy is caught
+    assert_eq!(stage(run()), (3, "host-overwrite".into()));
+    assert_ne!(read("host-old.txt"), old);
+    assert_eq!(stage(run()), (3, "bot-ack-2".into()));
+    w(&round().join("ack-2.txt"), &old);
+    assert_eq!(stage(run()), (2, "bot-read-overwrite".into()));
+    w(&round().join("ack-2.txt"), &read("host-old.txt"));
+    assert_eq!(stage(run()), (0, "passed".into()));
+    // a new round never reads the old round's answers, and never deletes a file the bot made
+    let first = round();
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    let (c, v, _) = p.bp(&["mirror", "check", "--reset"]);
+    assert_eq!((c, v["stage"].as_str()), (3, Some("host-files")));
+    assert_ne!(round(), first);
+    assert!(first.join("ack-1.txt").exists() && first.join("ack-2.txt").exists());
+    assert_eq!(stage(run()), (3, "bot-ack".into()));
+    // a bot that cannot read this machine's files
+    w(&round().join("ack-1.txt"), "nothing it could read\n");
+    assert_eq!(stage(run()), (2, "bot-read-new".into()));
+}
+
+#[test]
+fn an_export_that_yields_nothing_is_refused_not_read_as_empty() {
+    let p = Pair::new("mirror-empty-from");
+    w(&p.export, &export_with("Example instructions.", &[]));
+    // --from names the folder that holds the export file, not the file
+    let folder = p.export.parent().unwrap();
+    let out = p.drive.join("from-grok");
+    let (c, _, e) = p.bp(&[
+        "mirror",
+        "digest-items",
+        "--pair",
+        "demo-bot",
+        "--from",
+        s(folder),
+        "--out",
+        s(&out),
+    ]);
+    assert_eq!(c, 2, "{e}");
+    assert!(
+        e.contains("no setup found") && e.contains("export file itself"),
+        "{e}"
+    );
+    assert!(
+        !out.exists() || std::fs::read_dir(&out).unwrap().next().is_none(),
+        "nothing written"
+    );
+}
+
+#[test]
 fn no_state_no_merge_and_wrong_pair() {
     let p = Pair::new("mirror-nostate");
     w(
@@ -1312,4 +1506,1229 @@ fn init_says_where_it_looked() {
     ]);
     assert_ne!(c, 0);
     assert!(e.contains("--transport hybrid"), "{e}");
+}
+
+#[test]
+fn the_first_init_hands_the_owner_the_briefs_and_the_message_to_send() {
+    let p = Pair::new("mirror-first-setup");
+    let (c, _, e) = init_with(&p, &[]);
+    assert_eq!(c, 2, "{e}");
+    assert!(e.contains("a pair key was made"), "{e}");
+    // the first setup is the owner's own request to their own Mirror bot, never an automation's to a bot
+    assert!(
+        e.contains(
+            "first setup: if your account has no Mirror bot yet, create one in the app yourself"
+        ),
+        "{e}"
+    );
+    assert!(
+        e.contains("Please add the pair demo-bot for my bot <its name>"),
+        "{e}"
+    );
+    let dir = p.cfg.with_extension("brief");
+    assert!(!dir.join("AGENT-EXPORT.md").exists());
+    for (name, doc) in [
+        ("AGENT-MIRROR.md", "docs/AGENT-MIRROR.md"),
+        ("MIRROR-BOT.md", "docs/MIRROR-BOT.md"),
+    ] {
+        let f = dir.join(name);
+        assert!(e.contains(s(&f)), "{e}");
+        assert_eq!(
+            std::fs::read_to_string(&f).unwrap(),
+            std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(doc)).unwrap()
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&f).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600, "{name}");
+        }
+    }
+    // once the bot has written its first state file, init goes ahead
+    w(
+        &p.export,
+        &export_json("Example instructions.", "Example prompt.", 1, 0),
+    );
+    p.box_digest();
+    let (c, v, e) = init_with(&p, &[]);
+    assert_eq!(c, 0, "{v} {e}");
+}
+
+#[test]
+fn a_bot_that_keeps_its_instructions_still_mirrors_the_rest() {
+    let p = Pair::new("mirror-without-instructions");
+    let digest_without = |p: &Pair| {
+        let (c, v, e) = p.bp(&[
+            "mirror",
+            "digest-items",
+            "--pair",
+            "demo-bot",
+            "--from",
+            s(&p.export),
+            "--out",
+            s(&p.drive.join("from-grok")),
+            "--log",
+            s(&p.t.0.join("box/applied.jsonl")),
+            "--without",
+            "instructions",
+        ]);
+        assert_eq!(c, 0, "{e}");
+        v
+    };
+    // whatever the export holds for the instructions is dropped and reported as not mirrored
+    w(
+        &p.export,
+        &export_json("Example Grok instructions.", "Example prompt.", 1, 0),
+    );
+    let (c, _, e) = init_with(&p, &[]);
+    assert_eq!(c, 2, "{e}");
+    let v = digest_without(&p);
+    assert!(
+        v["unsupported"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|u| u == "persona.instructions"),
+        "{v}"
+    );
+    let state = std::fs::read_dir(p.drive.join("from-grok/blobs"))
+        .unwrap()
+        .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap_or_default())
+        .collect::<String>();
+    assert!(!state.contains("Example Grok instructions"));
+    // the Hermes side keeps its own instructions
+    let own = "Owner text.\n<!-- botport:begin persona -->\nExample Hermes instructions.\n<!-- botport:end persona -->\n";
+    w(&p.hermes.join("SOUL.md"), own);
+    let (c, v, e) = init_with(&p, &[]);
+    assert_eq!(c, 0, "{v} {e}");
+    // an item that is not mirrored is not put on the pick-one list
+    assert_eq!(v["to_pick"], 3, "{v}");
+    for it in ["persona.name", "skill:demo-skill-0", "routine:demo-routine"] {
+        let (c, _, e) = p.bp(&["mirror", "pick", it, "--keep", "grok", "--yes"]);
+        assert_eq!(c, 0, "{it}: {e}");
+    }
+    let (c, _, e) = p.bp(&["mirror", "approve", "routine:demo-routine", "--yes"]);
+    assert_eq!(c, 0, "{e}");
+    let (c, v, e) = p.sync();
+    assert_eq!(c, 0, "{v} {e}");
+    let items = v["items"].as_array().unwrap();
+    let ins = items
+        .iter()
+        .find(|i| i["item"] == "persona.instructions")
+        .unwrap_or_else(|| panic!("{v} {e}"));
+    assert_eq!(ins["action"], "unsupported", "{v}");
+    assert!(
+        ins["why"]
+            .as_str()
+            .unwrap()
+            .contains("not mirrored (the bot does not share it)"),
+        "{v}"
+    );
+    // the rest of the setup still arrives
+    assert!(p
+        .hermes
+        .join("skills/mirror/demo-skill-0/SKILL.md")
+        .is_file());
+    // an edit on the Hermes side is not sent: the bot keeps its own instructions
+    w(
+        &p.hermes.join("SOUL.md"),
+        &soul(&p.hermes).replace("Example Hermes", "Edited Hermes"),
+    );
+    let (_, v, e) = p.sync();
+    assert!(v["gen"].is_null(), "nothing published: {v} {e}");
+    assert!(soul(&p.hermes).contains("Edited Hermes instructions."));
+    let (c, _, e) = p.bp(&[
+        "mirror",
+        "digest-items",
+        "--pair",
+        "demo-bot",
+        "--from",
+        s(&p.export),
+        "--out",
+        s(&p.t.0.join("box/out")),
+        "--without",
+        "memories",
+    ]);
+    assert_eq!(c, 2);
+    assert!(e.contains("--without takes only: instructions"), "{e}");
+}
+
+/// A box command run as a coordinator would: no pair flags, everything from the root's layout.
+fn boxcmd(state: &Path, args: &[&str]) -> (i32, serde_json::Value, String) {
+    let o = bin(state).args(args).arg("--json").output().unwrap();
+    (
+        o.status.code().unwrap_or(-1),
+        serde_json::from_slice(&o.stdout).unwrap_or(serde_json::Value::Null),
+        String::from_utf8_lossy(&o.stderr).to_string(),
+    )
+}
+
+#[test]
+fn a_bot_that_stops_sharing_its_instructions_withdraws_a_send_in_flight() {
+    let p = Pair::new("mirror-opt-out");
+    let base: String = (1..=8)
+        .map(|i| format!("Example instruction line {i}.\n"))
+        .collect();
+    w(
+        &p.export,
+        &export_json(base.trim_end(), "Example prompt.", 1, 0),
+    );
+    p.box_digest();
+    p.init();
+    for it in [
+        "persona.name",
+        "persona.instructions",
+        "skill:demo-skill-0",
+        "routine:demo-routine",
+    ] {
+        let (c, _, e) = p.bp(&["mirror", "pick", it, "--keep", "grok", "--yes"]);
+        assert_eq!(c, 0, "{it}: {e}");
+    }
+    let (c, _, e) = p.bp(&["mirror", "approve", "routine:demo-routine", "--yes"]);
+    assert_eq!(c, 0, "{e}");
+    let (c, v, e) = p.sync();
+    assert_eq!(c, 0, "{v} {e}");
+    // a Hermes edit to the instructions is on its way to the Grok side
+    w(
+        &p.hermes.join("SOUL.md"),
+        &soul(&p.hermes).replace("line 1.", "line 1, edited on Hermes."),
+    );
+    let (c, v, e) = p.sync();
+    assert_eq!((c, v["gen"].as_u64()), (0, Some(1)), "{v} {e}");
+    // the bot now keeps its instructions: the staged edit is held, not pending, and the check passes
+    let stage = p.t.0.join("box/stage");
+    let apply = |extra: &[&str]| {
+        let mut a = vec![
+            "mirror",
+            "apply-pack",
+            "--pair",
+            "demo-bot",
+            "--dir",
+            s(&p.drive),
+            "--from",
+            s(&p.export),
+            "--stage",
+            s(&stage),
+            "--without",
+            "instructions",
+        ];
+        a.extend(extra);
+        p.bp(&a)
+    };
+    let (c, v, e) = apply(&["--check"]);
+    assert_eq!((c, v["pending"].as_u64()), (0, Some(0)), "{v} {e}");
+    assert!(!p.t.0.join("box/stage/persona.instructions.txt").exists());
+    let (c, _, e) = p.bp(&[
+        "mirror",
+        "digest-items",
+        "--pair",
+        "demo-bot",
+        "--from",
+        s(&p.export),
+        "--out",
+        s(&p.drive.join("from-grok")),
+        "--without",
+        "instructions",
+    ]);
+    assert_eq!(c, 0, "{e}");
+    // the host withdraws the send and keeps its own copy
+    let (c, v, e) = p.sync();
+    assert_eq!((c, v["in_flight"].as_u64()), (0, Some(0)), "{v} {e}");
+    assert!(soul(&p.hermes).contains("line 1, edited on Hermes."));
+    let (_, v, e) = p.bp(&["mirror", "status"]);
+    assert!(
+        v["in_flight"].as_array().is_some_and(|a| a.is_empty()),
+        "{v} {e}"
+    );
+    // the bot shares its (unchanged, older) instructions again: the copies differ, so the Hermes edit is sent again,
+    // never taken as in step
+    p.box_digest();
+    let (c, v, e) = p.sync();
+    assert_eq!(c, 0, "{v} {e}");
+    assert!(v["gen"].as_u64().is_some(), "a new pack: {v} {e}");
+    let v = p.box_apply();
+    assert_eq!(v["pending"], 1, "{v}");
+    let staged = std::fs::read_to_string(p.t.0.join("box/stage/persona.instructions.txt")).unwrap();
+    assert!(staged.contains("line 1, edited on Hermes."));
+}
+
+#[test]
+fn a_coordinator_runs_the_box_steps_for_several_pairs() {
+    let t = Tmp::new("mirror-coordinator");
+    let root = t.0.join("box-root");
+    let work = |pair: &str| root.join(".work").join(pair);
+    for (pair, n) in [("demo-a", 1), ("demo-b", 2)] {
+        w(
+            &work(pair).join("export"),
+            &export_json("Example instructions.", "Example prompt.", n, 0),
+        );
+        // these pairs are unsigned on purpose; signing through a root is tested end to end below
+        w(&work(pair).join("unsigned"), "");
+    }
+    let digest = |extra: &[&str]| {
+        let mut a = vec!["mirror", "digest-items", "--root", s(&root)];
+        a.extend(extra);
+        boxcmd(&t.0, &a)
+    };
+    let (c, v, e) = digest(&[]);
+    assert_eq!(c, 0, "{v} {e}");
+    for pair in ["demo-a", "demo-b"] {
+        assert_eq!(v["pairs"][pair]["n"], 1, "{v}");
+        assert_eq!(v["pairs"][pair]["unchanged"], false, "{v}");
+        assert!(root.join(pair).join("from-grok/state-1.json").is_file());
+        // the bot uploaded it and says so
+        w(&work(pair).join("uploaded"), "1\n");
+    }
+    // nothing changed since the uploaded file: nothing is written, so a frequent routine has nothing to upload
+    let (c, v, e) = digest(&[]);
+    assert_eq!(c, 0, "{v} {e}");
+    assert_eq!(v["pairs"]["demo-a"]["unchanged"], true, "{v}");
+    assert!(!root.join("demo-a/from-grok/state-2.json").exists());
+    // one bot's setup changes: only its pair gets a new state file
+    w(
+        &work("demo-b").join("export"),
+        &export_json("Example instructions.", "Example prompt, changed.", 2, 0),
+    );
+    let (c, v, e) = digest(&[]);
+    assert_eq!(c, 0, "{v} {e}");
+    assert_eq!(
+        (
+            v["pairs"]["demo-a"]["unchanged"].as_bool(),
+            v["pairs"]["demo-b"]["n"].as_u64()
+        ),
+        (Some(true), Some(2)),
+        "{v}"
+    );
+    // state-2 never got uploaded (the run was cut short): the next run writes a new file with every blob again
+    let blobs = root.join("demo-b/from-grok/blobs");
+    for e in std::fs::read_dir(&blobs).unwrap() {
+        std::fs::remove_file(e.unwrap().path()).unwrap();
+    }
+    let (c, v, e) = digest(&["--pair", "demo-b"]);
+    assert_eq!(c, 0, "{v} {e}");
+    assert_eq!(v["pairs"]["demo-b"]["n"], 3, "{v}");
+    let st: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.join("demo-b/from-grok/state-3.json")).unwrap())
+            .unwrap();
+    let items = st["items"].as_object().unwrap();
+    let named: Vec<&str> = items.values().filter_map(|e| e["blob"].as_str()).collect();
+    assert_eq!(named.len(), items.len(), "{st}");
+    assert!(named.iter().all(|b| blobs.join(b).is_file()), "{st}");
+    // --pair narrows the run
+    assert!(v["pairs"].get("demo-a").is_none(), "{v}");
+    w(&work("demo-b").join("uploaded"), "3\n");
+    let (_, v, _) = digest(&["--pair", "demo-b"]);
+    assert_eq!(v["pairs"]["demo-b"]["unchanged"], true, "{v}");
+    // one broken pair does not stop the others
+    w(&work("demo-c").join("export"), "not an export\n");
+    w(&work("demo-c").join("unsigned"), "");
+    let (c, v, _) = digest(&[]);
+    assert_eq!(c, 2, "{v}");
+    assert!(v["pairs"]["demo-c"]["error"].is_string(), "{v}");
+    assert_eq!(v["pairs"]["demo-b"]["unchanged"], true, "{v}");
+    // a work folder that is a link is never followed
+    #[cfg(unix)]
+    {
+        let elsewhere = t.0.join("elsewhere");
+        w(
+            &elsewhere.join("export"),
+            &export_json("Example instructions.", "Example prompt.", 1, 0),
+        );
+        std::os::unix::fs::symlink(&elsewhere, work("demo-d")).unwrap();
+        let (_, v, _) = digest(&[]);
+        assert!(v["pairs"].get("demo-d").is_none(), "{v}");
+    }
+    // the root sets every path itself, and the upload record is per pair
+    let (c, _, e) = digest(&["--out", s(&t.0.join("x"))]);
+    assert_eq!(c, 2);
+    assert!(
+        e.contains("--root sets every path itself: drop --out"),
+        "{e}"
+    );
+    let (c, v, _) = digest(&["--uploaded", "1"]);
+    assert_eq!(c, 2);
+    assert!(
+        v["pairs"]["demo-a"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("--uploaded is per pair"),
+        "{v}"
+    );
+    // a pair that has had nothing sent yet has no pack to stage
+    let (c, v, e) = boxcmd(
+        &t.0,
+        &[
+            "mirror",
+            "apply-pack",
+            "--root",
+            s(&root),
+            "--pair",
+            "demo-a",
+        ],
+    );
+    assert_eq!(c, 0, "{v} {e}");
+    assert_eq!(v["pairs"]["demo-a"]["pending"], 0, "{v}");
+}
+
+#[test]
+fn a_coordinator_root_serves_a_signed_pair_end_to_end() {
+    let p = Pair::new("mirror-coordinator-e2e");
+    let root = p.t.0.join("coord");
+    let folder = root.join("demo-bot");
+    std::fs::create_dir_all(&folder).unwrap();
+    let init = || {
+        p.bp(&[
+            "mirror",
+            "init",
+            "--profile-dir",
+            s(&p.hermes),
+            "--hermes-bin",
+            s(&p.fake),
+            "--transport",
+            "drive",
+            "--drive-dir",
+            s(&folder),
+            "--metrics",
+            s(&p.t.0.join("m.csv")),
+        ])
+    };
+    let (c, _, e) = init();
+    assert_eq!(c, 2, "{e}");
+    // the coordinator holds the pair key and the bot's export in the root's layout
+    let work = root.join(".work/demo-bot");
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::copy(p.cfg.with_extension("key"), work.join("pair.key")).unwrap();
+    let base: String = (1..=8)
+        .map(|i| format!("Example instruction line {i}.\n"))
+        .collect();
+    w(
+        &work.join("export"),
+        &export_json(base.trim_end(), "Example prompt.", 1, 0),
+    );
+    // complete coverage: a program read of the bot's setup; every written file counts as uploaded here
+    let digest = || {
+        let r = boxcmd(
+            &p.t.0,
+            &[
+                "mirror",
+                "digest-items",
+                "--root",
+                s(&root),
+                "--coverage",
+                "complete",
+            ],
+        );
+        if let Some(n) = r.1["pairs"]["demo-bot"]["n"].as_u64() {
+            w(&work.join("uploaded"), &format!("{n}\n"));
+        }
+        r
+    };
+    let (c, v, e) = digest();
+    assert_eq!(c, 0, "{v} {e}");
+    let (c, v, e) = init();
+    assert_eq!(c, 0, "signed state file accepted: {v} {e}");
+    for it in [
+        "persona.name",
+        "persona.instructions",
+        "skill:demo-skill-0",
+        "routine:demo-routine",
+    ] {
+        let (c, _, e) = p.bp(&["mirror", "pick", it, "--keep", "grok", "--yes"]);
+        assert_eq!(c, 0, "{it}: {e}");
+    }
+    let (c, _, e) = p.bp(&["mirror", "approve", "routine:demo-routine", "--yes"]);
+    assert_eq!(c, 0, "{e}");
+    let (c, v, e) = p.sync();
+    assert_eq!(c, 0, "{v} {e}");
+    // a Hermes-side edit reaches the coordinator's stage for that pair
+    w(
+        &p.hermes.join("SOUL.md"),
+        &soul(&p.hermes).replace("line 1.", "line 1, edited on Hermes."),
+    );
+    let (c, v, e) = p.sync();
+    assert_eq!((c, v["gen"].as_u64()), (0, Some(1)), "{v} {e}");
+    let (c, v, e) = boxcmd(&p.t.0, &["mirror", "apply-pack", "--root", s(&root)]);
+    assert_eq!(c, 0, "{v} {e}");
+    assert_eq!(v["pairs"]["demo-bot"]["pending"], 1, "{v}");
+    let staged = std::fs::read_to_string(work.join("stage/persona.instructions.txt")).unwrap();
+    assert!(staged.contains("edited on Hermes"));
+    // the bot installs it; the coordinator's next run logs it and writes a new state file
+    w(
+        &work.join("export"),
+        &export_json(staged.trim_end(), "Example prompt.", 1, 0),
+    );
+    let (c, v, e) = boxcmd(
+        &p.t.0,
+        &["mirror", "apply-pack", "--root", s(&root), "--check"],
+    );
+    assert_eq!(c, 0, "{v} {e}");
+    let (c, v, e) = digest();
+    assert_eq!(c, 0, "{v} {e}");
+    assert_eq!(v["pairs"]["demo-bot"]["unchanged"], false, "{v}");
+    let (c, v, e) = p.sync();
+    assert_eq!((c, v["in_flight"].as_u64()), (0, Some(0)), "{v} {e}");
+    // and with nothing new, the next run writes nothing
+    let (c, v, e) = digest();
+    assert_eq!(c, 0, "{v} {e}");
+    assert_eq!(v["pairs"]["demo-bot"]["unchanged"], true, "{v}");
+    // a signed pair whose key file went missing is refused, never written unsigned
+    std::fs::remove_file(work.join("pair.key")).unwrap();
+    let (c, v, _) = digest();
+    assert_eq!(c, 2, "a signed pair without its key is refused: {v}");
+    assert!(
+        v["pairs"]["demo-bot"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("no pair key at"),
+        "{v}"
+    );
+}
+
+#[test]
+fn a_coordinator_root_refuses_what_would_weaken_a_pair() {
+    let t = Tmp::new("mirror-coordinator-refusals");
+    let root = t.0.join("box-root");
+    let work = root.join(".work/demo-a");
+    w(
+        &work.join("export"),
+        &export_json("Example instructions.", "Example prompt.", 1, 0),
+    );
+    // a missing key is an error for that pair, unless the pair is marked unsigned on purpose
+    let (c, v, _) = boxcmd(&t.0, &["mirror", "digest-items", "--root", s(&root)]);
+    assert_eq!(c, 2, "{v}");
+    assert!(
+        v["pairs"]["demo-a"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("no pair key at"),
+        "{v}"
+    );
+    assert!(!root.join("demo-a/from-grok").exists());
+    w(&work.join("unsigned"), "");
+    let (c, v, e) = boxcmd(&t.0, &["mirror", "digest-items", "--root", s(&root)]);
+    assert_eq!(c, 0, "{v} {e}");
+    // a precheck with no pack in the pair folder fails, never passes
+    let (c, v, _) = boxcmd(
+        &t.0,
+        &[
+            "mirror",
+            "apply-pack",
+            "--root",
+            s(&root),
+            "--pair",
+            "demo-a",
+            "--precheck",
+            "skill:demo-skill-0",
+            "--gen",
+            "1",
+        ],
+    );
+    assert_eq!(c, 2, "{v}");
+    assert!(v["pairs"]["demo-a"]["error"].is_string(), "{v}");
+    // a pair named twice runs once
+    let (c, v, e) = boxcmd(
+        &t.0,
+        &[
+            "mirror",
+            "digest-items",
+            "--root",
+            s(&root),
+            "--pair",
+            "demo-a",
+            "--pair",
+            "demo-a",
+        ],
+    );
+    assert_eq!(c, 0, "{v} {e}");
+    assert_eq!(v["pairs"]["demo-a"]["n"], 2, "{v}");
+    assert!(!root.join("demo-a/from-grok/state-3.json").exists());
+    // an unreadable upload record counts as no upload: a new file with every blob
+    w(&work.join("uploaded"), "two\n");
+    let (c, v, e) = boxcmd(&t.0, &["mirror", "digest-items", "--root", s(&root)]);
+    assert_eq!(
+        (c, v["pairs"]["demo-a"]["n"].as_u64()),
+        (0, Some(3)),
+        "{v} {e}"
+    );
+    // a record newer than any file here: the copy is restored first, never numbered below what was uploaded
+    w(&work.join("uploaded"), "9\n");
+    let (c, v, _) = boxcmd(&t.0, &["mirror", "digest-items", "--root", s(&root)]);
+    assert_eq!(c, 2, "{v}");
+    assert!(
+        v["pairs"]["demo-a"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("restore it from the pair's Drive folder"),
+        "{v}"
+    );
+    std::fs::remove_file(work.join("uploaded")).unwrap();
+    // a linked export is refused, never followed
+    #[cfg(unix)]
+    {
+        let x = root.join(".work/demo-x");
+        std::fs::create_dir_all(&x).unwrap();
+        w(&x.join("unsigned"), "");
+        let real = t.0.join("real-export.json");
+        w(
+            &real,
+            &export_json("Example instructions.", "Example prompt.", 1, 0),
+        );
+        std::os::unix::fs::symlink(&real, x.join("export")).unwrap();
+        let (c, v, _) = boxcmd(
+            &t.0,
+            &[
+                "mirror",
+                "digest-items",
+                "--root",
+                s(&root),
+                "--pair",
+                "demo-x",
+            ],
+        );
+        assert_eq!(c, 2, "{v}");
+        assert!(
+            v["pairs"]["demo-x"]["error"]
+                .as_str()
+                .unwrap()
+                .contains("is a link"),
+            "{v}"
+        );
+    }
+    // a linked pair folder is refused, never followed
+    #[cfg(unix)]
+    {
+        let b = root.join(".work/demo-b");
+        w(
+            &b.join("export"),
+            &export_json("Example instructions.", "Example prompt.", 1, 0),
+        );
+        w(&b.join("unsigned"), "");
+        let elsewhere = t.0.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, root.join("demo-b")).unwrap();
+        let (c, v, _) = boxcmd(&t.0, &["mirror", "digest-items", "--root", s(&root)]);
+        assert_eq!(c, 2, "{v}");
+        assert!(
+            v["pairs"]["demo-b"]["error"]
+                .as_str()
+                .unwrap()
+                .contains("a link is never followed"),
+            "{v}"
+        );
+        assert!(std::fs::read_dir(&elsewhere).unwrap().next().is_none());
+    }
+}
+
+#[test]
+fn a_pack_from_another_release_is_republished() {
+    use botport::adapters::mirror::pack::{Head, Pack};
+    let p = Pair::new("mirror-old-form-pack");
+    let base: String = (1..=8)
+        .map(|i| format!("Example instruction line {i}.\n"))
+        .collect();
+    w(
+        &p.export,
+        &export_json(base.trim_end(), "Example prompt.", 1, 0),
+    );
+    p.box_digest();
+    p.init();
+    for it in [
+        "persona.name",
+        "persona.instructions",
+        "skill:demo-skill-0",
+        "routine:demo-routine",
+    ] {
+        let (c, _, e) = p.bp(&["mirror", "pick", it, "--keep", "grok", "--yes"]);
+        assert_eq!(c, 0, "{it}: {e}");
+    }
+    let (c, _, e) = p.bp(&["mirror", "approve", "routine:demo-routine", "--yes"]);
+    assert_eq!(c, 0, "{e}");
+    let (c, v, e) = p.sync();
+    assert_eq!(c, 0, "{v} {e}");
+    w(
+        &p.hermes.join("SOUL.md"),
+        &soul(&p.hermes).replace("line 1.", "line 1, edited on Hermes."),
+    );
+    let (c, v, e) = p.sync();
+    assert_eq!((c, v["gen"].as_u64()), (0, Some(1)), "{v} {e}");
+    // HEAD's pack is rewritten as an older release would have made it (signed, intact, another neutral form)
+    let key = botport::core::auth::parse_key(
+        &std::fs::read_to_string(p.cfg.with_extension("key")).unwrap(),
+    )
+    .unwrap();
+    let head = Head::parse(&std::fs::read(p.drive.join("HEAD")).unwrap()).unwrap();
+    let path = p.drive.join("to-grok").join(&head.pack);
+    let mut old = Pack::parse(&std::fs::read(&path).unwrap(), "demo-bot").unwrap();
+    old.neutral_form = 1;
+    let bytes = old.seal_with(Some(&key));
+    std::fs::write(&path, &bytes).unwrap();
+    let mut h = old.head();
+    h.pack = head.pack.clone();
+    std::fs::write(p.drive.join("HEAD"), h.to_line()).unwrap();
+    // the box says what is wrong instead of staging from it
+    let (c, _, e) = p.bp(&[
+        "mirror",
+        "apply-pack",
+        "--pair",
+        "demo-bot",
+        "--dir",
+        s(&p.drive),
+        "--from",
+        s(&p.export),
+        "--stage",
+        s(&p.t.0.join("box/stage")),
+    ]);
+    assert_eq!(c, 2);
+    assert!(e.contains("run the same botport release"), "{e}");
+    // with nothing new to send, the host still publishes a pack the box can read
+    let (c, v, e) = p.sync();
+    assert_eq!(c, 0, "{v} {e}");
+    assert!(v["gen"].as_u64().is_some_and(|g| g > 1), "{v} {e}");
+    let v = p.box_apply();
+    assert_eq!(v["pending"], 1, "{v}");
+}
+
+#[test]
+fn approval_is_the_default() {
+    let p = Pair::new("mirror-approval-default");
+    let base: String = (1..=8)
+        .map(|i| format!("Example instruction line {i}.\n"))
+        .collect();
+    w(
+        &p.export,
+        &export_json(base.trim_end(), "Example prompt.", 1, 0),
+    );
+    p.box_digest();
+    let (c, v, e) = p.init_signed(&["--default-approval"]);
+    assert_eq!(c, 0, "{v} {e}");
+    let cfg = std::fs::read_to_string(&p.cfg).unwrap();
+    assert!(cfg.contains("approve = \"all\""), "{cfg}");
+    for it in [
+        "persona.name",
+        "persona.instructions",
+        "skill:demo-skill-0",
+        "routine:demo-routine",
+    ] {
+        let (c, _, e) = p.bp(&["mirror", "pick", it, "--keep", "grok", "--yes"]);
+        assert_eq!(c, 0, "{it}: {e}");
+    }
+    let (_, _, _) = p.bp(&["mirror", "approve", "routine:demo-routine", "--yes"]);
+    let (c, v, e) = p.sync();
+    assert_eq!(c, 0, "{v} {e}");
+    // a small instruction edit on the Grok side waits for the owner instead of being carried
+    w(
+        &p.export,
+        &export_json(
+            &base
+                .trim_end()
+                .replace("line 1.", "line 1, edited on Grok."),
+            "Example prompt.",
+            1,
+            0,
+        ),
+    );
+    p.box_digest();
+    let (c, v, e) = p.sync();
+    assert_eq!(
+        (c, v["waiting_for_approval"].as_u64()),
+        (3, Some(1)),
+        "{v} {e}"
+    );
+    assert!(!soul(&p.hermes).contains("edited on Grok"));
+    let (c, _, e) = p.bp(&["mirror", "approve", "persona.instructions", "--yes"]);
+    assert_eq!(c, 0, "{e}");
+    let (c, v, e) = p.sync();
+    assert_eq!(c, 0, "{v} {e}");
+    assert!(soul(&p.hermes).contains("edited on Grok"));
+}
+
+#[test]
+fn a_hermes_without_cron_timezones_gets_utc_routines_and_a_clear_refusal() {
+    let p = Pair::new("mirror-no-cron-tz");
+    // a Hermes whose `cron create` has no --timezone option
+    let fake = FAKE_HERMES.replacen(
+        "a = sys.argv[1:]\n",
+        "a = sys.argv[1:]\nif \"--help\" in a:\n    print(\"usage: hermes cron create [--name NAME] [--deliver D] [--paused]\"); sys.exit(0)\nif any(x.startswith(\"--timezone\") for x in a):\n    print(\"hermes: error: unrecognized arguments: --timezone\", file=sys.stderr); sys.exit(2)\n",
+        1,
+    );
+    w(&p.fake, &fake);
+    let mut v: serde_json::Value = serde_json::from_str(&export_json(
+        "Example instructions.",
+        "Example prompt.",
+        0,
+        2,
+    ))
+    .unwrap();
+    // one routine in UTC (as an export without a zone reads), one in another zone
+    let routines = v["bots"][0]["routines"].as_array_mut().unwrap();
+    routines[1]["timezone"] = serde_json::json!("Europe/Berlin");
+    w(&p.export, &v.to_string());
+    p.box_digest();
+    p.init();
+    for it in ["routine:demo-routine-0", "routine:demo-routine-1"] {
+        let (c, _, e) = p.bp(&["mirror", "pick", it, "--keep", "grok", "--yes"]);
+        if it.ends_with('1') {
+            assert_ne!(c, 0);
+            assert!(
+                e.contains("this Hermes cannot store a routine timezone (Europe/Berlin)"),
+                "{e}"
+            );
+        } else {
+            assert_eq!(c, 0, "{it}: {e}");
+        }
+    }
+    let jobs = std::fs::read_to_string(p.hermes.join("cron/jobs.json")).unwrap();
+    assert!(
+        jobs.contains("demo-routine-0") && !jobs.contains("demo-routine-1"),
+        "{jobs}"
+    );
+    assert!(jobs.contains("\"timezone\": null"), "{jobs}");
+}
+
+#[test]
+fn an_item_made_local_only_while_in_flight_is_withdrawn_from_the_pack() {
+    let p = Pair::new("mirror-local-only-in-flight");
+    let base: String = (1..=8)
+        .map(|i| format!("Example instruction line {i}.\n"))
+        .collect();
+    w(
+        &p.export,
+        &export_json(base.trim_end(), "Example prompt.", 1, 0),
+    );
+    p.box_digest();
+    p.init();
+    for it in [
+        "persona.name",
+        "persona.instructions",
+        "skill:demo-skill-0",
+        "routine:demo-routine",
+    ] {
+        let (c, _, e) = p.bp(&["mirror", "pick", it, "--keep", "grok", "--yes"]);
+        assert_eq!(c, 0, "{it}: {e}");
+    }
+    let (c, _, e) = p.bp(&["mirror", "approve", "routine:demo-routine", "--yes"]);
+    assert_eq!(c, 0, "{e}");
+    let (c, v, e) = p.sync();
+    assert_eq!(c, 0, "{v} {e}");
+    // a Hermes edit to the instructions is on its way to the Grok side
+    w(
+        &p.hermes.join("SOUL.md"),
+        &soul(&p.hermes).replace("line 1.", "line 1, edited on Hermes."),
+    );
+    let (c, v, e) = p.sync();
+    assert_eq!((c, v["gen"].as_u64()), (0, Some(1)), "{v} {e}");
+    // the owner keeps the instructions as they are on each side: the send is withdrawn
+    let (c, v, e) = p.bp(&[
+        "mirror",
+        "pick",
+        "persona.instructions",
+        "--local-only",
+        "--yes",
+    ]);
+    assert_eq!(
+        (c, v["send_withdrawn"].as_bool()),
+        (0, Some(true)),
+        "{v} {e}"
+    );
+    let (c, v, e) = p.sync();
+    assert_eq!((c, v["in_flight"].as_u64()), (0, Some(0)), "{v} {e}");
+    // the pack HEAD names now leaves the instructions out
+    let stage = p.t.0.join("box/stage");
+    let (c, v, e) = p.bp(&[
+        "mirror",
+        "apply-pack",
+        "--pair",
+        "demo-bot",
+        "--dir",
+        s(&p.drive),
+        "--from",
+        s(&p.export),
+        "--stage",
+        s(&stage),
+        "--check",
+    ]);
+    assert_eq!((c, v["pending"].as_u64()), (0, Some(0)), "{v} {e}");
+    assert!(!stage.join("persona.instructions.txt").exists());
+    assert!(soul(&p.hermes).contains("line 1, edited on Hermes."));
+    // mirrored again: the copies differ, so the Hermes edit is sent again, never taken as in step
+    let cfg = std::fs::read_to_string(&p.cfg).unwrap();
+    w(
+        &p.cfg,
+        &cfg.replace("local_only = [\"persona.instructions\"]\n", ""),
+    );
+    let (c, v, e) = p.sync();
+    assert_eq!((c, v["in_flight"].as_u64()), (0, Some(1)), "{v} {e}");
+}
+
+#[test]
+fn an_item_kept_local_only_leaves_the_conflicts_and_is_never_mirrored() {
+    let p = Pair::new("mirror-local-only");
+    w(
+        &p.export,
+        &export_with(
+            "Example instructions.",
+            &[("Example routine", "Example prompt.", false)],
+        ),
+    );
+    p.box_digest_with("partial");
+    let v = p.init();
+    assert_eq!(v["to_pick"], 3, "{v}");
+    // the owner keeps the routine as it is on each side; the conflict goes, the config lists it
+    let (c, v, e) = p.bp(&[
+        "mirror",
+        "pick",
+        "routine:Example routine",
+        "--local-only",
+        "--yes",
+    ]);
+    assert_eq!(c, 0, "{v} {e}");
+    assert_eq!(v["conflict_cleared"], true, "{v}");
+    assert!(std::fs::read_to_string(&p.cfg)
+        .unwrap()
+        .contains("local_only = [\"routine:Example routine\"]"));
+    let (_, v, e) = p.sync();
+    let items = v["items"].as_array().unwrap();
+    let r = items
+        .iter()
+        .find(|i| i["item"] == "routine:Example routine")
+        .unwrap_or_else(|| panic!("{v} {e}"));
+    assert_eq!(r["action"], "unsupported", "{v}");
+    assert!(r["why"].as_str().unwrap().contains("local-only"), "{v}");
+    assert!(!std::fs::read_to_string(p.hermes.join("cron/jobs.json"))
+        .unwrap_or_default()
+        .contains("Example routine"));
+    // an item neither side has now: its conflict can be forgotten, never one that a side still has
+    let (c, _, e) = p.bp(&[
+        "mirror",
+        "pick",
+        "persona.instructions",
+        "--forget",
+        "--yes",
+    ]);
+    assert_ne!(c, 0);
+    assert!(e.contains("one side has it"), "{e}");
+    w(&p.export, &export_with("", &[]));
+    p.box_digest_with("partial");
+    let (c, v, e) = p.bp(&[
+        "mirror",
+        "pick",
+        "persona.instructions",
+        "--forget",
+        "--yes",
+    ]);
+    assert_eq!((c, v["forgotten"].as_bool()), (0, Some(true)), "{v} {e}");
+    // the Grok side is read from its export: botport cannot see that the item is gone there, and says so
+    assert_eq!(v["unseen_on"], serde_json::json!(["Grok"]), "{v}");
+}
+
+#[test]
+fn no_botport_text_for_a_bot_asks_it_to_export_itself() {
+    let p = Pair::new("mirror-no-self-export");
+    let (_, _, said) = init_with(&p, &[]);
+    let (c, v, e) = p.bp(&["mirror", "setup", "--print-charter"]);
+    assert_eq!(c, 0, "{e}");
+    let charter = v["charter"].as_str().unwrap().to_string();
+    assert_eq!(
+        charter,
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/MIRROR-BOT.md"))
+            .unwrap()
+    );
+    let dir = p.cfg.with_extension("brief");
+    let mut texts = vec![("init", said), ("charter", charter)];
+    for f in ["AGENT-MIRROR.md", "MIRROR-BOT.md"] {
+        texts.push((f, std::fs::read_to_string(dir.join(f)).unwrap()));
+    }
+    // and the export brief's step for other bots messages none of them
+    let export =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/AGENT-EXPORT.md"))
+            .unwrap();
+    let step7 = export[export.find("## Step 7").unwrap()..].to_string();
+    texts.push(("AGENT-EXPORT.md step 7", step7));
+    for (what, t) in &texts {
+        let t = t.to_lowercase();
+        for asks in [
+            "export yourself",
+            "export your setup",
+            "export your own",
+            "describe yourself",
+            "please do steps",
+            "send it this file",
+            "for yourself",
+            "set up botport mirror mode",
+        ] {
+            assert!(!t.contains(asks), "{what} asks a bot: {asks:?}");
+        }
+    }
+}
+
+#[test]
+fn a_bot_read_from_the_box_files_mirrors_its_name_and_names_the_rest() {
+    let p = Pair::new("mirror-box-read");
+    let data = p.t.0.join("box/agent-data");
+    let id = "0a1b2c3d-0000-4000-8000-00000000abcd";
+    w(
+        &data.join(format!("agents/{id}/profile.json")),
+        r#"{"name": "Demo Bot"}"#,
+    );
+    w(
+        &data.join("workflows/demo-skill-0/SKILL.md"),
+        "# Demo skill 0\nExample steps.",
+    );
+    // a routine on the Hermes side: the box files cannot show the Grok side's routines
+    w(
+        &p.hermes.join("cron/jobs.json"),
+        r#"{"jobs": [{"id": "j1", "name": "demo-routine", "prompt": "Example prompt.", "schedule": {"expr": "0 9 * * 1"},
+                     "enabled": true, "timezone": null, "paused_reason": null}]}"#,
+    );
+    let digest = |extra: &[&str]| {
+        let out = p.drive.join("from-grok");
+        let mut a = vec![
+            "mirror",
+            "digest-items",
+            "--pair",
+            "demo-bot",
+            "--agent-id",
+            id,
+            "--agent-data",
+            s(&data),
+            "--out",
+            s(&out),
+        ];
+        a.extend(extra);
+        p.bp(&a)
+    };
+    let (c, v, e) = digest(&[]);
+    assert_eq!(c, 0, "{v} {e}");
+    assert!(
+        v["unsupported"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|x| x == "persona.instructions"),
+        "{v}"
+    );
+    // a box read never claims to be the whole setup
+    let (c, _, e) = digest(&["--coverage", "complete"]);
+    assert_ne!(c, 0);
+    assert!(
+        e.contains("the box files do not hold the whole setup"),
+        "{e}"
+    );
+    // --from and --agent-id together are refused
+    let (c, _, _) = digest(&["--from", s(&p.export)]);
+    assert_ne!(c, 0);
+    let r = init_with(&p, &[]);
+    if r.0 == 2 && r.2.contains("a pair key was made") {
+        let (c, _, e) = digest(&[]);
+        assert_eq!(c, 0, "{e}");
+    }
+    // only the name is a pick: a kind the Grok side cannot read is never on the list
+    let (c, v, e) = init_with(&p, &[]);
+    assert_eq!((c, v["to_pick"].as_u64()), (0, Some(1)), "{v} {e}");
+    let (c, _, e) = p.bp(&[
+        "mirror",
+        "pick",
+        "routine:demo-routine",
+        "--keep",
+        "hermes",
+        "--yes",
+    ]);
+    assert_ne!(c, 0);
+    assert!(e.contains("has no open conflict"), "{e}");
+    let (c, _, e) = p.bp(&["mirror", "pick", "persona.name", "--keep", "grok", "--yes"]);
+    assert_eq!(c, 0, "{e}");
+    let (c, v, e) = p.sync();
+    assert_eq!((c, v["in_flight"].as_u64()), (0, Some(0)), "{v} {e}");
+    let items = v["items"].as_array().unwrap_or_else(|| panic!("{v} {e}"));
+    let find = |id: &str| items.iter().find(|i| i["item"] == id).cloned();
+    assert!(find("skill:demo-skill-0").is_none(), "{v}");
+    let r = find("routine:demo-routine").unwrap_or_else(|| panic!("{v}"));
+    assert_eq!(r["action"], "unsupported", "{v}");
+    assert!(
+        r["why"].as_str().unwrap().contains("not in the box files"),
+        "{v}"
+    );
+    // the routine stays on the Hermes side; status names every gap
+    assert!(std::fs::read_to_string(p.hermes.join("cron/jobs.json"))
+        .unwrap()
+        .contains("demo-routine"));
+    let (_, v, e) = p.bp(&["mirror", "status"]);
+    assert!(
+        v["grok_unread"]["routine"]
+            .as_str()
+            .is_some_and(|w| w.contains("not in the box files")),
+        "{v} {e}"
+    );
+    assert!(v["grok_unread"]["connector"].is_string(), "{v}");
+    assert!(
+        v["grok_unread"]["skill"]
+            .as_str()
+            .is_some_and(|w| w.contains("shared by every bot in the box")),
+        "{v}"
+    );
+    // a new Hermes routine cannot reach a box that cannot read routines: it goes on the list to apply by hand
+    w(
+        &p.hermes.join("cron/jobs.json"),
+        r#"{"jobs": [{"id": "j1", "name": "demo-routine", "prompt": "Example prompt.", "schedule": {"expr": "0 9 * * 1"},
+                     "enabled": true, "timezone": null, "paused_reason": null},
+                    {"id": "j2", "name": "demo-routine-2", "prompt": "Example prompt 2.", "schedule": {"expr": "0 10 * * 1"},
+                     "enabled": true, "timezone": null, "paused_reason": null}]}"#,
+    );
+    let (c, v, e) = p.sync();
+    assert_eq!((c, v["in_flight"].as_u64()), (0, Some(0)), "{v} {e}");
+    let (_, v, e) = p.bp(&["mirror", "status"]);
+    let listed = |v: &serde_json::Value| -> Vec<String> {
+        v["to_apply"]
+            .as_object()
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default()
+    };
+    assert_eq!(listed(&v), ["routine:demo-routine-2"], "{v} {e}");
+    let (c, _, e) = p.bp(&["mirror", "applied", "routine:demo-routine-2"]);
+    assert_eq!(c, 0, "{e}");
+    let (c, _, _) = p.bp(&["mirror", "applied", "routine:demo-routine-2"]);
+    assert_ne!(c, 0, "no longer listed");
+    // the name is read from the box, never written there: a Hermes-side rename is listed, not sent
+    let soul_text = soul(&p.hermes);
+    assert!(soul_text.contains("Demo Bot"), "{soul_text}");
+    w(
+        &p.hermes.join("SOUL.md"),
+        &soul_text.replace("Demo Bot", "Demo Bot Renamed"),
+    );
+    let (c, v, e) = p.sync();
+    assert_eq!((c, v["in_flight"].as_u64()), (0, Some(0)), "{v} {e}");
+    let (_, v, e) = p.bp(&["mirror", "status"]);
+    assert_eq!(listed(&v), ["persona.name"], "{v} {e}");
+    let (c, _, e) = p.bp(&[
+        "mirror",
+        "pick",
+        "persona.name",
+        "--keep",
+        "hermes",
+        "--yes",
+    ]);
+    assert_ne!(c, 0, "{e}");
+    // the owner renames the bot in the app: both sides agree, the entry goes by itself
+    w(
+        &data.join(format!("agents/{id}/profile.json")),
+        r#"{"name": "Demo Bot Renamed"}"#,
+    );
+    let (c, _, e) = digest(&[]);
+    assert_eq!(c, 0, "{e}");
+    let (c, v, e) = p.sync();
+    assert_eq!(c, 0, "{v} {e}");
+    let (_, v, e) = p.bp(&["mirror", "status"]);
+    assert!(listed(&v).is_empty(), "{v} {e}");
+}
+
+#[test]
+fn the_box_writes_each_pairs_signed_hermes_digest_for_the_recent_skill() {
+    let p = Pair::new("mirror-recent");
+    w(
+        &p.export,
+        &export_json("Example instructions.", "Example prompt.", 1, 0),
+    );
+    p.box_digest();
+    p.init();
+    // the host's digest goes to the pair folder, signed with the pair key
+    let (c, _, e) = p.bp(&["digest", "write", "--profile-dir", s(&p.hermes)]);
+    assert_eq!(c, 0, "{e}");
+    p.sync();
+    let key = p.cfg.with_extension("key");
+    let recent = |k: &Path| {
+        p.bp(&[
+            "mirror",
+            "recent",
+            "--pair",
+            "demo-bot",
+            "--dir",
+            s(&p.drive),
+            "--key",
+            s(k),
+        ])
+    };
+    let (c, v, e) = recent(&key);
+    assert_eq!(c, 0, "{v} {e}");
+    assert!(v["pairs"][0]["digest"].is_u64(), "{v}");
+    let out = std::fs::read_to_string(p.drive.join("from-hermes/digest")).unwrap();
+    assert!(out.contains("botport-digest/1"), "{out}");
+    // a digest that does not verify is never put where a bot reads it, and the earlier copy goes
+    let wrong = p.t.0.join("wrong.key");
+    w(&wrong, &"7".repeat(64));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&wrong, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let (c, v, e) = recent(&wrong);
+    assert_eq!((c, v["pairs"][0]["digest"].is_null()), (0, true), "{v} {e}");
+    assert!(!p.drive.join("from-hermes/digest").exists());
+    // the skill a bot reads it with reads only its own pair's file
+    let (c, v, e) = p.bp(&["mirror", "setup", "--print-skill"]);
+    assert_eq!(c, 0, "{e}");
+    let skill = v["skill"].as_str().unwrap();
+    assert!(skill.starts_with("---\nname: mirror-recent\n"), "{skill}");
+    assert!(skill.contains("Read only your own pair's file"), "{skill}");
+}
+
+#[test]
+fn a_bot_read_from_the_box_gets_only_what_the_owner_approved() {
+    let p = Pair::new("mirror-box-approved");
+    let data = p.t.0.join("box/agent-data");
+    let id = "0a1b2c3d-0000-4000-8000-00000000abce";
+    w(
+        &data.join(format!("agents/{id}/profile.json")),
+        r#"{"name": "Demo Bot"}"#,
+    );
+    w(
+        &data.join("workflows/demo-skill-0/SKILL.md"),
+        "# Demo skill 0\\nExample steps.",
+    );
+    let digest = || {
+        let out = p.drive.join("from-grok");
+        p.bp(&[
+            "mirror",
+            "digest-items",
+            "--pair",
+            "demo-bot",
+            "--agent-id",
+            id,
+            "--agent-data",
+            s(&data),
+            "--with-skills",
+            "--out",
+            s(&out),
+        ])
+    };
+    let (c, _, e) = digest();
+    assert_eq!(c, 0, "{e}");
+    let r = init_with(&p, &[]);
+    if r.0 == 2 && r.2.contains("a pair key was made") {
+        let (c, _, e) = digest();
+        assert_eq!(c, 0, "{e}");
+    }
+    // the init in these tests opts into `--approve runnable`
+    let (c, v, e) = init_with(&p, &[]);
+    assert_eq!(c, 0, "{v} {e}");
+    p.sync();
+    // a box read is partial: the only change that can be bound for the box is a new skill, and it waits for the owner
+    w(
+        &p.hermes.join("skills/mirror/demo-skill-new/SKILL.md"),
+        "# New demo skill\nExample steps.\n",
+    );
+    let (_, v, e) = p.sync();
+    let new = v["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["item"] == "skill:demo-skill-new")
+        .cloned()
+        .unwrap_or_else(|| panic!("{v} {e}"));
+    assert_eq!(new["action"], "needs-approval", "{v}");
+    assert_eq!(v["in_flight"].as_u64(), Some(0), "{v} {e}");
+    // once the owner approves it, it is carried
+    let (c, _, e) = p.bp(&["mirror", "approve", "skill:demo-skill-new", "--yes"]);
+    assert_eq!(c, 0, "{e}");
+    let (_, v, e) = p.sync();
+    assert_eq!(v["in_flight"].as_u64(), Some(1), "{v} {e}");
 }

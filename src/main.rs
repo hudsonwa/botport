@@ -33,12 +33,23 @@ const USAGE: &str = "botport <command> [options]   (v{V}; --version prints it)
           [--local-dir D [--bot-key K]] [--key-file F | --no-pair-key] [--copy-one-sided] [--force]   mirror init --undo --pair P
           [--drive-dir D | --drive-folder-id ID --token-cmd CMD] [--category C]... [--approve runnable|all]
       mirror plan|status --pair P   mirror sync --pair P [--allow-retire] [--trigger F] [--take-over]
+      mirror watch --pair P [--interval 1s] [--every 5m] [--for DUR] [--now]   sync whenever an input changes
+      mirror check --pair P [--reset]   the connection round trip through the pair folder, before the first sync
           equal-peer sync of the setup (docs/design/MIRROR.md)
-  mirror show|approve --pair P ITEM [--yes]   mirror pick --pair P ITEM --keep grok|hermes [--yes]
+  mirror show|approve --pair P ITEM [--yes]   mirror pick --pair P ITEM (--keep grok|hermes | --local-only | --forget) [--yes]
   mirror restore --pair P ITEM --from SHORT   mirror stats [--since 7d] [--metrics FILE]
-  mirror digest-items --pair P --from EXPORT --out DIR [--log F] [--all] [--key F] [--coverage partial|complete]
-          (in the Grok box; partial, the default, for an export: nothing missing from it is taken as removed)
-  mirror apply-pack --pair P --dir PAIRDIR --from EXPORT --stage DIR [--log F] [--check] [--precheck ITEM --gen N] [--key F]
+  mirror setup --print-charter|--print-skill   the Mirror bot's charter (the owner creates one Mirror bot per account and
+          pastes it), or the box-wide mirror-recent skill   mirror applied --pair P ITEM   a listed change was applied by hand
+  mirror recent (--root R | --pair P --dir PAIRDIR --key F)   (in the Grok box) each pair's newest signed Hermes digest
+          to <pair>/from-hermes/digest, for the mirror-recent skill
+  mirror digest-items --pair P (--agent-id ID [--agent-data DIR] [--with-skills] | --from EXPORT) --out DIR [--log F]
+                          [--all] [--key F]
+                          [--coverage partial|complete] [--without instructions] [--uploaded N]
+                          (or --root R [--pair P]... [--agent-data DIR]: the Mirror bot serving every pair)
+          (in the Grok box; --agent-id reads the bot's setup from the box files, never asking the bot; partial, the
+          default: nothing missing from the read is taken as removed)
+  mirror apply-pack --pair P --dir PAIRDIR (--agent-id ID [--agent-data DIR] | --from EXPORT) --stage DIR [--log F]
+                        [--check] [--precheck ITEM --gen N] [--key F] [--without instructions]
   mirror routines --bundle DIR (--profile NAME | --profile-dir DIR) [--tz UTC]   routine parity, Grok vs Hermes, by
           name (schedule, timezone, prompt digest, paused); exit 1 on a difference. --tz: the owner's timezone
   --check-routines PATH|auto  (verify/plan/apply/sync/drift; EXPERIMENTAL) warn about routines the Grok desktop
@@ -81,6 +92,9 @@ const VALUED: &[&str] = &[
     "metrics",
     "pair",
     "coverage",
+    "interval",
+    "every",
+    "for",
     "transport",
     "local-dir",
     "drive-dir",
@@ -107,6 +121,9 @@ const VALUED: &[&str] = &[
     "max-age-days",
     "peer-file",
     "tz",
+    "without",
+    "root",
+    "uploaded",
 ];
 const FLAGS: &[&str] = &[
     "strict",
@@ -125,10 +142,17 @@ const FLAGS: &[&str] = &[
     "check",
     "all",
     "no-pair-key",
+    "now",
+    "reset",
     "undo",
     "copy-one-sided",
     "no-titles",
     "titles",
+    "local-only",
+    "forget",
+    "print-charter",
+    "print-skill",
+    "with-skills",
 ];
 
 struct Report {

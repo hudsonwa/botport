@@ -6,7 +6,13 @@ confidence-threshold = 0.8
 [advisories]
 yanked = "deny"
 ignore = [
-  # unsafe-libyaml is unmaintained (no fix exists); it comes in through serde_yaml, which only parses the user's
-  # own local Hermes config files. Replacing serde_yaml is a separate change.
-  { id = "RUSTSEC-2024-0449", reason = "unmaintained, no safe upgrade; parses only the user's own local YAML" },
+  # unsafe-libyaml is unmaintained (no fix exists); it comes in through serde_yaml. botport parses YAML from the
+  # user's Hermes profile (config.yaml, which may hold imported content), the port spec's cron file, skill front
+  # matter (including skills imported from a Grok bundle), and `.yaml`/`.yml` payloads the secrets write guard
+  # checks (bundle files). Not all of that is the user's own text. Every parse goes through core::yaml11::parse,
+  # which refuses documents over 4 MiB, nested over 64 levels, or whose aliases expand them past two nodes per
+  # byte plus 1,000 or past four times their length plus 64 KiB of text (at most 4 MiB), and files are read with
+  # the size cap. These limits bound resource use only; they do not address any
+  # memory-safety defect in the parser itself. Replacing the unmaintained parser is tracked for after v0.2.
+  { id = "RUSTSEC-2024-0449", reason = "unmaintained, no safe upgrade; YAML input is bounded in size, depth and aliases (resource use only, not memory-safety defects in the parser); parser replacement tracked for after v0.2" },
 ]

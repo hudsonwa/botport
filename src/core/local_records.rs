@@ -190,7 +190,7 @@ fn read_opt(root: &Path, dir: &Path, name: &str) -> Res<Option<Vec<u8>>> {
         Ok(b) => Ok(Some(b)),
         Err(Confined::Missing) => Ok(None),
         // never name the file: a reader's file names stay out of errors and logs
-        Err(_) => err("local reader record refused (not a regular file inside the local dir, the running user's own and not writable by others)"),
+        Err(_) => err("local records file refused (not a regular file inside the local dir, the running user's own and not writable by others)"),
     }
 }
 
@@ -222,7 +222,7 @@ pub fn read(local_dir: &Path, bot_key: &str) -> Res<BotRecords> {
     for d in [&root, &dir] {
         if std::fs::symlink_metadata(d).is_ok() && !private_dir(d) {
             return err(
-                "local reader folder refused (not the running user's own, or writable by others)",
+                "local records folder refused (not the running user's own, or writable by others)",
             );
         }
     }

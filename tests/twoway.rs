@@ -315,6 +315,51 @@ fn persona_soul_never_exported_and_secrets_kept_out() {
     assert!(!hb.join("normalized/SOUL.md").exists() && !hb.join("SOUL.md").exists());
 }
 
+/// A Hermes-made skill with a YAML file that cannot be checked as YAML (a parse error) is left out of the Hermes ->
+/// Grok bundle with the reason; the export still completes (manifest written) and the other skill goes out.
+#[test]
+fn h2g_leaves_out_a_skill_with_unreadable_yaml_and_still_exports() {
+    let x = World::new("yaml-h2g");
+    assert_eq!(x.export_grok().0, 0);
+    assert_eq!(x.run("sync", &["--adopt"]).0, 0);
+    let prof = x.p("hermes/profiles/demo");
+    w(
+        &prof.join("skills/devops/demo-dup/SKILL.md"),
+        "---\nname: demo-dup\n---\nv1\n",
+    );
+    w(
+        &prof.join("skills/devops/demo-dup/deploy.yaml"),
+        "a: [unclosed\n",
+    );
+    w(
+        &prof.join("skills/devops/demo-multi/SKILL.md"),
+        "---\nname: demo-multi\n---\nv1\n",
+    );
+    w(
+        &prof.join("skills/devops/demo-multi/multi.yaml"),
+        "kind: A\n---\nkind: B\n",
+    );
+    w(
+        &prof.join("skills/.usage.json"),
+        r#"{"demo-dup": {"created_by": "agent"}, "demo-multi": {"created_by": "agent"}}"#,
+    );
+    let (rc, out) = x.run("sync", &["--direction", "h2g", "--json"]);
+    assert_eq!(rc, 0, "{out}");
+    let hb = x.p("repo/hermes-export");
+    assert!(hb.join("manifest.json").exists(), "{out}");
+    assert!(
+        hb.join("normalized/skills/demo-multi/multi.yaml").exists(),
+        "{out}"
+    );
+    assert!(!hb.join("normalized/skills/demo-dup").exists(), "{out}");
+    assert!(out.contains("could not be checked as YAML"), "{out}");
+    assert_eq!(
+        x.run("sync", &["--direction", "h2g"]).0,
+        0,
+        "the next export still works"
+    );
+}
+
 #[test]
 fn hermes_made_skill_changed_on_both_sides_is_held_back() {
     let x = World::new("both");

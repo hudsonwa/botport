@@ -151,12 +151,17 @@ fn one_line(s: &str) -> String {
 }
 
 /// The fixed wording for a reason another side gave (its text never reaches a report or the terminal).
+/// The fixed wording for an item the remote bot does not share.
+const DECLINED_KIND: &str = "not mirrored (the bot does not share it)";
+
 fn reason_kind(s: &str) -> &'static str {
     let s = s.to_ascii_lowercase();
     if s.contains("secret") {
         "looks like it holds a secret"
     } else if s.starts_with("two ") && (s.contains("this id") || s.contains("this name")) {
         "two items there have this id"
+    } else if s.starts_with("declined") {
+        DECLINED_KIND
     } else {
         "it cannot be carried as it is"
     }
@@ -344,6 +349,31 @@ pub struct State {
     /// new if the item comes back (the newest 256 kept).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub retired_seen: BTreeMap<ItemId, u64>,
+    /// Kinds the remote side's last read could not see at all, with the reason (shown by `mirror status`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub remote_unread: BTreeMap<Kind, String>,
+    /// Changes the remote side cannot take in itself, for the owner to apply there by hand: item -> what to apply
+    /// (the local neutral digest, or [`ABSENT`] to remove it) and since when. Shown by `mirror status`; cleared when
+    /// both sides agree again or by `mirror applied ITEM`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub to_apply: BTreeMap<ItemId, ToApply>,
+    /// For kinds the remote side cannot read: the local neutral digest last seen per item, so only a change since then
+    /// is listed to apply.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub local_seen: BTreeMap<ItemId, String>,
+    /// The kinds `local_seen` holds a first read of (until then nothing of that kind is listed: what is there is only
+    /// noted).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub local_seen_kinds: Vec<Kind>,
+}
+
+/// One change for the owner to apply on the remote side by hand.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToApply {
+    /// The local neutral digest to apply, or [`ABSENT`]: remove it there.
+    pub neutral: String,
+    /// When it was listed (UTC).
+    pub since: String,
 }
 
 impl State {
@@ -366,6 +396,10 @@ impl State {
             held_paused: BTreeMap::new(),
             republish: false,
             retired_seen: BTreeMap::new(),
+            remote_unread: BTreeMap::new(),
+            to_apply: BTreeMap::new(),
+            local_seen: BTreeMap::new(),
+            local_seen_kinds: vec![],
         }
     }
 
@@ -478,6 +512,13 @@ impl State {
                     }),
                 }
             }
+            // the remote bot declined the item: a send waiting for it is withdrawn (a new pack supersedes the one that
+            // carries it), and the local base no longer claims the other side took it, so sharing again plans the
+            // item afresh (a send, or a conflict)
+            (Action::Unsupported(w), _) if w.ends_with(DECLINED_KIND) && !e.sent.is_empty() => {
+                e.base_local = None;
+                self.withdraw(&mut e);
+            }
             // in flight, unseen, waiting for approval, unsupported, or an action that was skipped or failed:
             // the bases stay where they are, so the next run plans the item again
             _ => {}
@@ -511,6 +552,22 @@ impl State {
             e.gen = None;
             self.republish = true;
         }
+    }
+
+    /// An item the owner keeps on each side as it is from now on: whatever was in flight for it is withdrawn, and a
+    /// new pack supersedes the one that carries it.
+    pub fn withdraw_item(&mut self, id: &str) {
+        let Some(k) = self.items.keys().find(|k| k.as_str() == id).cloned() else {
+            return;
+        };
+        let mut e = self.items.remove(&k).unwrap();
+        if !e.sent.is_empty() {
+            // the local copy is no longer known to be on the remote side: once the item is mirrored again, the next
+            // plan sends it or lists a conflict, never reads it as in step
+            e.base_local = None;
+        }
+        self.withdraw(&mut e);
+        self.items.insert(k, e);
     }
 
     fn use_approval(&mut self, id: &ItemId, to: Side, v: Option<&View>) {

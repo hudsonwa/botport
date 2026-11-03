@@ -229,6 +229,9 @@ pub fn sort_rows(rows: &mut [Value]) {
     });
 }
 
+/// The line MEMORY.md holds when the memory drop has no facts (a setup-only export, or a bot with no memories).
+pub const NO_FACTS: &str = "(no facts)";
+
 /// Markdown view of memory rows grouped by tier (port of grok-bot-backup memory_drop.render_markdown).
 pub fn render_memory(rows: &[Value]) -> String {
     let titles = [
@@ -260,7 +263,7 @@ pub fn render_memory(rows: &[Value]) -> String {
     }
     let mut out = String::from("# Memory (exported from the Grok Bot)\n\n");
     if rows.is_empty() {
-        return out + "(no facts)\n";
+        return out + NO_FACTS + "\n";
     }
     for k in order {
         let Some(g) = buckets.get(&k) else { continue };
@@ -558,6 +561,15 @@ pub fn export(o: &ExportOpts) -> Res<ExportResult> {
         let b = read(p)?;
         if secret_name(rel) || secret_content(&b) {
             excluded.push(rel.clone());
+            continue;
+        }
+        // the write guard under the file's own name (a YAML file must be checkable as YAML): a file it refuses is
+        // left out with the reason, instead of failing the whole export when it is written
+        if let Err(e) = crate::core::secrets::guard(&format!("raw/{rel}"), &b) {
+            match crate::core::secrets::unchecked_reason(&e) {
+                Some(why) => warnings.push(format!("{rel}: left out, {why}")),
+                None => excluded.push(rel.clone()),
+            }
             continue;
         }
         out.put(&format!("raw/{rel}"), &b)?;

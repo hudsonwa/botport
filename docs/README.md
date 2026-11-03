@@ -11,7 +11,9 @@ Start with the [main README](../README.md) for what botport is and a quick try-o
 ## Briefs for agents
 Hand these to an agent and it can do the job for you.
 - [AGENT-SETUP.md](AGENT-SETUP.md): set up the g2h talk bridge.
-- [AGENT-EXPORT.md](AGENT-EXPORT.md): a Grok Bot exports itself (or coordinates other bots).
+- [AGENT-EXPORT.md](AGENT-EXPORT.md): a Grok Bot exports itself, when its owner sends it this file in its own chat.
+- [MIRROR-BOT.md](MIRROR-BOT.md): the charter the owner pastes into their Mirror bot (`botport mirror setup --print-charter`).
+- [AGENT-MIRROR.md](AGENT-MIRROR.md): the Mirror bot's sync routine (reads each bot's setup from the box files).
 - [AGENT-IMPORT.md](AGENT-IMPORT.md): a Grok Bot loads what the Hermes bot learned.
 - [ROUTINE-PROMPT.md](ROUTINE-PROMPT.md): paste-ready prompts for the Grok side of g2h.
 

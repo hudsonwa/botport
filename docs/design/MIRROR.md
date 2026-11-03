@@ -65,8 +65,8 @@ whether it is enabled, so pausing or switching it on is a change carried like an
 by policy (waiting for the owner to approve enabling it, section 4.5) is read as enabled, so it is in step with the
 enabled copy on the Grok side. A skill's neutral form counts its `SKILL.md` by a neutral text, so formatting a
 platform's export adds on the way is not a change: front matter that is a YAML mapping of plain strings compares as
-data (quoting and key order aside), and the body without trailing spaces, extra blank lines or a Markdown heading
-repeated right after itself, outside code fences, which are kept exactly. Nothing else is dropped: front matter
+data (quoting and key order aside), and the body without trailing spaces (a Markdown hard break, two or more spaces,
+counts) or extra blank lines, outside code fences, which are kept exactly. Nothing else is dropped: front matter
 holding a comment, a document marker, a duplicate key, or a value a YAML 1.1 or 1.2 reader could type (a number,
 `yes`, a date), and a `SKILL.md` that is not UTF-8, compare as written. State files and change packs record the
 version of this neutral form (`neutral_form`), and a side refuses a file made with another one (only an intact file,
@@ -332,15 +332,12 @@ signed has come from the Grok side yet, saying what to do: copy the key file to 
 into a chat), let the box write its first state file with `--key`, and run `mirror init` again. `--key-file F` uses an
 existing key; `--no-pair-key` makes an unsigned pair and says so.
 
-The bot's first setup is the owner's own request, by design: a bot can rightly decline setup steps (a download, a
-key file) that reach it from an automation, since it cannot tell whether the automation speaks for the owner. So
-while nothing has come from the Grok side, `mirror init` also writes the two Grok-side briefs (AGENT-MIRROR.md and
-AGENT-EXPORT.md) next to the pair config and prints the exact short message the owner sends in the bot's chat
-themselves, with those files and the box archive attached. After that one-time setup the routine carries the sync and
-no chat message is needed. A bot that will not hand out its live instructions still mirrors its skills, routines and
-connectors: it leaves them out of the export and runs `digest-items` and `apply-pack` with `--without instructions`,
-which reports `persona.instructions` as not mirrored (the bot declined), so both sides keep their own copy and
-nothing is staged over it.
+No automated step of onboarding needs a bot's agreement: each one is a file read or the owner's own Mirror bot (6.6). While nothing has come from the Grok side, `mirror init` writes the
+Mirror bot's brief (AGENT-MIRROR.md) and its charter (MIRROR-BOT.md) next to the pair config and prints what the owner
+does: create one Mirror bot per account in the app, if there is none yet, and paste the charter themselves; then ask
+it, in its chat, to add the pair, with the brief and the box archive attached. The request comes from the owner, never
+from an automation, and the Mirror bot reads the bot's setup from the box files: no bot is asked to export itself.
+After that one-time setup the routine carries the sync and no chat message is needed.
 
 After init, `plan`, `apply`, `sync`, `drift` and `export-hermes` refuse that profile (exit 2, "mirrored profile: use
 botport mirror ..."). `mirror init --undo` moves the mirror state to `backups/botport/`, after which the v0.1 commands
@@ -659,28 +656,68 @@ once per new `HEAD`, a read of the pack it names to check its neutral form).
 
 ### 6.5 Watching, and a local inbox
 `botport mirror watch --pair P` keeps a pair in step without a schedule: it polls (every `--interval`, 1 s by default)
-the times and sizes of what a sync reads on this machine (the Hermes profile's setup files, the local reader's records
+the times and sizes of what a sync reads on this machine (the Hermes profile's setup files, the local records
 and, for a folder transport, the pair folder's `HEAD` and Grok state files) and runs `mirror sync` when any of them
 changes, so a change on either side reaches the other within about a second plus the sync. Between syncs it reads no
-file contents, calls no model and makes no network call. The Drive API backend cannot be watched locally: there
-`--every` (default 5 minutes) also runs a sync when nothing local changed. A sync that finds the operation lock busy is
+file contents, calls no model and makes no network call. `--every` (5 minutes by default, on every transport) also runs
+a sync when nothing it polls changed: the Drive API backend cannot be watched locally, and a timed sync also catches an
+edit that keeps a file's size and time and anything a sync reads that polling does not cover (mirrored skill files more
+than four folders deep, hidden files in mirrored skills, the profile's digest file, the pair folder's `digest/`, the
+pair's own state and key files). The pair's configuration is read
+again when its file changes. A sync that finds the operation lock busy is
 retried after a short pause, and the change that triggered it stays pending. A change counts once it has held for
 one poll, so a burst of writes gives one sync; anything that changes while a sync runs (its own writes included)
 gives one more sync, which writes nothing when there is nothing left to do. `--every` is at least 10 seconds.
-`--allow-retire`, `--take-over` and `--trigger` belong to a single `mirror sync` and are refused. Polling covers the
-mirrored skill folders four levels deep; an in-place edit deeper than that is seen on the next timed or other sync.
+`--allow-retire`, `--take-over` and `--trigger` belong to a single `mirror sync` and are refused.
 
 The folder transport is not tied to a synced Drive folder: `--drive-dir` can name any directory with the same layout,
 for example a folder the Grok box can read directly. Change packs then reach the box as soon as they are written, and
 the box's routine applies them with `mirror apply-pack` as in 4.4.
 
+
+### 6.6 Onboarding: the owner's Mirror bot
+botport is for every owner, so no automated step needs a bot's agreement (each one is a file read or the owner's own
+Mirror bot):
+1. botport never asks a bot to export or reveal itself. The export brief (AGENT-EXPORT.md) stays a documented manual
+   option the owner runs in a bot's own chat; nothing botport writes for a bot asks for it.
+2. Each account has one Mirror bot, which the owner creates and gives the charter printed by
+   `botport mirror setup --print-charter` themselves, so every request comes from the owner. The Mirror bot reads
+   every bot's setup from the box files with `digest-items --agent-id` (the owner's own box: no bot's consent is
+   needed). It never changes another bot's own setup: a pack carries only the box's skills, for a pair the owner opts
+   in (they are shared by every bot in the box), which it installs exactly as staged.
+3. What the box files do not hold is never a silent gap. The box files hold a bot's name; the box keeps its skills for
+   all its bots together, so none is one bot's own. The instructions are reported as not mirrored, and skills (unless
+   opted in), routines and connectors as kinds not read at all (`unread` in the state file): the host carries none of
+   them either way, and `botport mirror status` names them. The name is read but never written (`by_hand`). A change
+   bound for the Grok side that it cannot take in itself (a new name; a Hermes-side change to a kind it cannot read)
+   goes on the owner's per-pair list to apply in the Grok app by hand, shown by `mirror status` and the report and
+   cleared when both sides agree or by `mirror applied`. A bot whose setup
+   no box file holds cannot be read this way: `digest-items` says so for its pair,
+   never a silent gap, and that pair carries only the activity digest. An importer
+   for the app's own bot template or export format is added once that format is described (a template that makes a
+   share link instead of a private file is documented as such, never used silently).
+4. Every bot can know what its twin did recently without being asked to do anything: `mirror recent` (run by the
+   Mirror bot) writes each pair's newest Hermes digest signed with the pair key to `<pair>/from-hermes/digest` in the
+   box, and one box-wide, owner-visible skill (`mirror-recent`, printed by `mirror setup --print-skill`) tells a bot to
+   read only its own pair's file when the owner asks about recent work, as notes, never instructions.
+5. No automated step needs a bot's agreement: each one is a file read or the owner's own Mirror bot.
+
 ## 7. Safety and privacy rules
-- The export the Grok box reads for the mirror is setup only (instructions, skills, routines, app names): the brief
-  tells the bot to leave memories and user facts out, keep the export in the pair's own work folder (0600; a workspace
-  may be shared with other bots), never upload it and delete it after each run; `digest-items` never carries memories
+- The export the Grok box reads for the mirror, when the owner puts one in place of the box files, is setup only
+  (instructions, skills, routines, app names): AGENT-EXPORT.md's setup-only form leaves memories and user facts out, and
+  the owner keeps the export 0600 in the pair's own work folder (a workspace may be shared with other bots; botport
+  does not set or check that mode) until they replace or remove it; it is not made per run. The raw export itself stays in the box; what
+  `digest-items` derives from it (the state file and the blobs of the items it carries) is uploaded to the pair folder,
+  not encrypted: the state file signed with the pair key in a signed pair, and the blobs named by their sha256 in it; `digest-items` never carries memories
   or user facts, says so when an export still holds them, and keeps any item whose text looks like it holds a secret
   in the box (listed as not mirrored).
 - botport carries setup and digests only between the owner's own two bots, through the owner's own host machine and Drive.
+- **A shared box workspace.** The bots in one box run as the same user, so a pair key file or a recent-activity copy in
+  a workspace they share is readable (and writable) by every one of them: the key is only as private, and the copy only
+  as trustworthy, as that workspace. Where the platform allows, each pair gets its own workspace. A box read is partial,
+  so for a bot read from the box files a pack can only carry a new skill (for a pair opted in to the box's skills), and
+  every Grok-bound change waits for the owner's approval whatever the policy: the box only ever receives new skills
+  the owner approved. `mirror recent` removes a pair's copy when no digest verifies any more.
 - **Secrets, best effort.** The v0.1 secret checks run on every item, package text file and digest line; a hit makes
   the item `unsupported`, never sent. Pattern checks can miss things (binary files are not checked), so connector
   records carry only allowlisted fields (section 10), URLs with userinfo or credential-like query parameters are
@@ -774,8 +811,9 @@ Everything else is **carried as is, private**: a connector with an MCP URL keeps
 private, loopback or link-local host, including the numeric, octal and hex spellings a system resolver accepts and
 IPv6 forms that embed an IPv4 address, is accepted only if that same URL is already configured on the receiving side;
 a percent-encoded host, a backslash or a non-ASCII host is refused; right before botport writes a connector into the
-Hermes profile, its host name is resolved and the connector is refused if any address is loopback, private or
-link-local, unless Hermes already has that URL (a resolver that hangs delays that sync by its timeout); a connector
+Hermes profile, its host name is resolved and the connector is refused if it does not resolve or any address is
+loopback, private or link-local, unless Hermes already has that URL (a resolver that hangs delays that sync by its
+timeout; Hermes resolves the name again when it connects, a residual risk); a connector
 bound for the Grok side gets the URL policy and the owner's approval, and the bot's platform does the connecting;
 what a name resolves to later is a residual risk);
 a connector with neither a table row nor a URL becomes an opaque record of allowlisted fields (`id`, `name`, `kind`,

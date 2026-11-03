@@ -89,6 +89,7 @@ name = "botport"
 version = "0.1.2"
 dependencies = [
  "regex",
+ "rustix",
  "serde",
  "serde_json",
  "serde_yaml",

@@ -117,7 +117,7 @@ impl LocalTransport {
         self.layout.id()
     }
 
-    /// The local reader's activity records for the bot (for the Grok side's digest and the routine check).
+    /// The local records' activity for the bot (for the Grok side's digest and the routine check).
     pub fn records(&mut self) -> Res<Option<BotRecords>> {
         self.layout.records()
     }

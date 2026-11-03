@@ -143,13 +143,17 @@ pub fn collect(c: &Ctx) -> Res<Export> {
                    files: BTreeMap<String, Vec<u8>>,
                    why: &str,
                    items: &mut Vec<Item>| {
-        if files.values().any(|b| secret_content(b)) {
-            items.push(sync::item(
-                "skills",
-                &name,
-                St::Skip,
-                "credential-like text: not exported",
-            ));
+        // the write guard under each file's exported name (a YAML file must be checkable as YAML): a skill it
+        // refuses is left out with the reason, instead of failing the export once its files are written
+        let refused = files.iter().find_map(|(rel, b)| {
+            crate::core::secrets::guard(&format!("normalized/skills/{name}/{rel}"), b).err()
+        });
+        if let Some(e) = refused {
+            let why = match crate::core::secrets::unchecked_reason(&e) {
+                Some(r) => format!("{r}: not exported"),
+                None => "credential-like text: not exported".into(),
+            };
+            items.push(sync::item("skills", &name, St::Skip, why));
         } else if c.skills.get(&name).map(tree_digest_files) == Some(tree_digest_files(&files)) {
             // identical copy already on the Grok side: nothing to send
         } else if let std::collections::btree_map::Entry::Vacant(v) = skills.entry(name.clone()) {

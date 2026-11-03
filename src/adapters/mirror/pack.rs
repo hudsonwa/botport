@@ -50,6 +50,9 @@ pub struct Pack {
     pub pair: String,
     /// Generation (monotonic, never reused).
     pub gen: u64,
+    /// The neutral form the digests were made with ([`crate::core::package::NEUTRAL_FORM`]).
+    #[serde(default = "crate::core::package::neutral_form_v1")]
+    pub neutral_form: u32,
     /// Random id, so two packs of one generation can never be mistaken for each other.
     pub id: String,
     /// The machine that wrote it.
@@ -108,6 +111,7 @@ impl Pack {
             schema: SCHEMA.into(),
             pair: pair.into(),
             gen,
+            neutral_form: crate::core::package::NEUTRAL_FORM,
             id: id.into(),
             machine: machine.into(),
             written: written.into(),
@@ -142,7 +146,7 @@ impl Pack {
 
     /// [`Pack::parse`], and with a pair key the manifest must carry a valid `mac`.
     pub fn parse_with(b: &[u8], pair: &str, key: Option<&[u8]>) -> Res<Pack> {
-        let p = Pack::parse(b, pair)?;
+        let p = Pack::parse_keyed(b, pair, key)?;
         if let Some(k) = key {
             crate::core::auth::verify(&serde_json::to_value(&p).expect("serializable"), k)?;
         }
@@ -151,11 +155,17 @@ impl Pack {
 
     /// Parse and check a manifest for `pair`.
     pub fn parse(b: &[u8], pair: &str) -> Res<Pack> {
+        Pack::parse_keyed(b, pair, None)
+    }
+
+    /// [`Pack::parse`]; a file in another neutral form is reported only when it verifies with `key`.
+    fn parse_keyed(b: &[u8], pair: &str, key: Option<&[u8]>) -> Res<Pack> {
         let mut p: Pack =
             serde_json::from_slice(b).map_err(|e| format!("pack is not valid: {e}"))?;
         if p.schema != SCHEMA || p.pair != pair {
             return err("pack is for another pair or schema");
         }
+        crate::core::package::check_form_of(b, "the change pack", p.neutral_form, key)?;
         let mac = p.mac.take();
         let claimed = std::mem::take(&mut p.sha256);
         if sha256_hex(json_sorted(&p).as_bytes()) != claimed {

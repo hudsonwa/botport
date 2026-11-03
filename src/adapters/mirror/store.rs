@@ -20,6 +20,9 @@ pub trait Store {
     fn list(&mut self, dir: &str) -> Res<Vec<Entry>>;
     /// The bytes of `path`, or `None` if it does not exist.
     fn get(&mut self, path: &str) -> Res<Option<Vec<u8>>>;
+    /// At most `max + 1` bytes of `path` (so a longer file shows as longer than `max`), or `None` if it does not
+    /// exist: nothing past them is read.
+    fn get_at_most(&mut self, path: &str, max: u64) -> Res<Option<Vec<u8>>>;
     /// Create or replace `path` atomically.
     fn put(&mut self, path: &str, data: &[u8]) -> Res<()>;
     /// Remove `path` (missing is fine).
@@ -127,6 +130,26 @@ impl Store for FolderStore {
         }
     }
 
+    fn get_at_most(&mut self, path: &str, max: u64) -> Res<Option<Vec<u8>>> {
+        safe_rel("mirror file", path)?;
+        let (dir, name) = split(path);
+        let cap = max.saturating_add(1);
+        match crate::core::util::read_confined_capped(
+            &self.root,
+            &self.root.join(dir),
+            name,
+            |_| true,
+            cap,
+        ) {
+            Ok(b) => {
+                self.io.read_bytes += b.len() as u64;
+                Ok(Some(b))
+            }
+            Err(Confined::Missing) => Ok(None),
+            Err(e) => err(format!("mirror file {path}: refused ({e:?})")),
+        }
+    }
+
     fn put(&mut self, path: &str, data: &[u8]) -> Res<()> {
         write_private(&self.root, path, data)?;
         self.io.written_bytes += data.len() as u64;
@@ -163,6 +186,28 @@ mod tests {
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn a_bounded_get_reads_no_more_than_asked() {
+        let d = crate::core::util::test_dir("store-capped");
+        let mut s = FolderStore::open(&d).unwrap();
+        s.put("probe/bot.txt", &vec![b'x'; 10_000]).unwrap();
+        let before = s.io().read_bytes;
+        let b = s.get_at_most("probe/bot.txt", 4096).unwrap().unwrap();
+        assert_eq!(
+            b.len(),
+            4097,
+            "max + 1 bytes, so a longer file shows as longer"
+        );
+        assert_eq!(s.io().read_bytes - before, 4097);
+        s.put("probe/small.txt", b"ok").unwrap();
+        assert_eq!(
+            s.get_at_most("probe/small.txt", 4096).unwrap().unwrap(),
+            b"ok"
+        );
+        assert_eq!(s.get_at_most("probe/none.txt", 4096).unwrap(), None);
+        fs::remove_dir_all(&d).ok();
     }
 
     #[test]

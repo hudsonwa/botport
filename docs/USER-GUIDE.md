@@ -13,7 +13,8 @@ In the chat of the bot you want to export, attach these files (from a checkout o
 - `docs/AGENT-EXPORT.md` (the brief the bot follows)
 - the release archives `botport-x86_64-unknown-linux-musl.tar.gz` and `botport-aarch64-unknown-linux-musl.tar.gz`
   (the bot picks the right one)
-- optionally `SHA256SUMS` from the same release (the bot checks the archive against it before extracting)
+- `SHA256SUMS` from the same release (the bot checks the archive against it before extracting anything, and stops
+  without it)
 
 and send: **"Follow the attached AGENT-EXPORT.md and export yourself."**
 
@@ -22,8 +23,9 @@ its instructions/schedules/connectors, runs the export, and sends you back `<nam
 summaries.
 
 **Several bots at once:** send the same files to one bot with *"Follow the attached AGENT-EXPORT.md and export
-these bots: helpdesk, sales, …"* (or *"all bots"*). It coordinates the others; if it can't message them itself, it gives you
-one line to paste into each of their chats. You get one bundle per bot.
+these bots: helpdesk, sales, …"* (or *"all bots"*). It exports the others from the box files, without asking them
+anything, so their bundles hold their names and the box's skills; for a bot's memory and description, send the brief
+in that bot's own chat yourself. You get one bundle per bot.
 
 ## 2. Check the bundle
 Unpack the bundle into a private folder of your choice. Below it is `~/your-bot/grok`.
