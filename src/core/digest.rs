@@ -15,7 +15,8 @@
 //! ```
 //!
 //! Lines are summary level (titles, counts, names, times); an adapter never puts memories, user facts or message text
-//! in them (a writer may note whether a session's last message ends in a question mark, never its text).
+//! in them (of a message a writer emits only the last message's role and whether it ends in a question mark, never
+//! its text).
 use crate::core::secrets;
 use crate::core::util::*;
 use regex::Regex;

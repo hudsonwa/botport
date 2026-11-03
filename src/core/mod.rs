@@ -10,6 +10,7 @@ pub mod metrics;
 pub mod mirror;
 pub mod model;
 pub mod package;
+pub mod routines;
 pub mod secrets;
 pub mod util;
 pub mod yaml11;

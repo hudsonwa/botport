@@ -1,0 +1,70 @@
+# Connector mapping (docs/design/MIRROR.md section 10): public, off-the-shelf connectors only, matched by normalised
+# name (case, spaces and punctuation ignored). This table is the only place connector names appear in code; anything
+# not listed here is carried as is (src/adapters/connectors.rs), never special-cased.
+#
+# Per row:
+#   id          canonical id, also the Hermes `mcp_servers` key botport uses
+#   grok        the Grok app's display names (the first is the one written back)
+#   hermes      { mcp_url = "...", auth = "oauth" | "oauth-or-bearer" } for the vendor's official remote MCP server,
+#               or { manual = "what to do" } when no official endpoint could be verified
+#   credentials names the Hermes side needs (names only: the owner enters the values)
+#   source      the vendor's own public page the endpoint was checked against when the row was added
+
+[[connector]]
+id = "github"
+grok = ["GitHub"]
+# source: https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/set-up-the-github-mcp-server
+# OAuth by default; a personal access token as a bearer header also works.
+hermes = { mcp_url = "https://api.githubcopilot.com/mcp/", auth = "oauth-or-bearer" }
+credentials = ["GITHUB_PERSONAL_ACCESS_TOKEN"]
+source = "https://docs.github.com/en/copilot/how-tos/provide-context/use-mcp/set-up-the-github-mcp-server"
+
+[[connector]]
+id = "notion"
+grok = ["Notion"]
+# source: https://developers.notion.com/guides/mcp/get-started-with-mcp (Streamable HTTP; OAuth sign-in)
+hermes = { mcp_url = "https://mcp.notion.com/mcp", auth = "oauth" }
+credentials = []
+source = "https://developers.notion.com/guides/mcp/get-started-with-mcp"
+
+[[connector]]
+id = "linear"
+grok = ["Linear"]
+# source: https://linear.app/docs/mcp (OAuth 2.1; an API key as a bearer header also works)
+hermes = { mcp_url = "https://mcp.linear.app/mcp", auth = "oauth-or-bearer" }
+credentials = ["LINEAR_API_KEY"]
+source = "https://linear.app/docs/mcp"
+
+[[connector]]
+id = "slack"
+grok = ["Slack"]
+# source: https://docs.slack.dev/ai/slack-mcp-server/ (OAuth with the owner's Slack app: no dynamic client
+# registration, so the client needs that app's id and secret)
+hermes = { mcp_url = "https://mcp.slack.com/mcp", auth = "oauth" }
+credentials = ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"]
+source = "https://docs.slack.dev/ai/slack-mcp-server/"
+
+[[connector]]
+id = "gmail"
+grok = ["Gmail", "Google Mail"]
+# source: https://developers.google.com/workspace/guides/configure-mcp-servers (Developer Preview; OAuth 2.0 with
+# the owner's Google Cloud OAuth client)
+hermes = { mcp_url = "https://gmailmcp.googleapis.com/mcp/v1", auth = "oauth" }
+credentials = ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"]
+source = "https://developers.google.com/workspace/guides/configure-mcp-servers"
+
+[[connector]]
+id = "google-drive"
+grok = ["Google Drive"]
+# source: https://developers.google.com/workspace/guides/configure-mcp-servers (Developer Preview; OAuth 2.0)
+hermes = { mcp_url = "https://drivemcp.googleapis.com/mcp/v1", auth = "oauth" }
+credentials = ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"]
+source = "https://developers.google.com/workspace/guides/configure-mcp-servers"
+
+[[connector]]
+id = "google-calendar"
+grok = ["Google Calendar"]
+# source: https://developers.google.com/workspace/guides/configure-mcp-servers (Developer Preview; OAuth 2.0)
+hermes = { mcp_url = "https://calendarmcp.googleapis.com/mcp/v1", auth = "oauth" }
+credentials = ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"]
+source = "https://developers.google.com/workspace/guides/configure-mcp-servers"

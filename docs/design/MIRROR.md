@@ -388,12 +388,15 @@ Four sections, always in this order, each with a line budget; a line is at most 
 | Section | Lines | Source (Hermes side) |
 |---|---|---|
 | Recent activity | 12 | owner sessions in the window, newest first: the session title (or "untitled session") and message count; setup changes from the mirror state |
-| Open threads | 6 | owner sessions in the window not ended, or whose last message is from the user, or is an assistant message ending in `?` (only that last message's role and final character are read, never its text) |
+| Open threads | 6 | owner sessions in the window not ended, or whose last message is from the user, or is an assistant message ending in `?` (only the last message's role and whether it ends in a question mark, never its text) |
 | Regular routines | 10 | cron jobs: name, schedule, timezone, last run and outcome |
 | Key facts | 10 | setup facts: how many skills and routines (and how many enabled), the newest mirror change, open conflicts; never derived from the peer's digest, so the two digests do not chase each other |
 
-The digest is summary-level. It **never** carries memories, user facts, message or transcript text, or secret,
-approval or form payloads: it is built from counts, times, names and flags only. Session titles are left out by
+The digest is summary-level: it carries routine names, schedules, time zones and last-run status, skill and routine
+counts, session times and message counts, and session titles only with `--titles`, plus the newest mirror change and
+open conflicts. It **never** carries memories or user facts (the contents of the memory and user-profile files, which it
+never reads), message or transcript text, or secret, approval or form payloads. Routine names are shared as written, so
+keep secrets out of them. Session titles are left out by
 default (each session is "session" with its count and time), because they are usually generated from the
 conversation and can say what a session was about; `digest write --titles` is the owner's opt-in to them.
 
@@ -707,7 +710,8 @@ the box's routine applies them with `mirror apply-pack` as in 4.4.
   program that makes triggers needs the key; it lives in a 0600 file beside the pair config, never on Drive.
 - **Residual risks, stated.** (1) On the Grok side the last step of an install is the bot's own tool call, after the
   `--precheck`; an owner edit landing in that moment is overwritten (the previous copy is in the store only if it was
-  a recorded base). (2) The digest is text from the owner's own sessions placed in the peer's context; cleaning and
+  a recorded base). (2) The digest is text from the owner's own sessions and setup (routine names always, session titles
+  with `--titles`) placed in the peer's context; cleaning and
   framing reduce, but cannot remove, the chance that a model treats it as instructions; `digest inject --mode
   pointer` injects only a one-line pointer to the file instead. A digest read from the pair folder is used only when
   it is signed with the pair key, so in a pair without a key nobody who can merely write the folder can place text
@@ -752,6 +756,7 @@ transport.
 | `paused-differs` | one side paused (expected, and labelled so, when botport paused it awaiting approval) |
 | `only-grok` / `only-hermes` | missing on one side |
 | `event-only` | an event-triggered routine with no Hermes equivalent: `unsupported`, not a failure |
+| `duplicate-name` | a name listed more than once on one side (also after the prefix is removed): not compared, never by its first entry |
 
 Normalisation (used for the neutral form in section 3 too, so one schedule spelled two ways is one routine):
 five-field cron with whitespace collapsed and day/month names to numbers, `0` and `7` both Sunday; an interval that a
