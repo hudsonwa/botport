@@ -2,6 +2,7 @@
 pub mod adapter;
 #[cfg(test)]
 pub mod conformance;
+pub mod mirror;
 pub mod model;
 pub mod package;
 pub mod secrets;

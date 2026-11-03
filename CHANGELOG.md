@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `core::mirror`: mirror mode's merge engine (`botport-mirror/1` state). Each item is compared with a base per side;
+  a change on one side is carried to the other, a change on both sides is a conflict that stays open until picked or
+  made equal. Items missing from an incomplete read are never deleted; more than 3 retires on a side, or more than 20% of a
+  kind with at least 5 items, stop the run; changes
+  can be held for an approval bound to their digest. Design: [docs/design/MIRROR.md](docs/design/MIRROR.md) section 4.
 - `core::package`: opaque skill/tool packages (`botport-package/1`) for mirror mode. A package is carried byte for
   byte with its executable bits; its digest covers every path, byte and executable bit; a generated manifest lets a
   receiver check it. Symlinks, special files, setuid/setgid/sticky bits, unsafe paths, paths that collide by case or
