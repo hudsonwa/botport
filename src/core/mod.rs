@@ -5,6 +5,7 @@ pub mod auth;
 pub mod conformance;
 pub mod item;
 pub mod local_records;
+pub mod metrics;
 pub mod mirror;
 pub mod model;
 pub mod package;
