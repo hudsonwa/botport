@@ -83,6 +83,7 @@ botport mirror pick --pair P ITEM (--keep grok|hermes | --local-only | --forget)
 botport mirror restore --pair P ITEM --from SHORT_DIGEST
 botport mirror stats [--since 7d] [--metrics FILE]
 botport mirror applied --pair P ITEM                    # a listed change was applied in the Grok app by hand
+botport mirror doctor --pair P                          # can you chat with the twin (gateway, model)? exit 1 if not
 botport mirror setup --print-charter|--print-skill     # the Mirror bot's charter; the box-wide mirror-recent skill
 botport mirror digest-items --pair P (--agent-id ID [--agent-data DIR] [--with-skills] | --from EXPORT) --out DIR
                             [--log F] [--all] [--key F] [--coverage partial|complete] [--without instructions]
@@ -164,6 +165,15 @@ botport mirror digest-items|apply-pack|recent --root R [--pair P]... [other flag
   takes any entry off. `pick --keep hermes` for such an item is refused.
 - **Several pairs.** `mirror init` notes when other pairs are set up on the same machine: pairs served from one box
   share its workspace, and every bot there can read each pair's key file.
+- **Chatting with the twin.** Sync needs no gateway; chatting does. `mirror status`, `mirror init` and `mirror sync`
+  start with "Synced, but you can't chat with this bot in Hermes yet: <reason>. Fix: <command>" when the twin's profile
+  is parked, served by no running gateway, left out by a gateway that serves only its own profile, or has no model
+  (JSON: `chat_notice`); `mirror doctor` checks the gateway and the model, one line each. botport reads Hermes' own
+  status files (see the user guide, "Chatting with your mirrored bots") and never starts or messages a gateway. On
+  landing, a profile with no model gets the default profile's `model`, `fallback_providers` and `fallback_model`,
+  keeping only the default/model/name/provider fields and dropping values that look like credentials; init says so, or
+  warns when there is nothing to copy. Printed commands quote the profile name (`hermes -p 'NAME'`); for a name that is
+  not a plain profile name they read `hermes -p "$PROFILE"` and say to set PROFILE first.
 - **Recent activity in the box.** `mirror recent` writes each pair's newest Hermes digest that is signed with the pair
   key (checked like every digest) to `<pair>/from-hermes/digest` in the box, and removes that copy when none verifies
   (an unsigned pair gets none; on Unix through directory handles, refusing a link in the last part of each path,

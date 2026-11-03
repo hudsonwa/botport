@@ -207,6 +207,64 @@ before the stop stay written. You have two ways back:
 Cron jobs are created through the `hermes` CLI, so a job created before the stop stays in Hermes (always paused).
 Undoing the files does not remove it: `hermes cron list` shows it.
 
+## 8. Chatting with your mirrored bots
+Mirror mode keeps a Hermes twin in step whether or not anything in Hermes is running: sync only reads and writes the
+profile's files. **Chatting** with the twin is different: Hermes answers a profile only through a **gateway**. As
+Hermes documents it ([Running many gateways at once](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/multi-profile-gateways.md)), in recent Hermes Agent versions one gateway, started from the
+default profile, serves every profile ("multiplexing"); a profile it does not serve cannot be chatted with.
+
+botport says so whenever it matters. `botport mirror status`, `mirror init` and every `mirror sync` start with one line
+when you cannot chat with the twin yet:
+
+    Synced, but you can't chat with this bot in Hermes yet: <reason>. Fix: <what to run>.
+
+and `botport mirror doctor --pair P` checks the gateway and the model for that twin, one `[ok]` or `[FAIL] ... — fix:
+...` line each. botport reads Hermes' own status files for this; it never starts, stops or messages a gateway. The
+usual reasons:
+
+- **No gateway is running.** Start it from the default profile: `hermes gateway start` (`hermes gateway install`
+  keeps it running across restarts).
+- **The profile is parked**: someone ran `hermes -p 'NAME' gateway stop`. `hermes -p 'NAME' gateway start` brings it back.
+- **The gateway serves only its own profile.** Usually because another profile still runs a gateway of its own (from
+  before one gateway served every profile). Hermes folds those into the one gateway with
+  `hermes gateway migrate --multiplex` (below).
+- **No model.** When `mirror init` lands a profile that has no model, botport gives it the default profile's model
+  settings (`model`, `fallback_providers`, `fallback_model`), keeping only the default/model/name/provider fields and
+  dropping values that look like credentials. The profile needs its own provider key in its `.env`. If the default
+  profile has no model either, botport says so; set one with `hermes -p 'NAME' model`. Commands botport prints quote
+  the profile name for the shell; for a name that is not a plain profile name they read `hermes -p "$PROFILE"` and say
+  to set PROFILE to the profile's name first.
+
+### Before you run `hermes gateway migrate --multiplex`
+The migration changes how every profile on the machine is reached, not only your twins. What follows is how Hermes'
+own guide describes it ([Migrating from per-profile gateways](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/multi-profile-gateways.md#migrating-from-per-profile-gateways)); read it there
+for your Hermes version before you start:
+
+- It first checks for blockers (for example the same platform credential in two profiles) and stops, changing
+  nothing, when it finds one. `--dry-run` prints that plan and changes nothing.
+- It turns on `gateway.multiplex_profiles` in the default profile, **stops and removes** each other profile's own
+  gateway service (they are not restarted), and **restarts** the default profile's gateway, so every profile is briefly
+  offline.
+- A profile whose own gateway listened for HTTP (an API server or webhook port) is reached through the default
+  gateway's listener under a path instead (`/p/NAME/...`): anything that called the old port has to change.
+- There is no built-in rollback (no reverse command); running it again finishes a migration that stopped half way.
+  A profile can opt out with `gateway.standalone: true` in its own `config.yaml` (a temporary compatibility setting in
+  Hermes) and keep its own gateway.
+- `hermes update` runs the same migration by itself when nothing blocks it, unless `gateway.auto_multiplex_migration:
+  false` is set in the default profile.
+
+A safe order:
+1. **Back up** the Hermes home (at least every profile's `config.yaml` and `.env`, and the service files of each
+   profile's gateway), so you can rebuild a profile's own gateway by hand if you need to.
+2. Pick a **quiet time**: every bot served by Hermes is offline while its gateway restarts.
+3. Run `hermes gateway migrate --multiplex --dry-run` and read the plan and any blockers; fix the blockers first.
+4. Run `hermes gateway migrate --multiplex`.
+5. **Verify**: `hermes gateway status` lists every profile as served, `botport mirror doctor --pair P` passes for each
+   pair, and one short chat with each bot answers.
+6. **If something is wrong**: set `gateway.standalone: true` in that profile's `config.yaml` and start its own gateway
+   (`hermes -p 'NAME' gateway start`), or restore its files from the backup; for anything else, see Hermes' own guide to
+   running several profiles (linked above).
+
 ## Output and tokens
 Every command prints at most 10 summary lines (`--json` for machines) and puts full detail in a file
 (`--details FILE`). Agents should read the summary, not the bundle. Exit codes: 0 ok, 1 drift/verify/test failure,
