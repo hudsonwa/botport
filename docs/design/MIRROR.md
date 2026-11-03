@@ -504,6 +504,13 @@ Drive in hybrid mode).
                                         Drive apply (a snapshot in another neutral form: Drive carries the read)
 ```
 
+What each field is for: `name` and `id` label the bot in the owner's own digest; `last_activity` dates the digest's
+Recent activity; `unread` and `awaiting_reply` say whether the bot is waiting for the owner without carrying any
+text; an entry's `time` and `speaker` (`user`, `bot`, `peer_to_bot`, `bot_to_peer` for messages between the bot and
+another bot, `system`) give counts per day by who spoke; `open_ask` marks a question the bot asked and `answered`
+whether it was answered, which together give Open threads; a routine event's `name`, `action` and `time` give Regular
+routines. No field carries message text.
+
 Rules:
 - `<bot-key>` must match `[a-z0-9][a-z0-9-]{0,63}` (no path separators, no dots) before it is used in any path; the
   pair's config names its bot key, so one pair never reads another bot's folder.
@@ -553,11 +560,12 @@ to it.
 Two backends on the host machine, chosen at `mirror init`; the API backend is first-class (a machine need not run the desktop
 sync client):
 - **Drive API v3**: botport calls the API with `curl` (no new Rust dependency; 7.52 or later, run by absolute path
-  from a checked `PATH`, like `sqlite3` 3.33 or later for the digest). Each run lists the whole pair folder in one
-  call (the folder ids are remembered between runs; the listing follows every page, and a folder with more than 50
-  pages of 1,000 entries is refused and reported) and keeps downloaded files in a local cache keyed by
-  Drive's checksum, so a sync where nothing changed makes exactly one call, never downloads or uploads, and a file is
-  downloaded again only when its checksum changed. The OAuth access token comes from a
+  from a checked `PATH`, like `sqlite3` 3.33 or later for the digest). Each run lists the pair folder from the top,
+  one call per folder level (two or three for a quiet sync): only the configured folder and folders reached from it
+  in that run are ever listed; the listing follows every page, and a folder with more than 50 pages of 1,000 entries
+  is refused and reported. Downloaded files are kept in a local cache keyed by Drive's checksum, so a sync where
+  nothing changed makes only those listing calls and never downloads or uploads, and a file is downloaded again only
+  when its checksum changed. The OAuth access token comes from a
   command the owner configures (`token_cmd`, in `~/.config/botport/mirror/<pair>.toml`, 0600, outside the profile and
   never mirrored; run as an argv without a shell, its stderr discarded; it runs for every call, so it should keep the
   access token in an owner-only file and refresh it only near expiry, or its time dominates every sync); the token must
@@ -643,7 +651,7 @@ which path each kind used, and the metrics row records it.
 
 Not yet: skipping the Drive listing entirely while a bot's local records show no new
 activity or routine change since the last sync, with a forced check at least weekly. Setup edits made on the Grok
-side need not leave a record, so this trades freshness for calls; today a quiet sync makes one listing call (plus,
+side need not leave a record, so this trades freshness for calls; today a quiet sync makes one listing call per folder level (plus,
 once per new `HEAD`, a read of the pack it names to check its neutral form).
 
 ### 6.5 Watching, and a local inbox
