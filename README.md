@@ -152,6 +152,14 @@ are versioned (`bot-model/1`), but expect rough edges. Bug reports with the `--j
 welcome. The project is looking for a co-maintainer who runs Grok Bots daily; see [CONTRIBUTING.md](CONTRIBUTING.md),
 the [roadmap](ROADMAP.md) and the [changelog](CHANGELOG.md).
 
+> **Looking for collaborators.** botport has one maintainer so far. Wanted:
+> - **A Grok-side co-maintainer** who uses Grok Bots and Hermes every day and will notice when either platform changes.
+> - **Rust help on adapters**: the Hermes writer, the `serde_yaml` replacement, and new platforms later.
+> - **Linux and Windows testers** for the build and the g2hd service.
+> - **People with their own bots** to add parity-battery cases.
+>
+> To get started, look at the [good first issues](https://github.com/hudsonwa/botport/labels/good%20first%20issue) or open an issue to say hello.
+
 ## How this was built
 The code and docs were written by Claude agents, directed by Josh, the maintainer. Each change was checked by a
 separate Claude agent acting as auditor (a fresh session with its own checklist), plus the tests and CI (fmt, clippy,
@@ -162,8 +170,8 @@ reviewed commits.
 ## Docs and contributing
 - [docs/README.md](docs/README.md): every guide, in one list.
 - [CONTRIBUTING.md](CONTRIBUTING.md): build, test, and send a pull request. Good first contributions: a
-  [PLATFORM-CHANGES](docs/PLATFORM-CHANGES.md) entry from a bot you run,
-  [#16](https://github.com/hudsonwa/botport/issues/16), [#5](https://github.com/hudsonwa/botport/issues/5).
+  [PLATFORM-CHANGES](docs/PLATFORM-CHANGES.md) entry from a bot you run, or any
+  [good first issue](https://github.com/hudsonwa/botport/labels/good%20first%20issue).
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License and credits
