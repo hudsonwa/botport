@@ -32,13 +32,33 @@ All notable changes to this project are documented here. The format is based on
   checked, then swapped in (files `0600`, executables `0700`, in a `0700` folder); a crash in the middle of the
   swap is recovered by the next write or read. Design: [docs/design/MIRROR.md](docs/design/MIRROR.md) section 11.
 - `botport digest write|show|inject`: the activity digest for mirror mode (`botport-digest/1`, design section 5). `write`
-  builds `<profile>/botport/digest-hermes.md` (0600) from the profile's owner sessions in `state.db` (titles only,
-  read-only through the `sqlite3` command), `cron/jobs.json`, skill counts and the mirror state's times and conflict
+  builds `<profile>/botport/digest-hermes.md` (0600) from the profile's owner sessions in `state.db` (read-only through the
+  `sqlite3` command; it emits times, message counts and only the last message's role and whether it ends in a question
+  mark, never its text; titles only with `--titles`), `cron/jobs.json`, skill counts and the mirror state's times and conflict
   count, capped at 4,500 bytes, cleaned, credential lines dropped, and not rewritten when unchanged. Summary level only:
-  never memories, user facts or message text (only whether a session's last message ends in a question mark).
+  it emits routine names, schedules, time zones and last-run status, skill and routine counts, session times and message
+  counts, and session titles only with `--titles`; it never emits the contents of the memory and user-profile files
+  (memories or user facts; `memories/` is never read), and of a message only the last message's role and whether it ends
+  in a question mark, never its text. Routine names are shared as written, so keep secrets out of them.
   `inject` is a `pre_llm_call` hook that adds the peer's digest as untrusted notes on an
   owner session's first turn only (a local surface, or a `sender_id` listed with `--owner-user`; anything else, and
-  cron always, gets nothing), or a one-line pointer with `--mode pointer`. v0.1 commands are unchanged.
+  cron always, gets nothing), or a one-line pointer with `--mode pointer`. A routine name or session title can still
+  carry text that a model reads as instructions (a stated residual risk that cleaning and the untrusted-notes framing
+  reduce but cannot remove); `digest inject --mode pointer` keeps the digest text out of the injected context (a bot
+  that can read files may still open it). v0.1
+  commands are unchanged.
+- `botport mirror routines`: a read-only routine-parity check between a Grok export and a Hermes profile, one line per
+  routine (`same`, `schedule-differs`, `tz-differs`, `prompt-differs` with short digests, `paused-differs`,
+  `only-grok`/`only-hermes`, `event-only`, `duplicate-name` for a name listed more than once on one side, never compared
+  by its first entry); exit 1 on a difference. Schedules are normalised first (cron spellings,
+  day/month names, Sunday as 0 or 7, intervals a cron line expresses). The normalisation and the routine's neutral form
+  live in the platform-free core (`core::routines`) for mirror mode to hash (docs/design/MIRROR.md section 9).
+- Connector mapping for mirror mode (library only, no CLI change): a compiled-in table of public connectors (GitHub,
+  Notion, Linear, Slack, Gmail, Google Drive, Google Calendar) with their official remote MCP endpoints and the
+  credential names the Hermes side needs; name matching ignores case, spaces and punctuation. Other connectors are
+  carried as is: an MCP url under a url policy (https only, no credentials in the url, private hosts only when already
+  configured on the receiving side), otherwise an opaque record of allowlisted fields. Includes the reverse direction
+  and a neutral form for hashing (docs/design/MIRROR.md section 10).
 
 ## [0.1.2] - 2026-11-03
 

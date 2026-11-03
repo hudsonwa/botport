@@ -747,21 +747,29 @@ pub fn url_origin(url: &str) -> Option<String> {
         }
         _ => (hp.clone(), String::new()),
     };
-    // spellings of one origin: the scheme's default port, a trailing dot on the host
-    let host = host.strip_suffix('.').unwrap_or(&host);
-    // a host is a bracketed IPv6 literal, or labels of ASCII letters, digits and '-' (none empty)
+    // a host is a bracketed IPv6 literal that parses, or labels of ASCII letters, digits and '-' (none empty, so a
+    // trailing dot is no origin either); a host that ends in a numeric label must be a canonical dotted quad, so
+    // `2130706433`, `127.1`, `010.0.0.1` or `0x7f.0.0.1` (one address spelled differently) is no origin
     let ok = match host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
-        Some(v6) => {
-            !v6.is_empty()
-                && v6
-                    .chars()
-                    .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.')
-        }
+        Some(v6) => v6.parse::<std::net::Ipv6Addr>().is_ok(),
         None => {
-            !host.is_empty()
-                && host.split('.').all(|l| {
-                    !l.is_empty() && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-                })
+            let labels: Vec<&str> = host.split('.').collect();
+            let names = labels
+                .iter()
+                .all(|l| !l.is_empty() && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
+            let numeric = |l: &str| {
+                l.chars().all(|c| c.is_ascii_digit()) || l.starts_with("0x") || l.starts_with("0X")
+            };
+            let canonical_v4 = labels.len() == 4
+                && labels
+                    .iter()
+                    .all(|l| l.parse::<u8>().is_ok_and(|n| n.to_string() == *l));
+            names
+                && (!labels.last().is_some_and(|l| numeric(l)) || canonical_v4)
+                && !(labels
+                    .iter()
+                    .any(|l| l.starts_with("0x") || l.starts_with("0X"))
+                    && !canonical_v4)
         }
     };
     if !ok {
@@ -781,6 +789,24 @@ pub fn url_origin(url: &str) -> Option<String> {
 /// Whether two urls share one origin; "no origin" on either side never does.
 pub fn same_origin(a: &str, b: &str) -> bool {
     matches!((url_origin(a), url_origin(b)), (Some(x), Some(y)) if x == y)
+}
+
+/// For tests: a new private (0700) directory under the system temp directory with a random name, so no other
+/// process can predict it or have made it first.
+#[cfg(test)]
+pub fn test_dir(tag: &str) -> PathBuf {
+    let d = std::env::temp_dir().join(format!(
+        "botport-{tag}-{}",
+        crate::adapters::mirror::pack::random_id()
+    ));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().mode(0o700).create(&d).unwrap();
+    }
+    #[cfg(not(unix))]
+    std::fs::create_dir(&d).unwrap();
+    d
 }
 
 /// An external program (`sqlite3`, `curl`, a token command) to run by absolute path: a name with a `/` is taken as
@@ -1184,8 +1210,8 @@ mod tests {
         let p = super::parse_iso;
         assert_eq!(p("2000-01-01"), p("2000-01-01T00:00:00Z"));
         assert_eq!(
-            p("2000-01-01T07:30:00.123456+02:00"),
-            p("2000-01-01T05:30:00Z")
+            p("2000-01-01T05:15:00.123456+02:00"),
+            p("2000-01-01T03:15:00Z")
         );
         assert_eq!(p("2000-01-01 05:30"), p("2000-01-01T05:30:00Z"));
         for bad in [
@@ -1271,12 +1297,19 @@ mod tests {
             o("https://mcp.example.test/")
         );
         // spellings of one origin
-        for u in [
-            "https://mcp.example.test:443/",
-            "https://mcp.example.test./x",
-        ] {
-            assert_eq!(o(u).as_deref(), Some("https://mcp.example.test"), "{u}");
-        }
+        // the scheme's default port is the same origin; another port is not
+        assert_eq!(
+            o("https://mcp.example.test:443/").as_deref(),
+            Some("https://mcp.example.test")
+        );
+        assert_eq!(
+            o("http://192.0.2.7:8080/").as_deref(),
+            Some("http://192.0.2.7:8080")
+        );
+        assert_ne!(
+            o("https://mcp.example.test/"),
+            o("https://mcp.example.test:8443/")
+        );
         assert_eq!(
             o("http://[::1]:8080/").as_deref(),
             Some("http://[::1]:8080")
@@ -1296,6 +1329,13 @@ mod tests {
             "https://mcp_example.test/",
             "https://[zz]/",
             "https://[]/",
+            "https://[::1::]/",
+            "https://mcp.example.test./x",
+            "http://2130706433/",
+            "http://127.1/",
+            "http://010.0.0.1/",
+            "http://0x7f.0.0.1/",
+            "http://192.0.2.256/",
         ] {
             assert_eq!(o(u), None, "{u}");
             assert!(!super::same_origin(u, u), "{u}");

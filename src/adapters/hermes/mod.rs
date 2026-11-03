@@ -292,6 +292,40 @@ fn read_schedules(src: &Path) -> Res<Vec<Schedule>> {
         .collect())
 }
 
+/// The profile's cron jobs as the routine-parity check compares them (docs/design/MIRROR.md section 9), from the
+/// model [`HermesProfile`] read (`h`): the `<Bot>: ` prefix botport gives the jobs it imports from the bot `g` is
+/// dropped, so a job matches its routine by name; the timezone is left empty (Hermes cron has no per-job zone: the
+/// owner's default applies). Also the names of jobs botport paused on import, awaiting the owner.
+pub fn parity_view(
+    h: &BotModel,
+    g: &BotModel,
+) -> (Vec<Schedule>, std::collections::BTreeSet<String>) {
+    let prefix = format!("{}: ", sync::bot_name(g));
+    let plain = |n: &str| n.strip_prefix(&prefix).unwrap_or(n).to_string();
+    let schedules = h
+        .schedules
+        .iter()
+        .map(|s| Schedule {
+            name: plain(&s.name),
+            tz: String::new(),
+            ..s.clone()
+        })
+        .collect();
+    let jobs = h.extras.get(ID).and_then(|x| x["cron_jobs"].as_array());
+    let paused = jobs
+        .into_iter()
+        .flatten()
+        .filter(|j| {
+            j["enabled"] == json!(false)
+                && j["paused_reason"].as_str().is_some_and(|r| {
+                    r.starts_with(sync::IMPORT_PAUSED) || r == mirror::PAUSED_REASON
+                })
+        })
+        .filter_map(|j| j["name"].as_str().map(plain))
+        .collect();
+    (schedules, paused)
+}
+
 /// config.yaml `mcp_servers` -> connectors (url and `tools.include`; header and auth values are never read).
 fn read_connectors(src: &Path) -> Res<Vec<Connector>> {
     let cfg = src.join("config.yaml");

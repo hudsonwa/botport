@@ -1,9 +1,10 @@
 //! The Hermes side of the activity digest (docs/design/MIRROR.md section 5.2): build `botport/digest-hermes.md` from a
 //! profile's own `state.db` (owner sessions only, read with the `sqlite3` command, read-only, as an argv), its
 //! `cron/jobs.json`, the skill folders under `skills/` (counted, never opened) and the times and conflict count of
-//! `botport.mirror.json`. Summary level only: session titles, never message text (only the last message's role and
-//! final character); never memories or user facts. A script, never a model call; no network; no operation lock (it
-//! writes only its own digest file, atomically).
+//! `botport.mirror.json`. Summary level only: routine names, schedules, time zones and last-run status, counts, times
+//! and session titles (with `--titles`), only the last message's role and whether it ends in a question mark, never its
+//! text; never memories or user facts (`memories/` is never read); routine names as written. A script, never a model
+//! call; no network; no operation lock (it writes only its own digest file, atomically).
 use super::sync;
 use crate::core::digest::{self, Digest, FACTS, OPEN, RECENT, ROUTINES};
 use crate::core::util::*;
@@ -152,8 +153,8 @@ pub fn owner_id_ok(s: &str) -> bool {
     !s.is_empty() && s.chars().count() <= 128 && !s.chars().any(char::is_control)
 }
 
-/// The query: owner sessions active in the window, newest first: times, message count, title, and only the role and
-/// final non-space character of each session's last message. No message text, tool arguments or results are selected.
+/// The query: owner sessions active in the window, newest first: times, message count, title (with `--titles`), and
+/// only the last message's role and whether it ends in a question mark, never its text: no message text, tool arguments or results leave the database.
 fn query(o: &Opts) -> String {
     let since = o.now - i64::from(o.window_days) * 86400;
     let local: Vec<String> = LOCAL_SOURCES.iter().map(|s| sql_str(s)).collect();
@@ -169,12 +170,18 @@ fn query(o: &Opts) -> String {
     }
     let last =
         "FROM messages m WHERE m.session_id = s.id ORDER BY m.timestamp DESC, m.id DESC LIMIT 1";
+    // a session's title is read only when the owner asked for titles (`--titles`)
+    let title = if o.no_titles {
+        "''"
+    } else {
+        "substr(coalesce(s.title, ''), 1, 300)"
+    };
     format!(
         "SELECT s.started_at AS started, s.ended_at AS ended, \
          coalesce(s.message_count, (SELECT count(*) FROM messages m WHERE m.session_id = s.id)) AS messages, \
-         substr(coalesce(s.title, ''), 1, 300) AS title, \
+         {title} AS title, \
          (SELECT m.role {last}) AS last_role, \
-         (SELECT substr(rtrim(coalesce(m.content, ''), ' ' || char(9, 10, 13)), -1) {last}) AS last_char \
+         (SELECT CASE WHEN substr(rtrim(coalesce(m.content, ''), ' ' || char(9, 10, 13)), -1) = '?' THEN '?' ELSE '' END {last}) AS last_char \
          FROM sessions s \
          WHERE lower(coalesce(s.source, '')) <> 'cron' AND {owner} \
          AND max(coalesce(s.started_at, 0), coalesce(s.ended_at, 0)) >= {since} \
@@ -433,9 +440,16 @@ mod tests {
         assert!(q.contains("s.user_id IN ('owner-1', 'o''quote')"), "{q}");
         assert!(!q.contains("bad"));
         assert!(q.contains("<> 'cron'"));
-        // message text only as the last message's final character
+        // a title is read only with `--titles`
+        assert!(q.contains("s.title"), "{q}");
+        let untitled = query(&Opts {
+            no_titles: true,
+            ..opts()
+        });
+        assert!(!untitled.contains("s.title"), "{untitled}");
+        // of the message text, only whether the last message ends in a question mark
         assert_eq!(q.matches("m.content").count(), 1);
-        assert!(q.contains("substr(rtrim(coalesce(m.content, ''), ' ' || char(9, 10, 13)), -1)"));
+        assert!(q.contains("CASE WHEN substr(rtrim(coalesce(m.content, ''), ' ' || char(9, 10, 13)), -1) = '?' THEN '?' ELSE '' END"));
         assert!(q.contains(&format!(">= {}", 946_771_200 - 7 * 86400)));
         let none = query(&Opts {
             owner_users: vec![],

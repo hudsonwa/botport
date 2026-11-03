@@ -1,0 +1,19 @@
+{"jobs": [
+  {"id": "demo01", "name": "demo-bot: demo-routine", "prompt": "Example prompt: summarise the demo log.\n",
+   "deliver": "local", "schedule": {"kind": "cron", "expr": "15 05 * * *"}, "enabled": true},
+  {"id": "demo02", "name": "demo-interval", "prompt": "Example prompt: check the demo queue.", "deliver": "local",
+   "schedule": {"kind": "interval", "minutes": 360, "display": "every 360m"}, "enabled": true},
+  {"id": "demo03", "name": "demo-weekdays", "prompt": "Example prompt: list the demo tasks.", "deliver": "local",
+   "schedule": {"kind": "cron", "expr": "0 9 * * 1-5"}, "enabled": true},
+  {"id": "demo04", "name": "demo-prompt", "prompt": "Example prompt: count the demo columns.", "deliver": "local",
+   "schedule": {"kind": "cron", "expr": "15 6 * * 7"}, "enabled": true},
+  {"id": "demo05", "name": "demo-bot: demo-awaiting", "prompt": "Example prompt: tidy the demo folder.", "deliver": "local",
+   "schedule": {"kind": "cron", "expr": "0 22 * * *"}, "enabled": false,
+   "paused_reason": "Imported by botport from the Grok bot; schedule is in UTC (check the host timezone), resume once the Grok routine is off"},
+  {"id": "demo06", "name": "demo-owner-paused", "prompt": "Example prompt: archive the demo notes.", "deliver": "local",
+   "schedule": {"kind": "cron", "expr": "0 12 1 * *"}, "enabled": true},
+  {"id": "demo07", "name": "demo-schedule", "prompt": "Example prompt: post the demo status.", "deliver": "local",
+   "schedule": {"kind": "cron", "expr": "0 9 * * *"}, "enabled": true},
+  {"id": "demo08", "name": "demo-hermes-only", "prompt": "Example prompt: compact the demo cache.", "deliver": "local",
+   "schedule": {"kind": "interval", "minutes": 90, "display": "every 90m"}, "enabled": true}
+]}

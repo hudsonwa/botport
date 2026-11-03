@@ -261,10 +261,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("botport-local-{tag}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&d);
-        fs::create_dir_all(&d).unwrap();
-        d
+        crate::core::util::test_dir(&format!("local-{tag}"))
     }
 
     #[test]

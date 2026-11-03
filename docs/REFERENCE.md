@@ -18,6 +18,7 @@ botport test    --profile NAME --battery battery.json        # hermes chat --for
 botport digest write  --hermes-home PROFILEDIR [--pair NAME] [--window-days 7] [--owner-user ID]... [--titles]
 botport digest show   --file F [--pair P --key F]
 botport digest inject --hermes-home PROFILEDIR [--mode full|pointer] [--max-age-days 14] [--peer-file F] [--owner-user ID]...
+botport mirror routines --bundle export --profile NAME [--tz UTC]   # routine parity, Grok vs Hermes (exit 1 on a difference)
 ```
 Common: `--profile NAME` / `--hermes-home DIR` (default `~/.hermes`) or `--profile-dir DIR`; `--json`; `--details FILE`
 (default `$XDG_STATE_HOME/botport/<command>-<profile>.json`, or `<command>.json` with no profile); `-h`/`--help`.
@@ -130,16 +131,22 @@ sections in this order, each with a line budget (Recent activity 12, Open thread
 10), every line at most 160 characters, the whole file at most 4,500 bytes (lines are dropped from the end of the
 longest section until it fits; the header records the final byte count). Every line is cleaned (control characters,
 HTML comments, Markdown headings, links, backticks and code fences removed); a line that looks like a credential is
-dropped, not masked. The same inputs give the same bytes, and an unchanged digest is not rewritten. A digest is
-summary level only: counts, routine names and times (session titles only with `--titles`). It never carries memories, user facts,
-message text, or approval, form or secret payloads.
+dropped, not masked. The same inputs give the same bytes, and an unchanged digest is not rewritten. A digest is summary
+level only: routine names, schedules, time zones and last-run status, skill and routine counts, session times and
+message counts, and session titles only with `--titles`. It never carries the contents of the memory and user-profile
+files (memories or user facts; `memories/` is never read), nor approval, form or secret payloads; of a message it
+carries only the last message's role and whether it ends in a question mark, never its text. Routine names are shared as
+written, so keep secrets out of them. A routine name or session title can still carry text that a model reads as
+instructions (a stated residual risk that cleaning and the untrusted-notes framing reduce but cannot remove); `digest
+inject --mode pointer` keeps the digest text out of the injected context (a bot that can read files may still open it).
 
 `--hermes-home` here is the profile's own `HERMES_HOME` (the profile dir, as Hermes runs a hook); add `--profile
 NAME` to name a profile under a Hermes home instead, or give `--profile-dir DIR`.
 
 - `digest write` builds `<profile>/botport/digest-hermes.md` (file 0600, folder 0700, written atomically) from the
-  profile's `state.db` (read with `sqlite3 -readonly -json` and a 200 ms busy timeout; only session title, start/end,
-  message count, and the role and final character of the last message; every session is "session" unless the owner
+  profile's `state.db` (read with `sqlite3 -readonly -json` and a 200 ms busy timeout; beyond the columns used to filter and
+  order sessions, only start/end times, message count, the session title (only with `--titles`) and the last message's
+  role and whether it ends in a question mark, never its text; every session is "session" unless the owner
   passes `--titles`, since titles are usually generated from the conversation; with it, a session without a title is
   "untitled session"), `cron/jobs.json` (routines, and how many are enabled), the skill folders under `skills/` (counted, not
   opened) and, if present, `botport.mirror.json` (only the newest `items.*.at` and the number of `conflicts`). Key
@@ -161,13 +168,13 @@ NAME` to name a profile under a Hermes home instead, or give `--profile-dir DIR`
   `--owner-user` ids (repeatable). It fails closed: a gateway platform without a listed sender, a missing platform
   without a listed sender, or `cron` (always) prints nothing. The context is
   the peer digest (`<profile>/botport/digest-grok.md`, or `--peer-file`) framed as untrusted notes between
-  delimiters, or with `--mode pointer` one line naming the file by its path inside the profile (never an absolute
-  path). `<profile>/botport/digest-grok.md` is written by botport only from a digest that verified with the pair key
-  (or from the local records); `--peer-file` is for a digest file the owner made or chose on this machine and is read
-  as it is, with no signature check. A missing, invalid or stale peer digest (older than
+  delimiters, or with `--mode pointer` one line that shows only a path inside the profile or a plain file name (else
+  a fixed label), never an absolute path. `<profile>/botport/digest-grok.md` is written by botport only from a digest that verified with the pair key
+  (or from the local records); `--peer-file` is trusted local input: a digest file the owner made or chose on
+  this machine, read as it is, with no signature check. A missing, invalid or stale peer digest (older than
   `--max-age-days`, default 14, by the older of its `written=` stamp and the file's mtime) prints nothing. It always
-  exits 0 and writes nothing. An owner who wants no digest text in a model's context at all uses `--mode pointer` in
-  the hook (or leaves the inject hook out).
+  exits 0 and writes nothing. An owner who wants no digest text injected into a model's context uses `--mode pointer` in
+  the hook (a bot that can read files may still open the file it names) or leaves the inject hook out.
 - **External programs.** `sqlite3`, `curl` and the token command run by absolute path: a bare name is looked up in
   `PATH`, skipping an entry that is itself a link, and an entry unless every folder in it, from the root down, is
   owned by root or the user and writable by no one else (a sticky folder such as /tmp is not trusted; a link on the
@@ -179,10 +186,47 @@ NAME` to name a profile under a Hermes home instead, or give `--profile-dir DIR`
 - **Where digests live and how to delete them.** On the host: `<profile>/botport/digest-hermes.md` and
   `<profile>/botport/digest-grok.md` (0600; rewritten in place, one of each). In the pair folder: `digest/hermes-<n>.md`
   and, with a key, `digest/hermes-<n>.md.mac`; botport keeps the newest 3 and deletes older ones as it writes new
-  ones. A digest holds routine names and, with `--titles`, session titles, which then reach the other platform and are
+  ones. A digest holds routine names, schedules, time zones and last-run status and, with `--titles`, session titles,
+  which then reach the other platform and are
   kept by the folder's provider (its trash and revision history included) until deleted there. To delete them: remove
   the digest hooks from the profile's `config.yaml`, delete the two host files, delete `digest/` in the pair folder
   and empty the provider's trash. `mirror init --undo` stops syncing but leaves digest files in place.
+
+### Routine parity (`mirror routines`)
+`botport mirror routines --bundle EXPORT (--profile NAME [--hermes-home DIR] | --profile-dir DIR) [--tz ZONE] [--json]`
+compares the export's routines with the profile's cron jobs by name (the `<Bot>: ` prefix botport gives imported jobs
+is ignored) and prints one line per routine, differences first. It reads both sides and writes nothing but the details
+file. Statuses (design: [MIRROR.md](design/MIRROR.md) section 9):
+
+| Status | Meaning |
+|---|---|
+| `same` | schedule, timezone, prompt and paused state match |
+| `schedule-differs` | the normalised schedules differ (both shown) |
+| `tz-differs` | same schedule, different timezone |
+| `prompt-differs` | the prompts differ: 8-digit sha256 digests are shown, never the text |
+| `paused-differs` | one side is paused; marked expected when botport paused the job on import, awaiting you |
+| `only-grok` / `only-hermes` | missing on one side |
+| `event-only` | an event-triggered routine Hermes cron cannot hold: reported, not a failure |
+| `duplicate-name` | the name is listed more than once on one side (also once the `<Bot>: ` prefix is removed): not compared, each entry needs a look |
+
+Schedules are normalised before comparing: a five-field cron with whitespace collapsed, day and month names as numbers,
+value lists sorted, `7` read as Sunday (`0`); an interval a cron line expresses exactly becomes that line (`every 1d at
+05:15` is `15 5 * * *`, `every 6h` (or Hermes' `every 360m`) is `0 */6 * * *`, `every 15m` is `*/15 * * * *`); any
+other interval is compared in minutes (`every 90m`); other text as written. Prompts are compared ignoring line endings
+and trailing whitespace. Hermes cron has no per-job timezone, so a Hermes job (and any routine that names no zone)
+counts as `--tz`, your timezone (default `UTC`). Exit codes: 0 when every routine is `same`, `event-only` or an
+expected `paused-differs`; 1 otherwise; 2 on a usage error or an unreadable side.
+
+### Connector mapping (mirror mode, library only)
+`src/adapters/connectors.toml` (compiled in) maps public, off-the-shelf connectors between the two sides by normalised
+name (case, spaces and punctuation ignored; a description after `(`, `;` or ` - ` is ignored too): GitHub, Notion,
+Linear, Slack, Gmail, Google Drive and Google Calendar. Each row names the Grok app, the vendor's official remote MCP
+endpoint for the Hermes `mcp_servers` entry (checked against the vendor's own docs, linked in the row; the Google
+Workspace endpoints are a Developer Preview) or a manual step, and the credential **names** the Hermes side needs.
+Anything else is carried as is: an app with an MCP url keeps its id and url (https only; no userinfo or credential-like
+query; a private, loopback or link-local host only if that exact url is already configured on the receiving side), and
+an app with neither becomes an opaque record of its `id`, `name`, `kind`, `url` and `tools`, sent back unchanged and
+listed as "carried as is". No command uses the table yet; v0.1 behaviour is unchanged.
 
 ## The bundle (`export`, run inside the Grok box)
 | Path | What |

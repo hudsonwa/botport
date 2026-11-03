@@ -282,7 +282,7 @@ fn schedules_to_cron(
             // a clean prompt is copied byte-identical
             prompt: x.action.clone(),
             paused_reason: Some(format!(
-                "Imported by botport from the Grok bot; schedule is in {tz}, resume once the Grok routine is off"
+                "{IMPORT_PAUSED}; schedule is in {tz}, resume once the Grok routine is off"
             )),
             enabled: None,
         });
@@ -290,6 +290,8 @@ fn schedules_to_cron(
     jobs
 }
 
+/// How the paused reason of a job botport imported (paused, awaiting the owner) starts.
+pub const IMPORT_PAUSED: &str = "Imported by botport from the Grok bot";
 /// The paused-reason wording for a routine that named no timezone.
 const NO_ZONE: &str = "the Hermes profile's timezone (the routine named none)";
 /// The plan/--json/--details note on such a job.

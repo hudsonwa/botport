@@ -1444,6 +1444,28 @@ fn write_local(
     local: &LocalItems,
 ) -> Res<Outcome> {
     let cn = cn.ok_or("not fetched this run")?;
+    // a connector's host is resolved and checked right before it is written (unless Hermes already has that url)
+    if let Content::Connector(f) = &cn {
+        if let Some(url) = f.get("url").and_then(|v| v.as_str()) {
+            let have: std::collections::BTreeSet<String> = local
+                .content
+                .get(&d.item)
+                .and_then(|c| match c {
+                    Content::Connector(o) => {
+                        o.get("url").and_then(|v| v.as_str()).map(String::from)
+                    }
+                    _ => None,
+                })
+                .into_iter()
+                .collect();
+            crate::adapters::connectors::check_resolved(
+                url,
+                &have,
+                crate::adapters::connectors::system_resolve,
+            )
+            .map_err(|r| format!("{}: url refused ({r})", d.item))?;
+        }
+    }
     let expect = d.local.as_ref().map(|v| v.digest.clone());
     let was_running = d.item.kind() == Kind::Routine && hs.running(&d.item)?;
     let was_held = st.held_paused.get(&d.item).cloned();

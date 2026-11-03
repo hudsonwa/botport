@@ -1,0 +1,35 @@
+{
+  "format": "grok-bot-export",
+  "version": 1,
+  "bots": [
+    {
+      "name": "demo-bot",
+      "title": "Demo helper",
+      "instructions": "You are demo-bot, an example helper.",
+      "memories": ["Example fact: the demo service has a status page."],
+      "user_facts": [],
+      "skills": [],
+      "routines": [
+        {"name": "demo-routine", "instruction": "Example prompt: summarise the demo log.", "trigger": "schedule",
+         "schedule_cron": "15 5 * * *", "schedule_text": "Daily at 05:15", "timezone": "UTC", "paused": false},
+        {"name": "demo-interval", "instruction": "Example prompt: check the demo queue.", "trigger": "schedule",
+         "schedule_cron": "0 */6 * * *", "schedule_text": "Every 6 hours", "timezone": "", "paused": false},
+        {"name": "demo-weekdays", "instruction": "Example prompt: list the demo tasks.", "trigger": "schedule",
+         "schedule_cron": "0 9 * * MON-FRI", "schedule_text": "Weekdays at 09:00", "timezone": "Etc/GMT+3", "paused": false},
+        {"name": "demo-prompt", "instruction": "Example prompt: count the demo rows.", "trigger": "schedule",
+         "schedule_cron": "15 6 * * 0", "schedule_text": "Sundays at 06:15", "timezone": "UTC", "paused": false},
+        {"name": "demo-awaiting", "instruction": "Example prompt: tidy the demo folder.", "trigger": "schedule",
+         "schedule_cron": "0 22 * * *", "schedule_text": "Daily at 22:00", "timezone": "UTC", "paused": false},
+        {"name": "demo-owner-paused", "instruction": "Example prompt: archive the demo notes.", "trigger": "schedule",
+         "schedule_cron": "0 12 1 * *", "schedule_text": "Monthly", "timezone": "UTC", "paused": true},
+        {"name": "demo-schedule", "instruction": "Example prompt: post the demo status.", "trigger": "schedule",
+         "schedule_cron": "0 8 * * *", "schedule_text": "Daily at 08:00", "timezone": "UTC", "paused": false},
+        {"name": "demo-grok-only", "instruction": "Example prompt: rotate the demo log.", "trigger": "schedule",
+         "schedule_cron": "0 3 * * 6", "schedule_text": "Saturdays at 03:00", "timezone": "UTC", "paused": false},
+        {"name": "demo-event", "instruction": "Example prompt: file the demo message.", "trigger": "webhook",
+         "schedule_cron": "", "schedule_text": "", "timezone": "UTC", "paused": false}
+      ],
+      "apps": []
+    }
+  ]
+}
