@@ -1705,6 +1705,12 @@ fn should_write(i: &Item, adopt: bool) -> bool {
 }
 
 pub fn restore_point(dest: &Path, cat: &str, keep: usize) -> Res<PathBuf> {
+    restore_point_of(dest, &[cat], &[], keep)
+}
+
+/// [`restore_point`] over several skill categories and extra profile files (mirror mode: every mirrored category and
+/// the mirror state).
+pub fn restore_point_of(dest: &Path, cats: &[&str], extra: &[&str], keep: usize) -> Res<PathBuf> {
     use std::io::Write;
     let dir = dest.join(BACKUPS);
     let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -1732,14 +1738,19 @@ pub fn restore_point(dest: &Path, cat: &str, keep: usize) -> Res<PathBuf> {
         LOCK,
         LEGACY_MANUAL,
         LEGACY_LOCK,
-    ] {
+    ]
+    .iter()
+    .chain(extra)
+    {
         if dest.join(f).is_file() {
             add(f.to_string())?;
         }
     }
-    let sk = dest.join("skills").join(cat);
-    for rel in files_sorted(&sk) {
-        add(format!("skills/{cat}/{}", rel_str(&rel)))?;
+    for cat in cats {
+        let sk = dest.join("skills").join(cat);
+        for rel in files_sorted(&sk) {
+            add(format!("skills/{cat}/{}", rel_str(&rel)))?;
+        }
     }
     let zip = z.finish().map_err(|e| e.to_string())?.into_inner();
     // directories only once every entry passed the guard: a refused restore point leaves nothing behind

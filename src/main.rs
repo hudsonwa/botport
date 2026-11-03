@@ -29,7 +29,16 @@ const USAGE: &str = "botport <command> [options]   (v{V}; --version prints it)
   test    --profile NAME --battery FILE [--only id,id] [--out DIR]
   doctor  [--profile NAME | --profile-dir DIR] [--spec FILE]   check hermes (on PATH, version), profile dir, write access, spec; exit 1 on a failure
   battery init PATH|--bundle PATH [--spec FILE] --out FILE  starter battery (PATH: bundle dir or grok-bot-export file) (docs/USER-GUIDE.md §6)
-  mirror stats [--since 7d] [--metrics FILE]   mirror mode: time and payload per command (docs/design/MIRROR.md)
+      mirror init --pair P (--profile NAME | --profile-dir DIR [--hermes-bin PATH]) --transport local|drive|hybrid
+          [--local-dir D [--bot-key K]] [--key-file F | --no-pair-key] [--copy-one-sided] [--force]   mirror init --undo --pair P
+          [--drive-dir D | --drive-folder-id ID --token-cmd CMD] [--category C]... [--approve runnable|all]
+      mirror plan|status --pair P   mirror sync --pair P [--allow-retire] [--trigger F] [--take-over]
+          equal-peer sync of the setup (docs/design/MIRROR.md)
+  mirror show|approve --pair P ITEM [--yes]   mirror pick --pair P ITEM --keep grok|hermes [--yes]
+  mirror restore --pair P ITEM --from SHORT   mirror stats [--since 7d] [--metrics FILE]
+  mirror digest-items --pair P --from EXPORT --out DIR [--log F] [--all] [--key F] [--coverage partial|complete]
+          (in the Grok box; partial, the default, for an export: nothing missing from it is taken as removed)
+  mirror apply-pack --pair P --dir PAIRDIR --from EXPORT --stage DIR [--log F] [--check] [--precheck ITEM --gen N] [--key F]
   --check-routines PATH|auto  (verify/plan/apply/sync/drift; EXPERIMENTAL) warn about routines the Grok desktop
           app's cache knows that the export left out. This reads your Grok desktop app's local conversation transcripts
           (the transcript.replicas files) in full, on this machine only. It keeps only the names of routines from
@@ -60,6 +69,27 @@ const VALUED: &[&str] = &[
     "check-routines",
     "since",
     "metrics",
+    "pair",
+    "coverage",
+    "transport",
+    "local-dir",
+    "drive-dir",
+    "drive-folder-id",
+    "token-cmd",
+    "category",
+    "approve",
+    "keep",
+    "mirror-config",
+    "from",
+    "stage",
+    "log",
+    "precheck",
+    "gen",
+    "dir",
+    "bot-key",
+    "key-file",
+    "key",
+    "trigger",
 ];
 const FLAGS: &[&str] = &[
     "strict",
@@ -71,6 +101,15 @@ const FLAGS: &[&str] = &[
     "version",
     "clipboard",
     "with-history",
+    "allow-retire",
+    "yes",
+    "force",
+    "take-over",
+    "check",
+    "all",
+    "no-pair-key",
+    "undo",
+    "copy-one-sided",
 ];
 
 struct Report {
@@ -583,6 +622,13 @@ fn cmd_profile(a: &Args, cmd: &str) -> Res<Report> {
             )
         }
     };
+    // A mirrored profile is managed by `botport mirror`: the spec-driven commands would fight its ownership records.
+    if dest.join(botport::mirror::STATE_FILE).exists() {
+        return Err(format!(
+            "{} is a mirrored profile: use botport mirror plan|sync (or botport mirror init --undo to stop mirroring)",
+            dest.display()
+        ));
+    }
     // Allowlist: drop the Grok skills this profile doesn't take. Skills that originated on the Hermes side (sent by
     // h2g and now back in the Grok export) are always kept, so the two-way rules keep seeing them.
     let sent = sync::read_lock(&dest)

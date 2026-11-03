@@ -28,6 +28,10 @@ pub trait LocalLayout {
     fn records(&mut self) -> Res<Option<BotRecords>> {
         Ok(None)
     }
+    /// The highest state sequence accepted, for a layout that reads numbered state files.
+    fn floor(&self) -> Option<u64> {
+        None
+    }
     /// Figures since opened.
     fn io(&self) -> IoStats;
 }
@@ -65,6 +69,10 @@ impl LocalLayout for StateDirLayout {
         "state-dir"
     }
 
+    fn floor(&self) -> Option<u64> {
+        self.dir.floor
+    }
+
     fn read(&mut self) -> Res<Option<PeerRead>> {
         self.dir.peer()
     }
@@ -97,6 +105,11 @@ impl LocalTransport {
     /// A transport reading through `layout`.
     pub fn new(layout: Box<dyn LocalLayout>) -> LocalTransport {
         LocalTransport { layout }
+    }
+
+    /// The highest state sequence the layout accepted, if it reads state files.
+    pub fn floor(&self) -> Option<u64> {
+        self.layout.floor()
     }
 
     /// Which layout it reads.

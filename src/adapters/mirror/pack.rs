@@ -12,6 +12,9 @@ use serde::{Deserialize, Serialize};
 /// Schema of a pack manifest.
 pub const SCHEMA: &str = "botport-pack/1";
 
+/// Blobs to publish with a pack: (sha256, bytes).
+pub type Blobs = Vec<(String, Vec<u8>)>;
+
 /// What a pack asks for one item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
