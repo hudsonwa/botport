@@ -12,6 +12,13 @@ All notable changes to this project are documented here. The format is based on
   made equal. Items missing from an incomplete read are never deleted; more than 3 retires on a side, or more than 20% of a
   kind with at least 5 items, stop the run; changes
   can be held for an approval bound to their digest. Design: [docs/design/MIRROR.md](docs/design/MIRROR.md) section 4.
+- Mirror transports: the `Transport` interface, numbered self-hashed state files with content-addressed blobs, a
+  folder store, and the local reader interface (`botport-local/1` records per bot key, written by any program that
+  produces them). An optional pair key (HMAC-SHA256) signs state files and authenticates host
+  triggers (5-minute window, nonce used once). Design sections 3 and 6.
+- Drive transport for mirror mode: cumulative change packs named by a forward-only `HEAD`, content-addressed blobs,
+  rotating digests; the synced-folder backend, or the Drive API through `curl` (token from a command, passed in a
+  `0600` config file, never in argv). Design section 6.3.
 - `core::package`: opaque skill/tool packages (`botport-package/1`) for mirror mode. A package is carried byte for
   byte with its executable bits; its digest covers every path, byte and executable bit; a generated manifest lets a
   receiver check it. Symlinks, special files, setuid/setgid/sticky bits, unsafe paths, paths that collide by case or

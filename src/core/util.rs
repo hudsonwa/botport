@@ -76,9 +76,47 @@ pub enum Confined {
     Io(String),
 }
 
+/// The uid this process's files get (the running user), found once from a file it creates; None if that fails.
+#[cfg(unix)]
+pub fn my_uid() -> Option<u32> {
+    use std::os::unix::fs::MetadataExt;
+    static UID: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    if let Some(u) = UID.get() {
+        return Some(*u);
+    }
+    // only a found uid is kept: a temp dir that is briefly unwritable is tried again next time
+    let found = (|| {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
+        let p = std::env::temp_dir().join(format!("botport-uid-{}-{nanos}", std::process::id()));
+        let f = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&p)
+            .ok()?;
+        let uid = f.metadata().ok().map(|m| m.uid());
+        drop(f);
+        fs::remove_file(&p).ok();
+        uid
+    })();
+    found.map(|u| *UID.get_or_init(|| u))
+}
+
 /// Read `dir/rel` only if it is a regular file reached through no symlink and inside `root` (the canonical
 /// `dir`). The opened file must be the same inode `lstat` saw, so a swap to a symlink in between is refused.
 pub fn read_confined(root: &Path, dir: &Path, rel: &str) -> Result<Vec<u8>, Confined> {
+    read_confined_if(root, dir, rel, |_| true)
+}
+
+/// [`read_confined`], also refusing a file whose metadata (of the file actually opened) fails `ok`.
+pub fn read_confined_if(
+    root: &Path,
+    dir: &Path,
+    rel: &str,
+    ok: impl Fn(&fs::Metadata) -> bool,
+) -> Result<Vec<u8>, Confined> {
     if safe_rel("path", rel).is_err() {
         return Err(Confined::Outside);
     }
@@ -103,7 +141,7 @@ pub fn read_confined(root: &Path, dir: &Path, rel: &str) -> Result<Vec<u8>, Conf
             return Err(Confined::NotRegular);
         }
     }
-    if !fmd.is_file() {
+    if !fmd.is_file() || !ok(&fmd) {
         return Err(Confined::NotRegular);
     }
     let mut b = Vec::new();
@@ -492,10 +530,60 @@ pub fn short(d: &str) -> &str {
 
 /// UTC "YYYYMMDDTHHMMSSZ" (only used for restore-point file names; never in hashed content).
 pub fn utc_stamp() -> String {
-    let secs = std::time::SystemTime::now()
+    let (y, m, d, hh, mm, ss) = civil(now_secs());
+    format!("{y:04}{m:02}{d:02}T{hh:02}{mm:02}{ss:02}Z")
+}
+
+/// UTC "YYYY-MM-DDTHH:MM:SSZ" now.
+pub fn utc_iso() -> String {
+    utc_iso_at(now_secs())
+}
+
+/// UTC "YYYY-MM-DDTHH:MM:SSZ" of unix seconds `secs`.
+pub fn utc_iso_at(secs: u64) -> String {
+    let (y, m, d, hh, mm, ss) = civil(secs);
+    format!("{y:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}Z")
+}
+
+/// Unix seconds now (0 if the clock is before 1970).
+pub fn now_secs() -> u64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
-        .unwrap_or(0);
+        .unwrap_or(0)
+}
+
+/// Unix seconds of a "YYYY-MM-DDTHH:MM:SSZ" time (None when it is not exactly that form).
+pub fn parse_utc_iso(s: &str) -> Option<u64> {
+    let b = s.as_bytes();
+    if b.len() != 20
+        || b[4] != b'-'
+        || b[7] != b'-'
+        || b[10] != b'T'
+        || b[13] != b':'
+        || b[16] != b':'
+        || b[19] != b'Z'
+    {
+        return None;
+    }
+    let n = |r: std::ops::Range<usize>| s.get(r)?.parse::<i64>().ok();
+    let (y, m, d) = (n(0..4)?, n(5..7)?, n(8..10)?);
+    let (hh, mm, ss) = (n(11..13)?, n(14..16)?, n(17..19)?);
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || hh > 23 || mm > 59 || ss > 59 {
+        return None;
+    }
+    // days-from-civil (Howard Hinnant)
+    let y2 = if m <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    u64::try_from(days * 86400 + hh * 3600 + mm * 60 + ss).ok()
+}
+
+fn civil(secs: u64) -> (i64, i64, i64, u64, u64, u64) {
     let (days, rem) = (secs / 86400, secs % 86400);
     // civil-from-days (Howard Hinnant)
     let z = days as i64 + 719468;
@@ -507,12 +595,7 @@ pub fn utc_stamp() -> String {
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = yoe + era * 400 + i64::from(m <= 2);
-    format!(
-        "{y:04}{m:02}{d:02}T{:02}{:02}{:02}Z",
-        rem / 3600,
-        rem % 3600 / 60,
-        rem % 60
-    )
+    (y, m, d, rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
 /// Minimal flag parser: `--key value`, `--flag`, positionals. Unknown flags are an error.
@@ -579,6 +662,193 @@ impl Args {
     }
 }
 
+/// An external program (`sqlite3`, `curl`, a token command) to run by absolute path: a name with a `/` is taken as
+/// given; a bare name is looked up in `PATH`, skipping entries that are empty or relative (".") and directories anyone
+/// else can write to, so a planted file in the working directory or a shared folder is never run.
+pub fn program(name: &str) -> Res<PathBuf> {
+    program_in(name, &std::env::var_os("PATH").unwrap_or_default())
+}
+
+/// A tool botport depends on, found as [`program`] finds it and at least the given version (`sqlite3` 3.33 for
+/// `-json`, `curl` 7.52); the version is read once per process.
+pub fn tool(name: &str) -> Res<PathBuf> {
+    static SEEN: std::sync::Mutex<Vec<(String, PathBuf)>> = std::sync::Mutex::new(Vec::new());
+    if let Some((_, p)) = SEEN
+        .lock()
+        .ok()
+        .and_then(|v| v.iter().find(|(n, _)| n == name).cloned())
+    {
+        return Ok(p);
+    }
+    // by its file name, so a configured full path to curl or sqlite3 gets the same version check
+    let base = Path::new(name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(name);
+    let (arg, min): (&str, (u32, u32)) = match base {
+        "sqlite3" => ("-version", (3, 33)),
+        "curl" => ("--version", (7, 52)),
+        // another program: the same file and folder checks, no version check
+        _ => return program(name),
+    };
+    let p = program(name)?;
+    let out = std::process::Command::new(&p)
+        .arg(arg)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| format!("{name}: {e}"))?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let have = version_in(&text, name).ok_or(format!("{name}: could not read its version"))?;
+    if have < min {
+        return err(format!(
+            "{name} {}.{} is too old: botport needs {}.{} or later",
+            have.0, have.1, min.0, min.1
+        ));
+    }
+    if let Ok(mut v) = SEEN.lock() {
+        v.push((name.to_string(), p.clone()));
+    }
+    Ok(p)
+}
+
+/// The major and minor version in a tool's version output (`3.99.0 2000-01-01 ...` or `curl 9.9.9 (...)`).
+fn version_in(text: &str, name: &str) -> Option<(u32, u32)> {
+    let word = text
+        .split_whitespace()
+        .find(|w| w.chars().next().is_some_and(|c| c.is_ascii_digit()) && w.contains('.'))?;
+    let _ = name;
+    let mut parts = word.split('.').map(|p| p.parse::<u32>().ok());
+    Some((parts.next()??, parts.next()??))
+}
+
+/// [`program`] with the search path given.
+pub fn program_in(name: &str, path: &std::ffi::OsStr) -> Res<PathBuf> {
+    if name.contains('/') {
+        let p = PathBuf::from(name);
+        if !p.is_absolute() {
+            return err(format!(
+                "{name}: a program given with a path must be absolute"
+            ));
+        }
+        let dir = p.parent().ok_or(format!("{name}: no folder"))?;
+        return if safe_dir(dir) && safe_program(&p) {
+            Ok(p)
+        } else {
+            err(format!("{name}: refused (its folder or the file is writable by others or owned by someone else)"))
+        };
+    }
+    let mut skipped = vec![];
+    for dir in std::env::split_paths(path) {
+        // a leading `~/` is the home folder, as a shell would read it
+        let dir = match dir.to_str().and_then(|d| d.strip_prefix("~/")) {
+            Some(rest) => home().join(rest),
+            None => dir,
+        };
+        // a PATH entry that is itself a link is not followed
+        if !dir.is_absolute()
+            || fs::symlink_metadata(&dir).is_ok_and(|m| m.file_type().is_symlink())
+        {
+            continue;
+        }
+        let p = dir.join(name);
+        if !fs::metadata(&p).is_ok_and(|m| m.is_file()) {
+            continue;
+        }
+        if safe_dir(&dir) && safe_program(&p) {
+            return Ok(p);
+        }
+        skipped.push(dir.display().to_string());
+    }
+    if skipped.is_empty() {
+        err(format!("{name} not found in PATH"))
+    } else {
+        err(format!(
+            "{name} not found in PATH (skipped, writable by others or owned by someone else: {})",
+            skipped.join(", ")
+        ))
+    }
+}
+
+/// A folder to take a program from: every component of its path, from the root down and without following links,
+/// is a real folder owned by root or this user that no one else can write to (a sticky folder such as /tmp counts as
+/// writable: it is not trusted). A link on the way is followed only when root made it (merged `/usr`, system
+/// profiles), and its target is then checked the same way.
+fn safe_dir(dir: &Path) -> bool {
+    safe_dir_at(dir, 0)
+}
+
+fn safe_dir_at(dir: &Path, depth: u8) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        if depth > 8 || !dir.is_absolute() {
+            return false;
+        }
+        let parts: Vec<std::path::Component> = dir.components().collect();
+        let mut at = PathBuf::new();
+        for (i, c) in parts.iter().enumerate() {
+            at.push(c);
+            let Ok(m) = fs::symlink_metadata(&at) else {
+                return false;
+            };
+            if m.file_type().is_symlink() {
+                if m.uid() != 0 {
+                    return false;
+                }
+                let Ok(t) = fs::read_link(&at) else {
+                    return false;
+                };
+                let mut target = if t.is_absolute() {
+                    t
+                } else {
+                    at.parent().unwrap_or(Path::new("/")).join(t)
+                };
+                for rest in &parts[i + 1..] {
+                    target.push(rest);
+                }
+                return safe_dir_at(&target, depth + 1);
+            }
+            let ok = m.is_dir()
+                && m.permissions().mode() & 0o022 == 0
+                && (m.uid() == 0 || Some(m.uid()) == my_uid());
+            if !ok {
+                return false;
+            }
+        }
+        true
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = depth;
+        dir.is_dir()
+    }
+}
+
+/// A program file: a regular file owned by root or this user that no one else can write to; one reached through a
+/// link must also sit in a safe folder (see [`safe_dir`]) at its real place.
+fn safe_program(p: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let file_ok = fs::metadata(p).is_ok_and(|m| {
+            m.is_file()
+                && m.permissions().mode() & 0o022 == 0
+                && (m.uid() == 0 || Some(m.uid()) == my_uid())
+        });
+        let linked = fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_symlink());
+        file_ok
+            && (!linked
+                || fs::canonicalize(p)
+                    .ok()
+                    .and_then(|r| r.parent().map(Path::to_path_buf))
+                    .is_some_and(|d| safe_dir(&d)))
+    }
+    #[cfg(not(unix))]
+    {
+        p.is_file()
+    }
+}
+
 pub fn expand(s: &str) -> PathBuf {
     match s.strip_prefix("~/") {
         Some(r) => home().join(r),
@@ -608,8 +878,92 @@ pub fn unhex(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// Standard base64 (RFC 4648, with padding) of `b`.
+pub fn b64(b: &[u8]) -> String {
+    let mut out = String::with_capacity(b.len().div_ceil(3) * 4);
+    for c in b.chunks(3) {
+        let n = (c[0] as u32) << 16
+            | (*c.get(1).unwrap_or(&0) as u32) << 8
+            | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            if i <= c.len() {
+                out.push(B64[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// Bytes of standard padded base64 (None when it is not exactly that).
+pub fn unb64(s: &str) -> Option<Vec<u8>> {
+    let s = s.as_bytes();
+    if !s.len().is_multiple_of(4) {
+        return None;
+    }
+    let val = |c: u8| B64.iter().position(|&x| x == c).map(|p| p as u32);
+    let mut out = Vec::with_capacity(s.len() / 4 * 3);
+    for (k, q) in s.chunks(4).enumerate() {
+        let last = k == s.len() / 4 - 1;
+        let pad = q.iter().rev().take_while(|&&c| c == b'=').count();
+        if pad > 2 || (pad > 0 && !last) {
+            return None;
+        }
+        let mut n = 0u32;
+        for &c in &q[..4 - pad] {
+            n = n << 6 | val(c)?;
+        }
+        n <<= 6 * pad as u32;
+        // canonical only: the bits a padded group leaves over must be zero
+        if (pad == 1 && n & 0xff != 0) || (pad == 2 && n & 0xffff != 0) {
+            return None;
+        }
+        let bytes = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
+        out.extend_from_slice(&bytes[..3 - pad]);
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn utc_times_round_trip() {
+        for s in [0u64, 951_782_400, 946_684_800, 4_102_444_799] {
+            assert_eq!(super::parse_utc_iso(&super::utc_iso_at(s)), Some(s));
+        }
+        assert_eq!(super::utc_iso_at(951_782_400), "2000-02-29T00:00:00Z");
+        for bad in [
+            "2000-13-01T00:00:00Z",
+            "2000-01-01 00:00:00Z",
+            "2000-01-01T00:00:00",
+            "x",
+        ] {
+            assert_eq!(super::parse_utc_iso(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn base64_round_trips() {
+        for (raw, enc) in [
+            ("", ""),
+            ("f", "Zg=="),
+            ("fo", "Zm8="),
+            ("foo", "Zm9v"),
+            ("foobar", "Zm9vYmFy"),
+        ] {
+            assert_eq!(super::b64(raw.as_bytes()), enc);
+            assert_eq!(super::unb64(enc).unwrap(), raw.as_bytes());
+        }
+        let all: Vec<u8> = (0..=255).collect();
+        assert_eq!(super::unb64(&super::b64(&all)).unwrap(), all);
+        for bad in ["Zg=", "Z===", "Zg==Zg==", "Zm9!", "Zm 9"] {
+            assert!(super::unb64(bad).is_none(), "{bad}");
+        }
+    }
+
     #[test]
     fn plain_names_and_safe_rels() {
         for ok in ["demo", "my-bot_2", "a.b"] {
