@@ -897,9 +897,14 @@ fn a_quiet_sync_of_a_large_bot_is_fast() {
     let (c, v, e) = p.sync();
     assert_eq!(c, 0, "{e}");
     let ms = v["wall_ms"].as_u64().unwrap();
+    // the target is one second; a loaded or throttled machine may raise the limit for a local run
+    let limit = std::env::var("BOTPORT_QUIET_SYNC_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1000);
     assert!(
-        ms < 1000,
-        "a quiet sync of 50 skills and 20 routines took {ms} ms"
+        ms < limit,
+        "a quiet sync of 50 skills and 20 routines took {ms} ms (limit {limit} ms)"
     );
 }
 
@@ -1192,6 +1197,11 @@ fn init_can_leave_one_sided_items_to_the_first_sync() {
             &[("demo-routine", "Example prompt.", false)],
         ),
     );
+    // a connector only on the Hermes side, at a url the policy refuses to carry
+    w(
+        &p.hermes.join("config.yaml"),
+        "mcp_servers:\n  demo-connector:\n    url: http://203.0.113.7/mcp\n",
+    );
     p.box_digest();
     let (c, v, e) = p.init_signed(&["--copy-one-sided"]);
     assert_eq!((c, v["to_pick"].as_u64()), (0, Some(0)), "{v} {e}");
@@ -1208,6 +1218,22 @@ fn init_can_leave_one_sided_items_to_the_first_sync() {
         "{v} {e}"
     );
     assert_eq!(job(&jobs(&p), "demo-routine")["enabled"], false);
+    let (_, plan, _) = p.bp(&["mirror", "plan"]);
+    let item = |id: &str| {
+        plan["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["item"] == id)
+            .cloned()
+            .unwrap_or_default()
+    };
+    let conn = item("connector:demo-connector");
+    assert_eq!(conn["action"], "unsupported", "{plan}");
+    assert!(
+        conn["why"].as_str().unwrap().contains("url refused"),
+        "{conn}"
+    );
     // the Hermes side now has two jobs with that name: it cannot offer either, which is not a deletion
     let mut j = jobs(&p);
     let mut twin = job(&j, "demo-routine").clone();

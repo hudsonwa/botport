@@ -68,28 +68,42 @@ fn view(id: &ItemId, c: &Content, side: &[u8]) -> View {
     View::new(sha256_hex(side), c.neutral_digest(id))
 }
 
+/// Whether Hermes would run the job: `enabled` and no pause marker (`state` "paused" or a `paused_at`), as Hermes'
+/// own `is_job_runnable` decides (cron/jobs.py, https://github.com/NousResearch/hermes-agent/blob/c314285f077e91937c995d419b9fa40af9eb4981/cron/jobs.py#L531-L539).
+pub fn job_runnable(j: &Value) -> bool {
+    // Python truthiness, as Hermes reads the record: a missing `enabled` is true; null, false, 0 or "" are false
+    let truthy = |v: &Value| match v {
+        Value::Null => false,
+        Value::Bool(b) => *b,
+        Value::Number(n) => n.as_f64() != Some(0.0),
+        Value::String(s) => !s.is_empty(),
+        Value::Array(a) => !a.is_empty(),
+        Value::Object(o) => !o.is_empty(),
+    };
+    let enabled = j.get("enabled").is_none_or(truthy);
+    let marker =
+        j["state"].as_str().is_some_and(|s| s.trim() == "paused") || truthy(&j["paused_at"]);
+    enabled && !marker
+}
+
+/// The job fields that make up a routine on this side (Hermes' job record: https://github.com/NousResearch/hermes-agent/blob/c314285f077e91937c995d419b9fa40af9eb4981/cron/jobs.py#L1896-L1940).
+/// `paused_at` is included so a job paused again by hand is not the copy botport wrote.
 fn job_side_form(j: &Value) -> Vec<u8> {
     let v = json!({
         "schedule": sync::cron_expr(j),
         "tz": job_tz(j),
         "prompt": j["prompt"],
-        "enabled": j["enabled"] != json!(false),
+        "enabled": job_runnable(j),
         "paused_reason": j["paused_reason"],
+        "paused_at": j["paused_at"],
         "deliver": j["deliver"],
     });
     v.to_string().into_bytes()
 }
 
+/// A job's own zone: Hermes keeps it in the top-level `timezone` (empty: the profile's default).
 fn job_tz(j: &Value) -> String {
-    [
-        &j["timezone"],
-        &j["schedule"]["timezone"],
-        &j["schedule"]["tz"],
-    ]
-    .iter()
-    .find_map(|v| v.as_str())
-    .unwrap_or("")
-    .to_string()
+    j["timezone"].as_str().unwrap_or("").to_string()
 }
 
 fn job_schedule(j: &Value) -> Schedule {
@@ -104,7 +118,7 @@ fn job_schedule(j: &Value) -> Schedule {
         cron: (!expr.is_empty()).then_some(expr),
         tz: job_tz(j),
         action: j["prompt"].as_str().unwrap_or("").to_string(),
-        enabled: j["enabled"] != json!(false),
+        enabled: job_runnable(j),
     }
 }
 
@@ -296,15 +310,58 @@ impl HermesSide {
         }
         if let Some(y) = load_config(&self.dest)? {
             if let Some(m) = y.get("mcp_servers").and_then(Y::as_mapping) {
+                let mut by_id: BTreeMap<String, Vec<String>> = BTreeMap::new();
                 for (k, v) in m {
-                    let Some(id) = k.as_str() else { continue };
-                    let f = connector_fields(id, v);
+                    let Some(key) = k.as_str() else { continue };
+                    // a server Hermes does not load (`enabled: false`, https://github.com/NousResearch/hermes-agent/blob/c314285f077e91937c995d419b9fa40af9eb4981/website/docs/user-guide/features/mcp.md#L506)
+                    // is not offered: it is held on both sides, never read as removed
+                    if v.get("enabled").and_then(Y::as_bool) == Some(false) {
+                        out.unsupported.insert(
+                            format!("connector:{key}"),
+                            "disabled on the Hermes side (enabled: false)".into(),
+                        );
+                        continue;
+                    }
+                    let has_url = v.get("url").and_then(Y::as_str).is_some();
+                    let jv = serde_json::to_value(v).unwrap_or_default();
+                    let row = crate::adapters::connectors::row_for_hermes(key, &jv);
+                    // a local-command server under a public connector's name is not that connector: never mirrored
+                    if let Some(r) = crate::adapters::connectors::find(key).filter(|_| !has_url) {
+                        // held under the owner's key and under the connector's own id (however the key is spelled)
+                        for raw in [format!("connector:{key}"), format!("connector:{}", r.id)] {
+                            out.unsupported.insert(
+                                raw,
+                                "a local-command server under a public connector's name".into(),
+                            );
+                        }
+                        continue;
+                    }
+                    // an entry of a public connector (its official url) is that connector, whatever the owner's key
+                    let id = row
+                        .filter(|_| has_url)
+                        .map_or(key.to_string(), |r| r.id.clone());
+                    by_id.entry(id.clone()).or_default().push(key.to_string());
+                    let f = connector_fields(&id, v);
                     let side = json_sorted(&f).into_bytes();
                     add(
                         &mut out,
                         format!("connector:{id}"),
                         Content::Connector(f),
                         side,
+                    );
+                }
+                // two entries for one public connector: which one to carry is the owner's call
+                for (id, keys) in by_id.into_iter().filter(|(_, k)| k.len() > 1) {
+                    if let Ok(i) = ItemId::parse(&format!("connector:{id}")) {
+                        out.read.items.remove(&i);
+                        out.content.remove(&i);
+                    }
+                    out.unsupported.insert(
+                        format!("connector:{id}"),
+                        format!(
+                            "{} entries in config.yaml are the same connector",
+                            keys.len()
+                        ),
                     );
                 }
             }
@@ -449,7 +506,7 @@ impl HermesSide {
     pub fn paused_by_policy(&self, id: &ItemId) -> Res<bool> {
         Ok(live_jobs(&self.dest)?.iter().any(|j| {
             j["name"].as_str() == Some(id.name())
-                && j["enabled"] == json!(false)
+                && !job_runnable(j)
                 && self.holds(id.name(), &job_side_form(j))
         }))
     }
@@ -468,7 +525,7 @@ impl HermesSide {
     pub fn running(&self, id: &ItemId) -> Res<bool> {
         Ok(live_jobs(&self.dest)?
             .iter()
-            .any(|j| j["name"].as_str() == Some(id.name()) && j["enabled"] != json!(false)))
+            .any(|j| j["name"].as_str() == Some(id.name()) && job_runnable(j)))
     }
 
     /// Switch on a routine botport paused awaiting approval; returns its side digest read back.
@@ -589,7 +646,18 @@ impl HermesSide {
             .get_mut(&key)
             .and_then(Y::as_mapping_mut)
             .ok_or("config.yaml mcp_servers is not a mapping")?;
-        let name = Y::String(id.name().to_string());
+        // an existing entry of the same public connector keeps the owner's key; otherwise the item's id is the key
+        let name = servers
+            .iter()
+            .find_map(|(k, v)| {
+                let key = k.as_str()?;
+                let row = crate::adapters::connectors::row_for_hermes(
+                    key,
+                    &serde_json::to_value(v).ok()?,
+                )?;
+                (row.id == id.name() && key != id.name()).then(|| k.clone())
+            })
+            .unwrap_or_else(|| Y::String(id.name().to_string()));
         match m {
             None => {
                 servers.remove(&name);
@@ -601,6 +669,13 @@ impl HermesSide {
                 if let Some(r) = secrets::connector_url(url) {
                     return err(format!("{id}: url refused ({r})"));
                 }
+                // the public url policy: https only, a private host only if that url is already configured here
+                let configured: std::collections::BTreeSet<String> = servers
+                    .values()
+                    .filter_map(|v| v.get("url").and_then(Y::as_str).map(String::from))
+                    .collect();
+                crate::adapters::connectors::check_url(url, &configured)
+                    .map_err(|r| format!("{id}: url refused ({r})"))?;
                 if servers
                     .get(&name)
                     .is_some_and(|e| e.get("command").is_some())
@@ -660,6 +735,27 @@ impl HermesSide {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_job_runs_only_when_hermes_would_run_it() {
+        for (j, runs) in [
+            (json!({}), true),
+            (json!({"enabled": true}), true),
+            (json!({"enabled": false}), false),
+            (json!({"enabled": null}), false),
+            (json!({"enabled": 0}), false),
+            (json!({"enabled": ""}), false),
+            (json!({"enabled": true, "state": "paused"}), false),
+            (
+                json!({"enabled": true, "paused_at": "2000-01-01T00:00:00Z"}),
+                false,
+            ),
+            (json!({"enabled": true, "paused_at": null}), true),
+            (json!({"enabled": true, "paused_at": ""}), true),
+        ] {
+            assert_eq!(job_runnable(&j), runs, "{j}");
+        }
+    }
 
     fn tmp(tag: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("botport-hmirror-{tag}-{}", std::process::id()));
@@ -851,6 +947,32 @@ mod tests {
         assert!(!fs::read_to_string(d.join("config.yaml"))
             .unwrap()
             .contains("example-connector"));
+        fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn a_public_connector_under_the_owners_key_is_that_connector() {
+        let d = tmp("conn-row");
+        put(
+            &d.join("config.yaml"),
+            "mcp_servers:\n  my-code-host:\n    url: https://api.githubcopilot.com/mcp/\n",
+        );
+        let s = side(&d);
+        let r = s.read().unwrap();
+        let gh = id("connector:github");
+        let v = r.read.items[&gh].clone();
+        let Content::Connector(mut m) = r.content[&gh].clone() else {
+            panic!()
+        };
+        m.insert("tools".to_string(), json!(["search"]));
+        s.write(&gh, &Content::Connector(m), Some(&v.digest), false)
+            .unwrap()
+            .unwrap();
+        let cfg = fs::read_to_string(d.join("config.yaml")).unwrap();
+        assert!(
+            cfg.contains("my-code-host") && !cfg.contains("github:"),
+            "the owner's key is kept: {cfg}"
+        );
         fs::remove_dir_all(&d).ok();
     }
 

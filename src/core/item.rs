@@ -61,7 +61,9 @@ impl Content {
         match self {
             Content::Text(t) => sha256_hex(canonical_text(id, t).as_bytes()),
             Content::Package(p) => p.digest(),
-            Content::Routine(s) => sha256_hex(routine_neutral(s, false).to_string().as_bytes()),
+            Content::Routine(s) => {
+                super::routines::neutral_digest(s, super::routines::DEFAULT_TZ, false)
+            }
             Content::Connector(m) => sha256_hex(connector_neutral(m).to_string().as_bytes()),
         }
     }
@@ -175,8 +177,9 @@ pub fn canonical_text(id: &ItemId, t: &str) -> String {
     }
 }
 
-/// The neutral form of a routine: schedule with whitespace collapsed, timezone, kind, prompt as canonical text and,
-/// unless `paused_by_policy`, the enabled flag.
+/// A simpler neutral form of a routine (schedule whitespace collapsed, timezone, kind, prompt and, unless
+/// `paused_by_policy`, the enabled flag). Mirror digests use `core::routines::neutral_digest`, which also normalises
+/// the schedule and timezone spellings.
 pub fn routine_neutral(s: &Schedule, paused_by_policy: bool) -> Value {
     let mut v = json!({
         "schedule": s.cron.as_deref().map(|c| c.split_whitespace().collect::<Vec<_>>().join(" ")),
@@ -270,6 +273,10 @@ mod tests {
         );
         let other = Content::Routine(routine("30 8 * * *", true));
         assert_ne!(a.neutral_digest(&r), other.neutral_digest(&r));
+        // one schedule spelled two ways is one routine
+        let every = Content::Routine(routine("every 6h", true));
+        let cron = Content::Routine(routine("0 */6 * * *", true));
+        assert_eq!(every.neutral_digest(&r), cron.neutral_digest(&r));
     }
 
     #[test]

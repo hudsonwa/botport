@@ -454,6 +454,32 @@ pub fn plain_name(what: &str, s: &str) -> Res<()> {
     Ok(())
 }
 
+/// A name for a report line: control characters (newlines included) are shown escaped (`\n`), and the Unicode
+/// bidirectional and invisible format characters (U+061C, U+200B-U+200F, U+202A-U+202E, U+2060-U+2064, U+2066-U+2069,
+/// U+FEFF) as `\u{...}`, so a name cannot move the cursor, start a new line, reorder or hide what is shown.
+pub fn name_safe(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| {
+            let format = matches!(
+                c,
+                '\u{061c}'
+                    | '\u{200b}'..='\u{200f}'
+                    | '\u{202a}'..='\u{202e}'
+                    | '\u{2060}'..='\u{2064}'
+                    | '\u{2066}'..='\u{2069}'
+                    | '\u{feff}'
+            );
+            if c.is_control() {
+                c.escape_default().collect::<Vec<_>>()
+            } else if format {
+                c.escape_unicode().collect()
+            } else {
+                vec![c]
+            }
+        })
+        .collect()
+}
+
 /// Write a bundle file that may hold personal data (memories, facts, chat history, the bot's description): the file
 /// 0600, and `root` plus every directory below it on the way to the file 0700. A directory on the way that is a
 /// symlink or not a directory is refused.
@@ -1376,5 +1402,16 @@ mod tests {
         assert!(a.has("json"));
         assert_eq!(a.pos, vec!["x"]);
         assert!(Args::parse(&["--nope".to_string()], &[], &[]).is_err());
+    }
+
+    #[test]
+    fn name_safe_escapes_controls_newlines_and_bidi() {
+        assert_eq!(name_safe("demo-routine"), "demo-routine");
+        assert_eq!(name_safe("a\nb\u{1b}[2J"), "a\\nb\\u{1b}[2J");
+        assert_eq!(name_safe("demo\u{202e}enituor"), "demo\\u{202e}enituor");
+        assert_eq!(
+            name_safe("x\u{2066}y\u{200f}z\u{feff}"),
+            "x\\u{2066}y\\u{200f}z\\u{feff}"
+        );
     }
 }

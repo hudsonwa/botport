@@ -110,12 +110,11 @@ botport mirror apply-pack --pair P --dir PAIRDIR --from EXPORT --stage DIR [--lo
   drifting over 25% from the last approved text. Without a pair key, every change seen on the Grok side (additions
   included) waits either way.
 - **pick** is compare-and-swap: refused when either side changed since the conflict was recorded.
-- **Grok box.** `digest-items` writes the next numbered state file (and the content of items that changed), with
-  every kind `partial` unless `--coverage complete` (only for a program read of the live setup; given for an export,
-  an item the export left out would read as removed, and only the mass-retire guard and the approval rules stand in
-  the way): an item missing from
-  an export is then never taken as removed, and replacing or removing an item on the Grok side is left to the owner
-  (add-only, listed with the reason);
+- **Grok box** (the routine's steps: [AGENT-MIRROR.md](AGENT-MIRROR.md)). `digest-items` writes the next numbered
+  state file (and the content of items that changed), with every kind `partial` unless `--coverage complete` (only
+  for a program read of the live setup; given for an export, an item the export left out would read as removed,
+  and only the mass-retire guard and the approval rules stand in the way): an item missing from an export is then never taken as removed, and replacing
+  or removing an item on the Grok side is left to the owner (add-only, listed with the reason);
   `apply-pack` checks the pack `HEAD` names, stages what may be installed, refuses an item changed since the pack was
   made, holds every item of a pack not signed with the pair key ("held": an unsigned pack is never applied),
   and logs installs it finds done; `--precheck` re-checks one item right before the bot installs it.
@@ -145,7 +144,9 @@ NAME` to name a profile under a Hermes home instead, or give `--profile-dir DIR`
 
 - `digest write` builds `<profile>/botport/digest-hermes.md` (file 0600, folder 0700, written atomically) from the
   profile's `state.db` (read with `sqlite3 -readonly -json` and a 200 ms busy timeout; beyond the columns used to filter and
-  order sessions, only start/end times, message count, the session title (only with `--titles`) and the last message's
+  order sessions, only start/end times, message count (Hermes' own count for the session, or else the rows it still
+  shows: active messages and compaction summaries, never inactive rows), the session title (only with `--titles`) and
+  the last message's
   role and whether it ends in a question mark, never its text; every session is "session" unless the owner
   passes `--titles`, since titles are usually generated from the conversation; with it, a session without a title is
   "untitled session"), `cron/jobs.json` (routines, and how many are enabled), the skill folders under `skills/` (counted, not

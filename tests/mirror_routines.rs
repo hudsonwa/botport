@@ -207,6 +207,123 @@ fn a_name_listed_twice_is_reported_not_compared() {
 }
 
 #[test]
+fn names_are_shown_escaped() {
+    let t = Tmp::new("mirror-routines-bidi");
+    let bundle = t.0.join("grok-bot-export.json");
+    w(
+        &bundle,
+        "{\"format\": \"grok-bot-export\", \"version\": 1, \"bots\": [{\"name\": \"demo-bot\", \"instructions\": \"\",
+        \"routines\": [{\"name\": \"demo\u{202e}enituor\", \"instruction\": \"Example prompt.\", \"trigger\": \"schedule\",
+        \"schedule_cron\": \"15 5 * * *\", \"timezone\": \"UTC\", \"paused\": false}]}]}",
+    );
+    let prof = t.0.join("demo\u{2066}bot");
+    w(&prof.join("cron/jobs.json"), r#"{"jobs": []}"#);
+    let (_, out) = run(&[
+        "mirror",
+        "routines",
+        "--bundle",
+        s(&bundle),
+        "--profile-dir",
+        s(&prof),
+    ]);
+    assert!(
+        !out.contains('\u{202e}') && !out.contains('\u{2066}'),
+        "{out:?}"
+    );
+    assert!(out.contains("demo\\u{202e}enituor"), "{out}");
+    assert!(out.contains("mirror routines demo\\u{2066}bot:"), "{out}");
+    assert!(
+        out.contains("details: ") && out.contains("mirror-routines-demo\\u{2066}bot.json"),
+        "{out}"
+    );
+}
+
+#[test]
+fn timezones_and_duplicate_entries_are_shown_escaped() {
+    let t = Tmp::new("mirror-routines-tz-dup");
+    let bundle = t.0.join("grok-bot-export.json");
+    w(
+        &bundle,
+        "{\"format\": \"grok-bot-export\", \"version\": 1, \"bots\": [{\"name\": \"demo-bot\", \"instructions\": \"\",
+        \"routines\": [
+          {\"name\": \"demo-routine\", \"instruction\": \"Example prompt.\", \"trigger\": \"schedule\",
+           \"schedule_cron\": \"15 5 * * *\", \"timezone\": \"Etc/GMT+3\\nX\u{2066}\", \"paused\": false},
+          {\"name\": \"demo\u{202e}dup\", \"instruction\": \"Example prompt.\", \"trigger\": \"schedule\",
+           \"schedule_cron\": \"0 1 * * *\", \"timezone\": \"UTC\", \"paused\": false}]}]}",
+    );
+    let prof = t.0.join("demo-bot");
+    w(
+        &prof.join("cron/jobs.json"),
+        "{\"jobs\": [{\"name\": \"demo-routine\", \"prompt\": \"Example prompt.\",
+        \"schedule\": {\"kind\": \"cron\", \"expr\": \"15 5 * * *\"}, \"enabled\": true},
+        {\"name\": \"demo\u{202e}dup\", \"prompt\": \"Example prompt.\",
+        \"schedule\": {\"kind\": \"cron\", \"expr\": \"0 1 * * *\"}, \"enabled\": true},
+        {\"name\": \"demo-bot: demo\u{202e}dup\", \"prompt\": \"Example prompt.\",
+        \"schedule\": {\"kind\": \"cron\", \"expr\": \"0 2 * * *\"}, \"enabled\": true}]}",
+    );
+    let (code, out) = run(&[
+        "mirror",
+        "routines",
+        "--bundle",
+        s(&bundle),
+        "--profile-dir",
+        s(&prof),
+    ]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        !out.contains('\u{202e}') && !out.contains('\u{2066}') && !out.contains("\nX"),
+        "{out:?}"
+    );
+    // an odd zone is never shown as written
+    assert!(
+        out.contains(
+            "tz-differs demo-routine: grok (a zone name with unexpected characters), hermes UTC"
+        ),
+        "{out}"
+    );
+    // listed twice on the Hermes side once the "<Bot>: " prefix is removed
+    assert!(
+        out.contains("duplicate-name demo\\u{202e}dup: entries with this name: grok 1, hermes 2"),
+        "{out}"
+    );
+}
+
+#[test]
+fn a_name_the_export_lists_twice_is_reported_not_compared() {
+    let t = Tmp::new("mirror-routines-dup-grok");
+    let bundle = t.0.join("grok-bot-export.json");
+    w(
+        &bundle,
+        r#"{"format": "grok-bot-export", "version": 1, "bots": [{"name": "demo-bot", "instructions": "",
+        "routines": [
+          {"name": "demo-routine", "instruction": "Example prompt.", "trigger": "schedule",
+           "schedule_cron": "15 5 * * *", "timezone": "UTC", "paused": false},
+          {"name": "demo-routine", "instruction": "Example prompt: another.", "trigger": "schedule",
+           "schedule_cron": "0 1 * * *", "timezone": "UTC", "paused": false}]}]}"#,
+    );
+    let prof = t.0.join("demo-bot");
+    w(
+        &prof.join("cron/jobs.json"),
+        r#"{"jobs": [{"name": "demo-routine", "prompt": "Example prompt.",
+        "schedule": {"kind": "cron", "expr": "15 5 * * *"}, "enabled": true}]}"#,
+    );
+    let (code, out) = run(&[
+        "mirror",
+        "routines",
+        "--bundle",
+        s(&bundle),
+        "--profile-dir",
+        s(&prof),
+    ]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("duplicate-name demo-routine: entries with this name: grok 2, hermes 1"),
+        "{out}"
+    );
+    assert!(!out.contains("same demo-routine"), "{out}");
+}
+
+#[test]
 fn usage_errors_exit_2() {
     let f = fixtures();
     let b = f.join("grok-bot-export.json");
