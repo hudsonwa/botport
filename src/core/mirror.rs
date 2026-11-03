@@ -253,6 +253,9 @@ pub struct ItemState {
     /// Remote digest at the end of the last sync.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_remote: Option<String>,
+    /// The neutral digest of the remote base (what a change pack expects the remote side to have).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub neutral_remote: Option<String>,
     /// When the bases last moved (set by the caller).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub at: String,
@@ -323,6 +326,12 @@ pub struct State {
     /// Approvals given and not yet used.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub approvals: Vec<Approval>,
+    /// The highest remote state sequence number accepted (a newest file below it means its writer lost count).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_seq: Option<u64>,
+    /// Nonces of host triggers already used (replay protection).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nonces: Vec<String>,
     /// Routines the local side holds paused until the owner approves enabling them, each with the side digest of the
     /// paused copy written: the hold counts only while the live copy is still exactly that.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -352,6 +361,8 @@ impl State {
             items: BTreeMap::new(),
             conflicts: vec![],
             approvals: vec![],
+            remote_seq: None,
+            nonces: vec![],
             held_paused: BTreeMap::new(),
             republish: false,
             retired_seen: BTreeMap::new(),
@@ -392,12 +403,12 @@ impl State {
         e.seen_gen = e.seen_gen.or(self.retired_seen.get(&id).copied());
         let (l, r) = (d.local.as_ref(), d.remote.as_ref());
         let digest = |v: Option<&View>| v.map(|v| v.digest.clone());
+        let neutral = |v: Option<&View>| v.map(|v| v.neutral.clone());
         // what the read of the remote side already settled (an install arriving), whatever else happens
         if let Some(b) = &d.remote_base {
             e.base_remote = b.clone();
-            if b.is_some() || r.is_none() {
-                e.at = at.into();
-            }
+            e.neutral_remote = if b.is_some() { neutral(r) } else { None };
+            e.at = at.into();
         }
         if let Some(g) = d.seen_gen {
             e.seen_gen = Some(g);
@@ -410,6 +421,7 @@ impl State {
             (Action::InSync, _) => {
                 e.base_local = digest(l);
                 e.base_remote = digest(r);
+                e.neutral_remote = neutral(r);
                 e.sent.clear();
                 e.gen = None;
                 e.at = at.into();
@@ -418,6 +430,7 @@ impl State {
             (Action::ToLocal, Outcome::Wrote { reread }) => {
                 e.base_local = Some(reread);
                 e.base_remote = digest(r);
+                e.neutral_remote = neutral(r);
                 e.at = at.into();
                 self.conflicts.retain(|c| c.item != id);
                 self.use_approval(&id, Side::Local, r);
@@ -427,6 +440,7 @@ impl State {
                 self.held_paused.remove(&id);
                 e.base_local = None;
                 e.base_remote = None;
+                e.neutral_remote = None;
                 e.at = at.into();
                 self.conflicts.retain(|c| c.item != id);
                 self.use_approval(&id, Side::Local, None);
@@ -709,6 +723,15 @@ fn decide(
     let ln = l.map_or(ABSENT, |v| v.neutral.as_str());
     let rn = r.map_or(ABSENT, |v| v.neutral.as_str());
     let rd = r.map(|v| v.digest.clone());
+    // An open conflict stays open until the owner picks or makes both copies equal, whatever else changes.
+    if st.conflicts.iter().any(|c| c.item == *id) {
+        d.action = if ln == rn {
+            Action::InSync
+        } else {
+            Action::Conflict
+        };
+        return d;
+    }
 
     // The remote side, read with its applied log: is a change there ours arriving, or the owner's edit?
     let mut cr = rd != e.base_remote;
@@ -1394,6 +1417,27 @@ mod tests {
     }
 
     #[test]
+    fn an_open_conflict_stays_open_even_for_one_sided_items() {
+        // mirror init lists an item present on one side only as a conflict: it must not flow on its own
+        let mut s = st();
+        let (l, r) = (side(&[]), side(&[("skill:s", "R1", "N1")]));
+        let mut d = one(&s, &l, &r, &[]);
+        assert_eq!(d.action, Action::ToLocal);
+        d.action = Action::Conflict;
+        s.record(&d, Outcome::Kept, "t0");
+        assert_eq!(one(&s, &l, &r, &[]).action, Action::Conflict);
+        // the remote copy changes again: still a conflict, with the new digests recorded
+        let r2 = side(&[("skill:s", "R2", "N2")]);
+        let d = one(&s, &l, &r2, &[]);
+        assert_eq!(d.action, Action::Conflict);
+        s.record(&d, Outcome::Kept, "t1");
+        assert_eq!(s.conflicts[0].remote, "R2");
+        // equal copies resolve it
+        let d = one(&s, &side(&[("skill:s", "L2", "N2")]), &r2, &[]);
+        assert_eq!(d.action, Action::InSync);
+    }
+
+    #[test]
     fn pick_is_compare_and_swap_and_does_not_undo_itself() {
         let mut s = synced("L1", "R1", "N1");
         let (lv, rv) = (View::new("L2", "N2"), View::new("R3", "N3"));
@@ -1659,6 +1703,16 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&j).unwrap();
         let e = v["items"]["skill:s"].as_object().unwrap();
         let keys: Vec<&str> = e.keys().map(String::as_str).collect();
-        assert_eq!(keys, ["at", "base_local", "base_remote", "gen", "sent"]);
+        assert_eq!(
+            keys,
+            [
+                "at",
+                "base_local",
+                "base_remote",
+                "gen",
+                "neutral_remote",
+                "sent"
+            ]
+        );
     }
 }

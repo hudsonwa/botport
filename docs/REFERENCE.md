@@ -58,6 +58,69 @@ lines, and any object whose `type`, `event` or `kind` is `automation-changed` (o
 or `action`/`change` of `deleted`/`removed` forgets it. Names match ignoring case and punctuation. If your cache
 looks different, the check finds nothing rather than guessing.
 
+## Mirror mode (`mirror`)
+A Grok Bot and a Hermes bot kept in step as equal peers (design: [design/MIRROR.md](design/MIRROR.md)). Each setup
+item (persona name and instructions, each skill, routine and connector) is compared with its own base on each side;
+a change on one side is carried to the other, a change on both sides to one item goes to a pick-one list, and
+nothing is overwritten silently.
+
+```
+botport mirror init --pair P (--profile NAME [--hermes-home DIR] | --profile-dir DIR [--hermes-bin PATH])
+                    --transport local|drive|hybrid [--local-dir D [--bot-key K]]
+                    [--drive-dir D | --drive-folder-id ID --token-cmd CMD] [--category C]...
+                    [--approve runnable|all] [--key-file F | --no-pair-key] [--copy-one-sided] [--force]
+botport mirror init --undo --pair P
+botport mirror plan|status --pair P
+botport mirror sync --pair P [--allow-retire] [--trigger F] [--take-over]
+botport mirror show|approve --pair P ITEM [--yes]
+botport mirror pick --pair P ITEM --keep grok|hermes [--yes]
+botport mirror restore --pair P ITEM --from SHORT_DIGEST
+botport mirror stats [--since 7d] [--metrics FILE]
+botport mirror digest-items --pair P --from EXPORT --out DIR [--log F] [--all] [--key F]
+                            [--coverage partial|complete]                                      # in the Grok box
+botport mirror apply-pack --pair P --dir PAIRDIR --from EXPORT --stage DIR [--log F] [--check]
+                          [--precheck ITEM --gen N] [--key F]                                      # in the Grok box
+```
+
+- **Files.** The pair config is `$XDG_CONFIG_HOME/botport/mirror/<pair>.toml` (0600, outside the profile, never
+  mirrored); the mirror state is `<profile>/botport.mirror.json` (digests, names and numbers only); the report of
+  conflicts and approvals is `<profile>/botport-mirror-conflicts.md` (rewritten every run, never read back); kept
+  copies are under `<profile>/botport/mirror-store/`; one metrics row per sync goes to
+  `$XDG_STATE_HOME/botport/metrics.csv`.
+- **init** reads both sides; items already equal get bases, every other item (one-sided ones too) goes to the
+  pick-one list (`--copy-one-sided` leaves one-sided items to the first sync instead). Pairs are signed: the first
+  init makes a pair key file (0600) beside the config and stops until the Grok box has written a state file signed
+  with its copy; then run init again. `--key-file F` uses an existing key, `--no-pair-key` makes an unsigned pair,
+  which sends nothing to the Grok side and carries no skills.
+- **sync** holds the profile's operation lock for the whole run, writes Hermes-bound changes behind a restore point
+  (every mirrored category and the mirror state), re-reading each item right
+  before it swaps it in, and publishes one cumulative change pack for the Grok side (`HEAD` only moves forward, from
+  the predecessor it planned against). No state file, no sync. More than 3 retires on a side (or over 20% of a kind)
+  stop the run unless `--allow-retire`. `--trigger F` runs it only for a fresh trigger signed with the pair key
+  (5 minutes, nonce used once).
+- **Approvals.** By default (`--approve all`) every change to a skill (Markdown included), the bot's name or
+  instructions, a routine prompt or a connector, in either direction, waits for `mirror approve` (a removal is carried without it, under the
+  retire guard and, in an unsigned pair, the unsigned-read rule) (shown, confirmed on a terminal, bound to
+  the digest). `--approve runnable` is the opt-in to holding back only new or changed connectors, new skills,
+  non-text skill files, enabling a routine or changing an enabled routine's prompt or schedule, and instructions
+  drifting over 25% from the last approved text. Without a pair key, every change seen on the Grok side (additions
+  included) waits either way.
+- **pick** is compare-and-swap: refused when either side changed since the conflict was recorded.
+- **Grok box.** `digest-items` writes the next numbered state file (and the content of items that changed), with
+  every kind `partial` unless `--coverage complete` (only for a program read of the live setup; given for an export,
+  an item the export left out would read as removed, and only the mass-retire guard and the approval rules stand in
+  the way): an item missing from
+  an export is then never taken as removed, and replacing or removing an item on the Grok side is left to the owner
+  (add-only, listed with the reason);
+  `apply-pack` checks the pack `HEAD` names, stages what may be installed, refuses an item changed since the pack was
+  made, holds every item of a pack not signed with the pair key ("held": an unsigned pack is never applied),
+  and logs installs it finds done; `--precheck` re-checks one item right before the bot installs it.
+- **Transports.** `local` reads the local records directory (`botport-local/1` records per bot key; read only),
+  `drive` the pair's Drive folder (the Drive API through `curl` with a token from `--token-cmd`, handed to curl on
+  its stdin, never in argv; one listing call per quiet sync, downloads cached in `<profile>/botport/drive-cache/`;
+  or the folder Google Drive for desktop syncs), `hybrid` reads kind by kind from local where complete and sends by Drive.
+- Exit codes: 0 clean; 1 differences (`plan`, `status`); 2 usage or refused; 3 conflicts or approvals remain.
+
 ## The bundle (`export`, run inside the Grok box)
 | Path | What |
 |---|---|

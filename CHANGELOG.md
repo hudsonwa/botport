@@ -21,6 +21,10 @@ All notable changes to this project are documented here. The format is based on
   `0600` config file, never in argv). Design section 6.3.
 - `botport mirror stats`: count and p50/p95 time and payload per command and transport, from a metrics CSV (one row
   per mirror run, `0600`, never leaves the machine). Design section 8.
+- `botport mirror init|plan|sync|status|show|pick|approve|restore` and, in the Grok box, `mirror digest-items` and
+  `mirror apply-pack`: equal-peer sync of a bot's setup between Grok and Hermes, with a pick-one list for items
+  changed on both sides, approvals for changes that can make a bot run something new, restore points before Hermes
+  writes and kept copies of what a change replaces on the Grok side, and one metrics row per sync. v0.1 commands are unchanged. See docs/REFERENCE.md "Mirror mode".
 - `core::package`: opaque skill/tool packages (`botport-package/1`) for mirror mode. A package is carried byte for
   byte with its executable bits; its digest covers every path, byte and executable bit; a generated manifest lets a
   receiver check it. Symlinks, special files, setuid/setgid/sticky bits, unsafe paths, paths that collide by case or

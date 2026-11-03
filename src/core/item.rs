@@ -54,7 +54,9 @@ impl Content {
     }
 
     /// The neutral digest (section 3): text canonicalised, packages by their package digest, routines and connectors
-    /// as sorted-key JSON of the neutral fields.
+    /// as sorted-key JSON of the neutral fields. A routine's neutral form includes `enabled`, so pausing or switching
+    /// it on is a change carried like any other; a side that holds a copy paused by policy (awaiting approval) reads
+    /// it as enabled, so that copy is in step (section 4.5).
     pub fn neutral_digest(&self, id: &ItemId) -> String {
         match self {
             Content::Text(t) => sha256_hex(canonical_text(id, t).as_bytes()),
@@ -259,13 +261,15 @@ mod tests {
         let b = Content::Routine(routine("30 7 * * *", true));
         let r = id("routine:demo-routine");
         assert_eq!(a.neutral_digest(&r), b.neutral_digest(&r));
+        // pausing is a change
         let paused = Content::Routine(routine("30 7 * * *", false));
         assert_ne!(a.neutral_digest(&r), paused.neutral_digest(&r));
-        // a routine paused by policy is in step with the enabled original
-        assert_eq!(
-            routine_neutral(&routine("30 7 * * *", false), true),
-            routine_neutral(&routine("30 7 * * *", true), true)
+        assert_ne!(
+            routine_neutral(&routine("30 7 * * *", false), false),
+            routine_neutral(&routine("30 7 * * *", true), false)
         );
+        let other = Content::Routine(routine("30 8 * * *", true));
+        assert_ne!(a.neutral_digest(&r), other.neutral_digest(&r));
     }
 
     #[test]

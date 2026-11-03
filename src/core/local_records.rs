@@ -160,7 +160,8 @@ fn private_md(m: &std::fs::Metadata) -> bool {
     }
 }
 
-/// Test fixtures as a reader leaves them: folders 0700 and files 0600 (whatever the umask), below `p`.
+/// Test fixtures in folders owned by the running user, writable by nobody else: folders 0700 and files 0600
+/// (whatever the umask), below `p`.
 #[cfg(test)]
 pub(crate) fn lock_down(p: &Path) {
     #[cfg(unix)]
