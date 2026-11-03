@@ -17,7 +17,7 @@ fn stats_summarises_the_metrics_file() {
     csv.push('\n');
     for (i, ms) in [120, 80, 300].iter().enumerate() {
         csv.push_str(&format!(
-            "2026-01-03T05:0{i}:00Z,demo-bot,mirror-sync,drive,drive,30,1,0,0,100,10,{ms},40,{},0,{}\n",
+            "2000-01-03T05:0{i}:00Z,demo-bot,mirror-sync,drive,drive,30,1,0,0,100,10,{ms},40,{},0,{}\n",
             ms - 40,
             20 + i
         ));

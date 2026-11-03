@@ -3,6 +3,7 @@ pub mod adapter;
 pub mod auth;
 #[cfg(test)]
 pub mod conformance;
+pub mod digest;
 pub mod item;
 pub mod local_records;
 pub mod metrics;

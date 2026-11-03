@@ -42,7 +42,7 @@ pub const DRIFT_PCT: usize = 25;
 
 /// Unix seconds now, unsigned (0 before 1970).
 fn now_unix() -> u64 {
-    now_secs()
+    u64::try_from(now_secs()).unwrap_or(0)
 }
 
 /// What a mirror command reports.
@@ -491,7 +491,17 @@ fn kept(dest: &Path, id: &ItemId, short: &str) -> Res<Content> {
         .collect();
     match matches.as_slice() {
         [one] => {
+            // a regular file whose bytes still hash to its name: a copy changed in the store is never restored
+            if !fs::symlink_metadata(one).is_ok_and(|m| m.is_file()) {
+                return err(format!("{id}: the kept copy {short} is not a regular file"));
+            }
             let b = fs::read(one).map_err(|e| e.to_string())?;
+            let name = one.file_name().map(|n| n.to_string_lossy().to_string());
+            if name.as_deref() != Some(sha256_hex(&b).as_str()) {
+                return err(format!(
+                    "{id}: the kept copy {short} does not match its digest (changed in the store): not restored"
+                ));
+            }
             Content::from_blob(id, &b)
         }
         [] => err(format!("{id}: no kept copy {short}")),
@@ -542,7 +552,13 @@ pub fn needs_approval(
     approved_text: Option<&str>,
 ) -> Option<String> {
     let from = from?; // a retire never makes anything run
-                      // the name lands in the system prompt as well: under "all" it waits like everything else
+                      // a connector url moving to another host: the owner is told what happens to kept credentials
+    if let (Content::Connector(n), Some(Content::Connector(o))) = (from, to) {
+        if to_side == Side::Local && moves_origin(n, o) {
+            return Some(CROSS_ORIGIN.into());
+        }
+    }
+    // the name lands in the system prompt as well: under "all" it waits like everything else
     if policy == "all" {
         return Some("approve = all: every change waits for the owner".into());
     }
@@ -819,7 +835,7 @@ fn undo(a: &Args) -> Res<Out> {
 /// Why init found nothing from the Grok side, as specific as the transport allows.
 fn nothing_yet(c: &Config) -> String {
     if c.transport == "local" {
-        return "the local reader gave no setup (a reader that carries activity only cannot start a pair): use --transport hybrid or drive".into();
+        return "the local records hold no setup (records that carry activity only cannot start a pair): use --transport hybrid or drive".into();
     }
     if let Some(d) = &c.drive_dir {
         let from = d.join("from-grok");
@@ -835,6 +851,14 @@ fn nothing_yet(c: &Config) -> String {
             .filter_map(|e| fs::read(e.path()).ok())
             .filter_map(|b| serde_json::from_slice::<Value>(&b).ok())
             .filter_map(|v| v["pair"].as_str().map(String::from))
+            // read from files nothing has verified yet: shown only as a valid pair name, else escaped
+            .map(|p| {
+                if engine::valid_name(&p).is_ok() {
+                    p
+                } else {
+                    term_safe(&format!("{p:?}"))
+                }
+            })
             .collect();
         if !pairs.is_empty() && !pairs.contains(&c.pair) {
             return format!(
@@ -1216,7 +1240,7 @@ fn sync_cmd(a: &Args) -> Res<Out> {
         let tr: crate::core::auth::Trigger =
             serde_json::from_slice(&fs::read(&tp).map_err(|_| "trigger not readable".to_string())?)
                 .map_err(|_| "trigger is not valid".to_string())?;
-        tr.verify(&key, &c.pair, "sync", now_secs(), &mut st.nonces)?;
+        tr.verify(&key, &c.pair, "sync", now_unix(), &mut st.nonces)?;
         save_state(&c, &st)?;
     }
     if !a.has("allow-retire") {
@@ -1390,8 +1414,9 @@ fn sync_cmd(a: &Args) -> Res<Out> {
     })
 }
 
-/// Send the Hermes digest and take in the Grok one: built from the local records when there are any, else the file
-/// on Drive, stored only if it is a valid digest of the Grok side for this pair.
+/// Send the Hermes digest to Drive, and take in the Grok one: built from the local records when there are any, else
+/// the newest Grok digest on Drive that verifies with the pair key (none for a pair without a key), stored only if its
+/// header names the Grok side of this pair.
 fn exchange_digests(c: &Config, link: &mut Link) -> Res<()> {
     if let Some(drive) = link.drive.as_mut() {
         if let Ok(b) = fs::read(c.profile_dir.join("botport/digest-hermes.md")) {
@@ -1647,7 +1672,7 @@ fn status(a: &Args) -> Res<Out> {
         lines.push("  WARN HEAD does not name the last pack this machine sent".into());
     }
     // a pack unapplied for longer than the timeout needs a look (is the Grok routine running?)
-    let now = now_secs();
+    let now = now_unix();
     let old: Vec<&ItemId> = st
         .items
         .iter()
@@ -2152,7 +2177,7 @@ fn restore(a: &Args) -> Res<Out> {
 fn stats(a: &Args) -> Res<Out> {
     let file = a.path("metrics").unwrap_or_else(metrics::default_path);
     let since = match a.get("since") {
-        Some(s) => Some(now_secs().saturating_sub(metrics::parse_since(s)?)),
+        Some(s) => Some(now_unix().saturating_sub(metrics::parse_since(s)?)),
         None => None,
     };
     let rows = metrics::read(&file)?;
@@ -2300,6 +2325,23 @@ fn apply_pack(a: &Args) -> Res<Out> {
         lines,
         json: json!({"gen": p.gen, "pending": pending}),
     })
+}
+
+/// Why a connector change whose url moves to another host waits for approval, whatever the policy.
+const CROSS_ORIGIN: &str = "a changed connector whose url moves to another host: the headers and auth kept on this side for the old host are dropped, never sent to the new one";
+
+/// Whether a connector change moves its url to another origin (scheme, host or port).
+fn moves_origin(new: &BTreeMap<String, Value>, old: &BTreeMap<String, Value>) -> bool {
+    match (
+        new.get("url").and_then(Value::as_str),
+        old.get("url").and_then(Value::as_str),
+    ) {
+        // "no origin" (userinfo, a backslash, percent-encoding, a non-ASCII host) on either side counts as a move
+        (Some(n), Some(o)) => !crate::core::util::same_origin(n, o),
+        // an entry without a url that gains one: whatever it kept was not for that host
+        (Some(_), None) => true,
+        _ => false,
+    }
 }
 
 #[cfg(test)]

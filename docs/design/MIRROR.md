@@ -380,7 +380,7 @@ One Markdown file per side, `botport-digest/1`:
 ## Regular routines
 - demo-routine: 07:30 daily (UTC), last ran 01-02 07:30 ok
 ## Key facts
-- Example fact: the demo service restarts on Mondays.
+- Example fact: the demo service has a status page.
 ```
 
 Four sections, always in this order, each with a line budget; a line is at most 160 characters (cut with `…`):

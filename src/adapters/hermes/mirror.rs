@@ -616,11 +616,20 @@ impl HermesSide {
                     .flatten()
                     .filter_map(|t| t.as_str().map(String::from))
                     .collect();
-                // keep fields botport does not own (headers, auth) on an existing entry
+                // keep fields botport does not own (headers, auth) on an existing entry, but only for the same origin:
+                // credentials kept for one host never go to another
                 let mut entry = servers
                     .get(&name)
                     .cloned()
                     .unwrap_or(Y::Mapping(Mapping::new()));
+                // an entry that had no url (a local command) and gains one counts as a move too
+                let old = entry.get("url").and_then(Y::as_str).map(String::from);
+                if old.is_none_or(|o| !crate::core::util::same_origin(&o, url)) {
+                    if let Some(e) = entry.as_mapping_mut() {
+                        e.remove(Y::String("headers".into()));
+                        e.remove(Y::String("auth".into()));
+                    }
+                }
                 let new = sync::mcp_entry(url, &tools);
                 if let (Some(e), Some(n)) = (entry.as_mapping_mut(), new.as_mapping()) {
                     e.remove(Y::String("tools".into()));

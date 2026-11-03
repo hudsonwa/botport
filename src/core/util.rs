@@ -530,63 +530,23 @@ pub fn short(d: &str) -> &str {
 
 /// UTC "YYYYMMDDTHHMMSSZ" (only used for restore-point file names; never in hashed content).
 pub fn utc_stamp() -> String {
-    let (y, m, d, hh, mm, ss) = civil(now_secs());
+    let (y, m, d, hh, mm, ss) = utc_civil(now_secs());
     format!("{y:04}{m:02}{d:02}T{hh:02}{mm:02}{ss:02}Z")
 }
 
-/// UTC "YYYY-MM-DDTHH:MM:SSZ" now.
-pub fn utc_iso() -> String {
-    utc_iso_at(now_secs())
-}
-
-/// UTC "YYYY-MM-DDTHH:MM:SSZ" of unix seconds `secs`.
-pub fn utc_iso_at(secs: u64) -> String {
-    let (y, m, d, hh, mm, ss) = civil(secs);
-    format!("{y:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}Z")
-}
-
-/// Unix seconds now (0 if the clock is before 1970).
-pub fn now_secs() -> u64 {
+/// Seconds since the Unix epoch, now (0 if the clock is before it).
+pub fn now_secs() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
 }
 
-/// Unix seconds of a "YYYY-MM-DDTHH:MM:SSZ" time (None when it is not exactly that form).
-pub fn parse_utc_iso(s: &str) -> Option<u64> {
-    let b = s.as_bytes();
-    if b.len() != 20
-        || b[4] != b'-'
-        || b[7] != b'-'
-        || b[10] != b'T'
-        || b[13] != b':'
-        || b[16] != b':'
-        || b[19] != b'Z'
-    {
-        return None;
-    }
-    let n = |r: std::ops::Range<usize>| s.get(r)?.parse::<i64>().ok();
-    let (y, m, d) = (n(0..4)?, n(5..7)?, n(8..10)?);
-    let (hh, mm, ss) = (n(11..13)?, n(14..16)?, n(17..19)?);
-    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || hh > 23 || mm > 59 || ss > 59 {
-        return None;
-    }
-    // days-from-civil (Howard Hinnant)
-    let y2 = if m <= 2 { y - 1 } else { y };
-    let era = y2.div_euclid(400);
-    let yoe = y2 - era * 400;
-    let mp = (m + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146097 + doe - 719468;
-    u64::try_from(days * 86400 + hh * 3600 + mm * 60 + ss).ok()
-}
-
-fn civil(secs: u64) -> (i64, i64, i64, u64, u64, u64) {
-    let (days, rem) = (secs / 86400, secs % 86400);
+/// Unix seconds -> UTC (year, month, day, hour, minute, second).
+pub fn utc_civil(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
+    let (days, rem) = (secs.div_euclid(86400), secs.rem_euclid(86400));
     // civil-from-days (Howard Hinnant)
-    let z = days as i64 + 719468;
+    let z = days + 719468;
     let era = z.div_euclid(146097);
     let doe = z - era * 146097;
     let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
@@ -595,7 +555,102 @@ fn civil(secs: u64) -> (i64, i64, i64, u64, u64, u64) {
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = yoe + era * 400 + i64::from(m <= 2);
-    (y, m, d, rem / 3600, rem % 3600 / 60, rem % 60)
+    let r = rem as u32;
+    (y, m as u32, d as u32, r / 3600, r % 3600 / 60, r % 60)
+}
+
+/// UTC "YYYY-MM-DDTHH:MM:SSZ" now.
+pub fn utc_iso() -> String {
+    iso_utc(now_secs())
+}
+
+/// UTC "YYYY-MM-DDTHH:MM:SSZ" of unix seconds `secs`.
+pub fn utc_iso_at(secs: u64) -> String {
+    iso_utc(i64::try_from(secs).unwrap_or(i64::MAX))
+}
+
+/// Unix seconds of a time in exactly the form "YYYY-MM-DDTHH:MM:SSZ" (None for any other form).
+pub fn parse_utc_iso(s: &str) -> Option<u64> {
+    let b = s.as_bytes();
+    let digits = [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18];
+    if b.len() != 20 || !digits.iter().all(|&i| b[i].is_ascii_digit()) {
+        return None;
+    }
+    // strict: the time must print back exactly as given (no 31 February, no second 60)
+    let secs = parse_iso(s).and_then(|x| u64::try_from(x).ok())?;
+    (utc_iso_at(secs) == s).then_some(secs)
+}
+
+/// UTC date -> days since the Unix epoch (days-from-civil, Howard Hinnant).
+pub fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (i64::from(m) + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + i64::from(d) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146097 + doe - 719468
+}
+
+/// Unix seconds -> "YYYY-MM-DDTHH:MM:SSZ".
+pub fn iso_utc(secs: i64) -> String {
+    let (y, m, d, hh, mm, ss) = utc_civil(secs);
+    format!("{y:04}-{m:02}-{d:02}T{hh:02}:{mm:02}:{ss:02}Z")
+}
+
+/// "YYYY-MM-DD[(T| )HH:MM[:SS[.f]]][Z|±HH:MM|±HHMM]" -> Unix seconds; no offset is read as UTC.
+pub fn parse_iso(s: &str) -> Option<i64> {
+    let s = s.trim();
+    let num = |a: usize, b: usize| -> Option<i64> {
+        let t = s.get(a..b)?;
+        t.bytes()
+            .all(|c| c.is_ascii_digit())
+            .then(|| t.parse().ok())?
+    };
+    let (y, mo, d) = (num(0, 4)?, num(5, 7)?, num(8, 10)?);
+    if s.get(4..5)? != "-"
+        || s.get(7..8)? != "-"
+        || !(1..=12).contains(&mo)
+        || !(1..=31).contains(&d)
+    {
+        return None;
+    }
+    let mut secs = days_from_civil(y, mo as u32, d as u32) * 86400;
+    let mut rest = &s[10..];
+    if let Some(t) = rest.strip_prefix(['T', ' ']) {
+        let hh = t.get(0..2)?.parse::<i64>().ok()?;
+        let mm = t.get(3..5)?.parse::<i64>().ok()?;
+        if t.get(2..3)? != ":" || hh > 23 || mm > 59 {
+            return None;
+        }
+        secs += hh * 3600 + mm * 60;
+        rest = &t[5..];
+        if let Some(r) = rest.strip_prefix(':') {
+            let ss = r.get(0..2)?.parse::<i64>().ok()?;
+            if ss > 60 {
+                return None;
+            }
+            secs += ss;
+            rest = r[2..].trim_start_matches(|c: char| c == '.' || c.is_ascii_digit());
+        }
+    }
+    match rest {
+        "" | "Z" | "z" => Some(secs),
+        o if o.starts_with(['+', '-']) => {
+            let digits: String = o[1..].chars().filter(|c| *c != ':').collect();
+            if digits.len() != 4 || !digits.bytes().all(|c| c.is_ascii_digit()) {
+                return None;
+            }
+            let off =
+                digits[..2].parse::<i64>().ok()? * 3600 + digits[2..].parse::<i64>().ok()? * 60;
+            Some(if o.starts_with('+') {
+                secs - off
+            } else {
+                secs + off
+            })
+        }
+        _ => None,
+    }
 }
 
 /// Minimal flag parser: `--key value`, `--flag`, positionals. Unknown flags are an error.
@@ -660,6 +715,72 @@ impl Args {
     pub fn has(&self, k: &str) -> bool {
         self.flags.iter().any(|f| f == k)
     }
+}
+
+/// The origin of a url (scheme, host and port, lowercased): `https://mcp.example.test:8443`. Credentials kept for one
+/// origin never go to another. `None`, "no origin", for anything a browser-style parser could read differently from a
+/// plain one: a scheme other than http or https, userinfo (an `@` in the authority), a backslash, percent-encoding, or
+/// a host that is not ASCII letters, digits and `-` in non-empty labels (or a bracketed IPv6 literal). Every
+/// comparison treats "no origin" as a move to another origin.
+pub fn url_origin(url: &str) -> Option<String> {
+    let (scheme, rest) = url.split_once("://")?;
+    if rest.contains('\\') {
+        return None;
+    }
+    let scheme = scheme.to_ascii_lowercase();
+    if scheme != "https" && scheme != "http" {
+        return None;
+    }
+    let auth = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if auth.is_empty() || auth.contains(['@', '%']) || !auth.is_ascii() {
+        return None;
+    }
+    let hp = auth.to_ascii_lowercase();
+    // host and port; an IPv6 host is in brackets
+    let (host, port) = match hp.rfind(':') {
+        Some(i)
+            if !hp[i + 1..].is_empty()
+                && hp[i + 1..].bytes().all(|b| b.is_ascii_digit())
+                && (!hp.starts_with('[') || hp[..i].ends_with(']')) =>
+        {
+            (hp[..i].to_string(), hp[i + 1..].to_string())
+        }
+        _ => (hp.clone(), String::new()),
+    };
+    // spellings of one origin: the scheme's default port, a trailing dot on the host
+    let host = host.strip_suffix('.').unwrap_or(&host);
+    // a host is a bracketed IPv6 literal, or labels of ASCII letters, digits and '-' (none empty)
+    let ok = match host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+        Some(v6) => {
+            !v6.is_empty()
+                && v6
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.')
+        }
+        None => {
+            !host.is_empty()
+                && host.split('.').all(|l| {
+                    !l.is_empty() && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+                })
+        }
+    };
+    if !ok {
+        return None;
+    }
+    let default = matches!(
+        (scheme.as_str(), port.as_str()),
+        ("https", "443") | ("http", "80")
+    );
+    Some(if port.is_empty() || default {
+        format!("{scheme}://{host}")
+    } else {
+        format!("{scheme}://{host}:{port}")
+    })
+}
+
+/// Whether two urls share one origin; "no origin" on either side never does.
+pub fn same_origin(a: &str, b: &str) -> bool {
+    matches!((url_origin(a), url_origin(b)), (Some(x), Some(y)) if x == y)
 }
 
 /// An external program (`sqlite3`, `curl`, a token command) to run by absolute path: a name with a `/` is taken as
@@ -930,19 +1051,92 @@ pub fn unb64(s: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn utc_times_round_trip() {
-        for s in [0u64, 951_782_400, 946_684_800, 4_102_444_799] {
-            assert_eq!(super::parse_utc_iso(&super::utc_iso_at(s)), Some(s));
+    fn tool_versions_are_read_from_their_output() {
+        assert_eq!(
+            super::version_in("3.99.0 2000-01-01 00:00:00 example (64-bit)", "sqlite3"),
+            Some((3, 99))
+        );
+        assert_eq!(
+            super::version_in(
+                "curl 9.9.9 (example-target) libcurl/9.9.9\nRelease-Date: 2000-01-01",
+                "curl"
+            ),
+            Some((9, 9))
+        );
+        assert_eq!(super::version_in("no version here", "curl"), None);
+        assert!((3, 32) < (3, 33) && (7, 52) >= (7, 52));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn programs_come_only_from_absolute_path_entries_nobody_else_can_write() {
+        use std::os::unix::fs::PermissionsExt;
+        // under the crate, not a temp folder: /tmp is sticky and world-writable, which the rule does not trust
+        let base = std::fs::canonicalize(env!("CARGO_MANIFEST_DIR"))
+            .unwrap()
+            .join(format!(".botport-prog-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if !super::safe_dir(&base) {
+            // a checkout under a folder others can write to cannot host a trusted program folder at all
+            eprintln!(
+                "skipped: {} is not under folders only root or this user can write",
+                base.display()
+            );
+            std::fs::remove_dir_all(&base).ok();
+            return;
         }
-        assert_eq!(super::utc_iso_at(951_782_400), "2000-02-29T00:00:00Z");
-        for bad in [
-            "2000-13-01T00:00:00Z",
-            "2000-01-01 00:00:00Z",
-            "2000-01-01T00:00:00",
-            "x",
-        ] {
-            assert_eq!(super::parse_utc_iso(bad), None, "{bad}");
+        let (open, good) = (base.join("open"), base.join("good"));
+        for d in [&open, &good] {
+            std::fs::create_dir_all(d).unwrap();
+            std::fs::write(d.join("demo-tool"), "#!/bin/sh\n").unwrap();
+            // explicit modes: the result must not depend on the umask
+            std::fs::set_permissions(d, std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::fs::set_permissions(d.join("demo-tool"), std::fs::Permissions::from_mode(0o755))
+                .unwrap();
         }
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let path =
+            std::env::join_paths([std::path::PathBuf::from("."), open.clone(), good.clone()])
+                .unwrap();
+        assert_eq!(
+            super::program_in("demo-tool", &path).unwrap(),
+            good.join("demo-tool")
+        );
+        let only_open = std::env::join_paths([open.clone()]).unwrap();
+        // a PATH entry that is a link is not followed, even to a safe folder
+        let linked = base.join("linked");
+        std::os::unix::fs::symlink(&good, &linked).unwrap();
+        assert!(super::program_in("demo-tool", &std::env::join_paths([linked]).unwrap()).is_err());
+        assert!(super::program_in("demo-tool", &only_open).is_err());
+        // a program given with a path gets the same checks, and must be absolute
+        assert_eq!(
+            super::program_in(good.join("demo-tool").to_str().unwrap(), &only_open).unwrap(),
+            good.join("demo-tool")
+        );
+        assert!(super::program_in(open.join("demo-tool").to_str().unwrap(), &only_open).is_err());
+        assert!(super::program_in("bin/demo-tool", &only_open).is_err());
+        // a link in a program's path is followed only when root made it (run as root, every link is root's)
+        if super::my_uid() != Some(0) {
+            let user_link = base.join("user-link");
+            std::os::unix::fs::symlink(&good, &user_link).unwrap();
+            assert!(
+                super::program_in(user_link.join("demo-tool").to_str().unwrap(), &only_open)
+                    .is_err()
+            );
+        }
+        // a program file others can write is skipped like its folder would be
+        std::fs::set_permissions(
+            good.join("demo-tool"),
+            std::fs::Permissions::from_mode(0o777),
+        )
+        .unwrap();
+        assert!(
+            super::program_in("demo-tool", &std::env::join_paths([good.clone()]).unwrap()).is_err()
+        );
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::remove_dir_all(&base).ok();
     }
 
     #[test]
@@ -959,8 +1153,50 @@ mod tests {
         }
         let all: Vec<u8> = (0..=255).collect();
         assert_eq!(super::unb64(&super::b64(&all)).unwrap(), all);
-        for bad in ["Zg=", "Z===", "Zg==Zg==", "Zm9!", "Zm 9"] {
+        // not exactly canonical padded base64
+        for bad in ["Zg=", "Z===", "Zg==Zg==", "Zm9!", "Zm 9", "Zh==", "Zm9="] {
             assert!(super::unb64(bad).is_none(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn strict_utc_times() {
+        assert_eq!(
+            super::parse_utc_iso("2000-01-01T00:00:00Z"),
+            Some(946_684_800)
+        );
+        for bad in [
+            "2000-02-31T00:00:00Z",
+            "2000-01-01T00:00:60Z",
+            "2000-01-01T+5:00:00Z",
+            "2000-01-01 00:00:00Z",
+        ] {
+            assert_eq!(super::parse_utc_iso(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn utc_dates_round_trip() {
+        for t in [0, 951_782_400, 946_684_800, 4_102_444_799] {
+            assert_eq!(super::parse_iso(&super::iso_utc(t)), Some(t), "{t}");
+        }
+        assert_eq!(super::iso_utc(946_684_800), "2000-01-01T00:00:00Z");
+        let p = super::parse_iso;
+        assert_eq!(p("2000-01-01"), p("2000-01-01T00:00:00Z"));
+        assert_eq!(
+            p("2000-01-01T07:30:00.123456+02:00"),
+            p("2000-01-01T05:30:00Z")
+        );
+        assert_eq!(p("2000-01-01 05:30"), p("2000-01-01T05:30:00Z"));
+        for bad in [
+            "",
+            "2000-13-01",
+            "00-01-01",
+            "2000-01-01T5:30",
+            "2000-01-01Tx",
+            "2000-01-01T05:30 later",
+        ] {
+            assert_eq!(p(bad), None, "{bad}");
         }
     }
 
@@ -1018,6 +1254,57 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_url_origin_is_scheme_host_and_port() {
+        let o = |u: &str| super::url_origin(u);
+        assert_eq!(
+            o("https://MCP.Example.test/v2?x=1").as_deref(),
+            Some("https://mcp.example.test")
+        );
+        assert_eq!(
+            o("https://mcp.example.test:8443/mcp").as_deref(),
+            Some("https://mcp.example.test:8443")
+        );
+        assert_ne!(
+            o("http://mcp.example.test/"),
+            o("https://mcp.example.test/")
+        );
+        // spellings of one origin
+        for u in [
+            "https://mcp.example.test:443/",
+            "https://mcp.example.test./x",
+        ] {
+            assert_eq!(o(u).as_deref(), Some("https://mcp.example.test"), "{u}");
+        }
+        assert_eq!(
+            o("http://[::1]:8080/").as_deref(),
+            Some("http://[::1]:8080")
+        );
+        assert_eq!(o("http://[::1]/").as_deref(), Some("http://[::1]"));
+        // what a browser-style parser could read as another host: no origin, never the same origin as anything
+        for u in [
+            "https://attacker.example\\@mcp.example.test/mcp",
+            "https://u@mcp.example.test/",
+            "https://u:p@mcp.example.test/",
+            "https://mcp.example%2Etest/",
+            "https://mcp.ex\u{e4}mple.test/",
+            "https:///mcp",
+            "mcp.example.test/mcp",
+            "ftp://mcp.example.test/",
+            "https://mcp..example.test/",
+            "https://mcp_example.test/",
+            "https://[zz]/",
+            "https://[]/",
+        ] {
+            assert_eq!(o(u), None, "{u}");
+            assert!(!super::same_origin(u, u), "{u}");
+        }
+        assert!(super::same_origin(
+            "https://mcp.example.test/a",
+            "https://MCP.example.test:443/b"
+        ));
+    }
 
     #[test]
     fn digest_is_order_independent_of_insertion() {
