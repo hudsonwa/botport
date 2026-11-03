@@ -436,6 +436,13 @@ pub fn write_private(root: &Path, rel: &str, data: &[u8]) -> Res<()> {
     write_atomic(&root.join(rel), data, Some(0o600))
 }
 
+/// Create `d` (and its parents) if needed and make it a private directory (0700); a symlink or non-directory is
+/// refused.
+pub fn ensure_private_dir(d: &Path) -> Res<()> {
+    fs::create_dir_all(d).map_err(|e| format!("mkdir {}: {e}", d.display()))?;
+    private_dir(d, fs::symlink_metadata(d).ok())
+}
+
 fn private_dir(d: &Path, m: Option<fs::Metadata>) -> Res<()> {
     if !m.is_some_and(|m| m.is_dir()) {
         return err(format!(

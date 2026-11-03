@@ -1603,11 +1603,10 @@ fn run_stdin(t: &Path, args: &[&str], input: &str) -> (i32, String) {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     let mut ch = c.spawn().unwrap();
-    ch.stdin
-        .take()
-        .unwrap()
-        .write_all(input.as_bytes())
-        .unwrap();
+    // a run that refuses early may exit before reading its input: a closed pipe is not a test failure
+    if let Err(e) = ch.stdin.take().unwrap().write_all(input.as_bytes()) {
+        assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe, "{e}");
+    }
     let o = ch.wait_with_output().unwrap();
     (
         o.status.code().unwrap_or(-1),
@@ -1934,7 +1933,17 @@ fn a_held_lock_refuses_the_h2g_writers() {
     // read-only h2g stays lock-free
     assert_ne!(run_with("drift", &base, &["--direction", "h2g"]).0, 2);
     drop(holder);
-    let (rc, out) = run_with("export-hermes", &base, &["--out", o]);
+    // a child process another test forks at this moment can hold the lock's descriptor until it execs: give the
+    // release a moment rather than fail on that race
+    let mut tries = 0;
+    let (rc, out) = loop {
+        let r = run_with("export-hermes", &base, &["--out", o]);
+        tries += 1;
+        if r.0 != 2 || tries == 20 {
+            break r;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
     assert_eq!(rc, 0, "{out}");
     assert!(
         fs::read_to_string(&rec).unwrap() != before,
