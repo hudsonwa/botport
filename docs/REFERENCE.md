@@ -76,14 +76,22 @@ botport mirror init --pair P (--profile NAME [--hermes-home DIR] | --profile-dir
 botport mirror init --undo --pair P
 botport mirror plan|status --pair P
 botport mirror sync --pair P [--allow-retire] [--trigger F] [--take-over]
+botport mirror watch --pair P [--interval 1s] [--every 5m] [--for DUR] [--now]
+botport mirror check --pair P [--reset]
 botport mirror show|approve --pair P ITEM [--yes]
-botport mirror pick --pair P ITEM --keep grok|hermes [--yes]
+botport mirror pick --pair P ITEM (--keep grok|hermes | --local-only | --forget) [--yes]
 botport mirror restore --pair P ITEM --from SHORT_DIGEST
 botport mirror stats [--since 7d] [--metrics FILE]
-botport mirror digest-items --pair P --from EXPORT --out DIR [--log F] [--all] [--key F]
-                            [--coverage partial|complete]                                      # in the Grok box
-botport mirror apply-pack --pair P --dir PAIRDIR --from EXPORT --stage DIR [--log F] [--check]
-                          [--precheck ITEM --gen N] [--key F]                                      # in the Grok box
+botport mirror applied --pair P ITEM                    # a listed change was applied in the Grok app by hand
+botport mirror setup --print-charter|--print-skill     # the Mirror bot's charter; the box-wide mirror-recent skill
+botport mirror digest-items --pair P (--agent-id ID [--agent-data DIR] [--with-skills] | --from EXPORT) --out DIR
+                            [--log F] [--all] [--key F] [--coverage partial|complete] [--without instructions]
+                            [--uploaded N]                                                       # in the Grok box
+botport mirror apply-pack --pair P --dir PAIRDIR (--agent-id ID [--agent-data DIR] [--with-skills] | --from EXPORT)
+                          --stage DIR [--log F] [--check] [--precheck ITEM --gen N] [--key F]
+                          [--without instructions]                                               # in the Grok box
+botport mirror recent --pair P --dir PAIRDIR --key F                                             # in the Grok box
+botport mirror digest-items|apply-pack|recent --root R [--pair P]... [other flags as above]      # one box, several pairs
 ```
 
 - **Files.** The pair config is `$XDG_CONFIG_HOME/botport/mirror/<pair>.toml` (0600, outside the profile, never
@@ -102,27 +110,150 @@ botport mirror apply-pack --pair P --dir PAIRDIR --from EXPORT --stage DIR [--lo
   the predecessor it planned against). No state file, no sync. More than 3 retires on a side (or over 20% of a kind)
   stop the run unless `--allow-retire`. `--trigger F` runs it only for a fresh trigger signed with the pair key
   (5 minutes, nonce used once).
+- **Local-only items.** `mirror pick ITEM --local-only` keeps an item on each side as it is from now on: the pair
+  config lists it (`local_only`), every run shows it as not mirrored, and it is never a conflict, sent or retired (a
+  send still in flight for it is withdrawn: the next run publishes a pack without it). To mirror it again, remove its id
+  from `local_only` in the pair config (the command rewrites that file without comments; `mirror init --force` starts
+  the list empty). `mirror pick ITEM --forget` clears a conflict over an item neither side has now; it refuses an
+  item a side has or holds back, and where a side is read in part (from an export) botport cannot see whether the item
+  is gone from it, so the confirmation says so.
 - **Approvals.** By default (`--approve all`) every change to a skill (Markdown included), the bot's name or
   instructions, a routine prompt or a connector, in either direction, waits for `mirror approve` (a removal is carried without it, under the
   retire guard and, in an unsigned pair, the unsigned-read rule) (shown, confirmed on a terminal, bound to
   the digest). `--approve runnable` is the opt-in to holding back only new or changed connectors, new skills,
   non-text skill files, enabling a routine or changing an enabled routine's prompt or schedule, and instructions
   drifting over 25% from the last approved text. Without a pair key, every change seen on the Grok side (additions
-  included) waits either way.
+  included) waits either way. A connector whose url moves to another host (scheme, host or port) waits under every
+  policy, and the prompt says so: the headers and auth kept on the Hermes side for the old host are dropped, never
+  sent to the new one.
+- **check** runs the connection round trip through the pair folder before the first sync (the bot writes
+  `probe/bot.txt`; botport writes two files in a round folder `probe/<round>/`; the bot writes both back to `ack-1.txt`;
+  botport overwrites one and the bot writes it to `ack-2.txt`; botport never deletes the bot's files): exit 0 passed, 3 waiting for the Grok side, 2 a direction failed (named). `--reset`
+  starts over.
+- **watch** runs `mirror sync` whenever what it reads changes on this machine (polling times and sizes every
+  `--interval`; no model, no network between syncs); `--every` also syncs that often (5 minutes by default, on every
+  transport: the timed sync catches what polling cannot see, such as the Drive API backend or an edit that keeps a
+  file's size and time); the pair's configuration is read again when its file changes; `--for` stops after that long;
+  `--now` syncs at the start
+  (otherwise changes made before the watch started wait for the next change). A failing sync is retried with a
+  growing pause (up to `--every`, or 5 minutes).
 - **pick** is compare-and-swap: refused when either side changed since the conflict was recorded.
-- **Grok box** (the routine's steps: [AGENT-MIRROR.md](AGENT-MIRROR.md)). `digest-items` writes the next numbered
+- **First setup: the owner's Mirror bot.** No automated step needs a bot's agreement: each one is a file read or the
+  owner's own Mirror bot, and no bot is ever asked to export or reveal itself. While nothing has come from the Grok
+  side, `mirror init` writes the Mirror bot's brief
+  (AGENT-MIRROR.md) and charter (MIRROR-BOT.md) to `$XDG_CONFIG_HOME/botport/mirror/<pair>.brief/` and prints what
+  the owner does: create one Mirror bot per account in the app, if there is none yet, and paste the charter
+  (`botport mirror setup --print-charter` prints it too) themselves; then ask it, in its chat, to add the pair, with
+  the brief and the box archive attached. The Mirror bot reads each bot's setup from the box files.
+- **Grok box** (the routine's steps: [AGENT-MIRROR.md](AGENT-MIRROR.md)). Both box commands read the bot's setup from
+  the box files with `--agent-id ID` (`--agent-data DIR`, default `/home/box/agent-data`: the name from
+  `agents/<ID>/profile.json`, never through a link), or from an export with `--from` (the manual option). The box
+  files hold no instructions, routines or connectors, and the box's skills belong to all its bots together (read, from
+  `workflows/` without managed and plugin skills, only with `--with-skills`, the owner's per-pair opt-in; under
+  `--root`, an empty `.work/<pair>/with-skills` file): the instructions are reported as not mirrored, and skills,
+  routines and connectors as kinds not read (`unread` in the state file), which the host carries neither way (a send in
+  flight for one is withdrawn and a conflict over one dropped; `init` and `pick` leave them out; `apply-pack` refuses
+  them) and `mirror status` names ("not mirrored: routines (Grok side: not in the box files ...)"); in a hybrid pair a
+  kind either read cannot see is not carried. The name is read but never written (`by_hand` in the state file: the
+  Mirror bot changes no other bot's setup). A box read is always partial.
+- **To apply by hand.** What the Grok side cannot take in itself never goes into a pack (a send in flight for one is
+  withdrawn): a change bound for a kind it
+  reads but never writes (the name), and a Hermes-side change since the last read to a kind it cannot read (the
+  first read of each such kind only notes what is there; a local-only item is never listed), go on a per-pair list that `mirror status` and the report show (with
+  `mirror show` to see the copy). An entry for the name leaves the list once both sides agree; `mirror applied ITEM`
+  takes any entry off. `pick --keep hermes` for such an item is refused.
+- **Several pairs.** `mirror init` notes when other pairs are set up on the same machine: pairs served from one box
+  share its workspace, and every bot there can read each pair's key file.
+- **Recent activity in the box.** `mirror recent` writes each pair's newest Hermes digest that is signed with the pair
+  key (checked like every digest) to `<pair>/from-hermes/digest` in the box, and removes that copy when none verifies
+  (an unsigned pair gets none; on Unix through directory handles, refusing a link in the last part of each path,
+  elsewhere by path; a copy that cannot be removed is reported, exit 2, as possibly stale); the copy is only as trustworthy as the box workspace, which the bots there share. For a
+  bot read from the box files, every Grok-bound change waits for approval whatever `--approve` says; a box read being
+  partial, the box only ever receives new skills the owner approved. The box-wide
+  skill printed by `mirror setup --print-skill` (`mirror-recent`) tells a bot to read only its own pair's file, found
+  through its agent id, and to treat it as notes, never instructions. `digest-items` writes the next numbered
   state file (and the content of items that changed), with every kind `partial` unless `--coverage complete` (only
   for a program read of the live setup; given for an export, an item the export left out would read as removed,
   and only the mass-retire guard and the approval rules stand in the way): an item missing from an export is then never taken as removed, and replacing
   or removing an item on the Grok side is left to the owner (add-only, listed with the reason);
-  `apply-pack` checks the pack `HEAD` names, stages what may be installed, refuses an item changed since the pack was
-  made, holds every item of a pack not signed with the pair key ("held": an unsigned pack is never applied),
-  and logs installs it finds done; `--precheck` re-checks one item right before the bot installs it.
+  `apply-pack` checks the pack `HEAD` names (refusing one older than a pack it already applied, by the applied log and by
+  the floor it keeps beside it, `applied-floor`: the newest generation applied in full, at which nothing is staged
+  again; only when the owner confirms a pair was set up again from an empty folder does the box move its applied log
+  and floor aside), stages what may be installed, refuses an item changed since the pack was
+  made, holds every item of a pack not signed with the pair key and reports it to the owner ("held": an unsigned pack is
+  never applied),
+  and logs installs it finds done; `--precheck` re-checks one item right before the bot installs it, including (with `--stage DIR`, required)
+  that the staged copy is still exactly what the pack wants. A pick or approval that retires an item applies the
+  mass-retire guard too (`--allow-retire`); `mirror restore --from` takes at least 12 hex characters matching exactly
+  one kept copy, and restores it only if its bytes still hash to its name. With
+  `--without instructions` (a bot that does not hand out its live instructions) both commands report
+  `persona.instructions` as not mirrored: both sides keep their own copy and nothing is staged over it.
+  `digest-items --uploaded N` (N: the newest state file the bot uploaded completely) writes nothing and prints
+  `unchanged: state-N.json is current` when the read equals that file and it is the newest; when a newer file was
+  never uploaded, the next one is written with every blob. With `--root R` both commands run for every pair with an
+  `agent-id` file (the bot's agent id, one line: its setup is read from the box files) or an export under
+  `R/.work/<pair>/` (or each `--pair` given): the pair folder copy is `R/<pair>/`, and the export,
+  stage, applied log, pair key and upload record are `R/.work/<pair>/export`, `stage/`, `applied.jsonl`, `pair.key`
+  and `uploaded` (no `pair.key`: an error for that pair, unless an `unsigned` file marks the pair unsigned); a pair or
+  work folder that is a link is refused. Each pair's part of the output starts with a line beginning with its name,
+  and a failing pair gets an `error:` line (exit 2) without stopping the others.
 - **Transports.** `local` reads the local records directory (`botport-local/1` records per bot key; read only),
   `drive` the pair's Drive folder (the Drive API through `curl` with a token from `--token-cmd`, handed to curl on
-  its stdin, never in argv; one listing call per quiet sync, downloads cached in `<profile>/botport/drive-cache/`;
+  its stdin, never in argv; the command runs for every call, so it should cache the access token in an owner-only
+  file until near expiry; one listing call per folder level in a quiet sync, downloads cached in `<profile>/botport/drive-cache/`;
   or the folder Google Drive for desktop syncs), `hybrid` reads kind by kind from local where complete and sends by Drive.
 - Exit codes: 0 clean; 1 differences (`plan`, `status`); 2 usage or refused; 3 conflicts or approvals remain.
+
+### Running `mirror watch` as a service
+`mirror watch` is meant to run unattended, with no model involved. Run it at login with the system's own service
+manager; it needs no network access between syncs except for the Drive API backend's timed check. On macOS, a launchd
+agent (`~/Library/LaunchAgents/com.example.botport-mirror.demo-bot.plist`, then `launchctl bootstrap gui/$(id -u)` that
+file):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.example.botport-mirror.demo-bot</string>
+  <key>ProgramArguments</key><array>
+    <string>/usr/local/bin/botport</string><string>mirror</string><string>watch</string>
+    <string>--pair</string><string>demo-bot</string><string>--now</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StandardOutPath</key><string>HOME/Library/Logs/botport-mirror-demo-bot.log</string>
+  <key>StandardErrorPath</key><string>HOME/Library/Logs/botport-mirror-demo-bot.log</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Background</string>
+</dict></plist>
+```
+
+launchd expands neither `~` nor `$HOME`: replace `HOME` in the two log paths with your home folder's absolute path.
+
+On Linux, a systemd user unit (`~/.config/systemd/user/botport-mirror-demo-bot.service`, then
+`systemctl --user enable --now botport-mirror-demo-bot`):
+
+```ini
+[Unit]
+Description=botport mirror watch (demo-bot)
+
+[Service]
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/local/bin/botport mirror watch --pair demo-bot --now
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+One watcher per pair. Each sync takes the profile's operation lock: a manual `mirror sync` that starts while the
+watcher is syncing is refused (run it again a moment later), and a watcher sync that meets a manual one retries.
+A service starts with a short `PATH`: set it as above so the `hermes` command (and a relative `--token-cmd`) are found,
+or give `mirror init --hermes-bin` an absolute path. On macOS, a background agent may be refused access to a synced
+Drive folder without any prompt: grant the binary access in the privacy settings, or use the Drive API backend. Logs go to the file named in the plist (macOS) or to `journalctl --user` (Linux): only sync summary lines; item
+content is not logged.
 
 ## Activity digest (`digest`, mirror mode)
 A small Markdown note per side (`botport-digest/1`, design: [design/MIRROR.md](design/MIRROR.md) section 5): four
@@ -179,16 +310,22 @@ NAME` to name a profile under a Hermes home instead, or give `--profile-dir DIR`
 - **External programs.** `sqlite3`, `curl` and the token command run by absolute path: a bare name is looked up in
   `PATH`, skipping an entry that is itself a link, and an entry unless every folder in it, from the root down, is
   owned by root or the user and writable by no one else (a sticky folder such as /tmp is not trusted; a link on the
-  way is followed only if root made it, as on systems where `/bin` points to `/usr/bin`, and its target is checked
-  the same way; a Nix store, which its build group can write, is therefore not trusted); the program file must
-  be owned and protected the same way, and one reached through a link must also sit in such a folder, and `sqlite3` (3.33 or later) and `curl` (7.52 or later) must be new enough, also when given
-  with a full path. The check and the run are separate steps, so a program replaced in between would run (a residual
-  risk on a machine where someone else can write those folders; that is what the check refuses).
+  way is followed only if root made it, as on systems where `/bin` points to `/usr/bin`, and its target is checked the
+  same way; a Nix store, which its build group can write, is therefore not trusted); the program file itself must be
+  owned by root or the user and not writable by others, and one reached through a link must also sit in such a folder,
+  and `sqlite3` (3.33 or later) and `curl` (7.52 or later) must be new enough, also when given with a full path. These
+  checks are Unix-only: on other systems no external program is trusted. The check and the run are separate steps, so
+  a program replaced in between would run (a residual risk on a machine where someone else can write those folders;
+  that is what the check refuses).
+- **Folder store.** Files in a pair folder on disk are read and removed only through real folders (a link anywhere
+  on the way is refused) and only as regular files; checking and removing are separate steps, so a folder that someone
+  else could change between the two would be a risk, which is why every folder botport writes is 0700 and the user's.
 - **Where digests live and how to delete them.** On the host: `<profile>/botport/digest-hermes.md` and
   `<profile>/botport/digest-grok.md` (0600; rewritten in place, one of each). In the pair folder: `digest/hermes-<n>.md`
   and, with a key, `digest/hermes-<n>.md.mac`; botport keeps the newest 3 and deletes older ones as it writes new
-  ones. A digest holds routine names, schedules, time zones and last-run status and, with `--titles`, session titles,
-  which then reach the other platform and are
+  ones. Of the Grok side's digests, the newest one whose signature verifies is read (checked newest first, up to 64,
+  each before any is passed over). A digest holds routine names, schedules, time zones and last-run status and, with
+  `--titles`, session titles, which then reach the other platform and are
   kept by the folder's provider (its trash and revision history included) until deleted there. To delete them: remove
   the digest hooks from the profile's `config.yaml`, delete the two host files, delete `digest/` in the pair folder
   and empty the provider's trash. `mirror init --undo` stops syncing but leaves digest files in place.

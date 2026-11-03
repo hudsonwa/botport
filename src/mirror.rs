@@ -11,13 +11,13 @@ use crate::adapters::mirror::api::{ApiConfig, ApiStore};
 use crate::adapters::mirror::drive::DriveTransport;
 use crate::adapters::mirror::local::{LocalTransport, StateDirLayout};
 use crate::adapters::mirror::pack::{random_id, Blobs, Head, Pack, PackAction, PackItem};
-use crate::adapters::mirror::store::FolderStore;
+use crate::adapters::mirror::store::{FolderStore, Store};
 use crate::adapters::mirror::{IoStats, PeerRead, Transport};
 use crate::core::item::{canonical_text, Content};
 use crate::core::metrics;
 use crate::core::mirror::{
     self as engine, Action, Approval, Coverage, Decision, ItemId, Kind, Outcome, Side, SideRead,
-    State, View, ABSENT,
+    State, ToApply, View, ABSENT,
 };
 use crate::core::util::{
     err, now_secs, sha256_hex, utc_iso, write_atomic, write_private, Args, OpLock, Res,
@@ -98,6 +98,10 @@ pub struct Config {
     /// Drive API backend: the command that prints an access token (argv, no shell).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub token_cmd: Vec<String>,
+    /// Item ids kept on each side as they are and never mirrored (`mirror pick ITEM --local-only`): shown as not
+    /// mirrored, never a conflict, never sent or retired.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub local_only: Vec<String>,
     /// Kept so an older config still reads; never used: the Drive API base is fixed to Google's endpoint.
     #[serde(default, skip_serializing)]
     pub drive_api_base: Option<String>,
@@ -276,10 +280,24 @@ impl Drive {
         }
     }
 
+    fn probe_store(&mut self) -> &mut dyn Store {
+        match self {
+            Drive::Folder(t) => t.probe_store(),
+            Drive::Api(t) => t.probe_store(),
+        }
+    }
+
     fn head(&mut self) -> Res<Option<Head>> {
         match self {
             Drive::Folder(t) => t.head(),
             Drive::Api(t) => t.head(),
+        }
+    }
+
+    fn head_pack(&mut self) -> Res<Option<Pack>> {
+        match self {
+            Drive::Folder(t) => t.head_pack(),
+            Drive::Api(t) => t.head_pack(),
         }
     }
 
@@ -346,7 +364,19 @@ impl Link {
     /// Read the remote side: kind by kind from the local transport where its read is complete, else from Drive.
     fn read(&mut self) -> Res<Option<PeerRead>> {
         let l = match &mut self.local {
-            Some(t) => t.read_peer()?,
+            Some(t) => match t.read_peer() {
+                // local records in another neutral form: whatever wrote them needs updating, and Drive carries the read
+                Err(e)
+                    if self.drive.is_some()
+                        && e.contains(crate::core::package::NEUTRAL_FORM_MISMATCH) =>
+                {
+                    eprintln!(
+                        "botport: warning: local records: {e}; reading the Grok side from Drive"
+                    );
+                    None
+                }
+                r => r?,
+            },
             None => None,
         };
         let d = match &mut self.drive {
@@ -390,6 +420,12 @@ impl Link {
                 out.side.unsupported.insert(id.clone(), why.clone());
             }
         }
+        // a kind either read cannot see is not carried: the box installs what Drive brings, so what it cannot read it
+        // cannot install either
+        out.unread = base.unread.clone();
+        out.unread.extend(other.unread.clone());
+        out.by_hand = base.by_hand.clone();
+        out.by_hand.extend(other.by_hand.clone());
         // the applied log and generation come from the Drive state file (the Grok routine writes it)
         out.applied = other.applied.clone();
         out.applied_gen = other.applied_gen.or(base.applied_gen);
@@ -425,15 +461,6 @@ impl Link {
             s.add(t.io());
         }
         s
-    }
-
-    /// Figures of the Drive transport alone (what the Grok routine reads and writes for botport).
-    fn drive_io(&self) -> IoStats {
-        match &self.drive {
-            Some(Drive::Folder(t)) => t.io(),
-            Some(Drive::Api(t)) => t.io(),
-            None => IoStats::default(),
-        }
     }
 
     fn path(&self) -> String {
@@ -609,6 +636,8 @@ pub fn run(a: &Args) -> Res<Out> {
         Some("init") => init(a),
         Some("plan") => plan_cmd(a),
         Some("sync") => sync_cmd(a),
+        Some("watch") => watch(a),
+        Some("check") => check(a),
         Some("status") => status(a),
         Some("show") => show(a),
         Some("pick") => pick(a),
@@ -617,6 +646,9 @@ pub fn run(a: &Args) -> Res<Out> {
         Some("stats") => stats(a),
         Some("digest-items") => digest_items(a),
         Some("apply-pack") => apply_pack(a),
+        Some("setup") => setup(a),
+        Some("applied") => applied(a),
+        Some("recent") => recent(a),
         Some(s) => err(format!("unknown mirror command {s:?} (try --help)")),
         None => err("mirror needs a command (try --help)"),
     }
@@ -706,6 +738,7 @@ fn init(a: &Args) -> Res<Out> {
             .get("token-cmd")
             .map(|s| s.split_whitespace().map(String::from).collect())
             .unwrap_or_default(),
+        local_only: vec![],
         drive_api_base: None,
     };
     let mut cfg = cfg;
@@ -746,6 +779,14 @@ fn init(a: &Args) -> Res<Out> {
                     k.display()
                 ));
             }
+            if cfg.transport != "local" {
+                match first_setup(a, &pair) {
+                    Ok(m) => why.push_str(&m),
+                    Err(e) => {
+                        why.push_str(&format!("\n(the Grok-side briefs were not written: {e})"))
+                    }
+                }
+            }
             return err(why);
         }
     };
@@ -757,7 +798,14 @@ fn init(a: &Args) -> Res<Out> {
     let copy_one_sided = a.has("copy-one-sided");
     // equal items get bases; every other item, one-sided ones too, goes to the pick-one list (or, with
     // --copy-one-sided, a one-sided item stays untracked so the first sync copies it, under the approval rules)
+    st.remote_unread = remote.unread.clone();
     for d in engine::plan(&st, &local.read, &remote.side, &[]) {
+        // an item a side cannot offer is not mirrored at all: nothing to pick, and every run reports it; nor is a kind
+        // the Grok side cannot read
+        if matches!(d.action, Action::Unsupported(_)) || remote.unread.contains_key(&d.item.kind())
+        {
+            continue;
+        }
         match (&d.local, &d.remote) {
             (Some(l), Some(r)) if l.neutral == r.neutral => {
                 if let Ok(c) = link.fetch(&d.item, r) {
@@ -802,7 +850,32 @@ fn init(a: &Args) -> Res<Out> {
         },
         "add the digest hooks to the profile's config.yaml: see botport-manual.md".into(),
     ];
+    let mut lines = lines;
+    if cfg.drive_dir.is_some() || cfg.drive_folder_id.is_some() {
+        lines.push(format!(
+            "before the first sync, check the connection both ways: botport mirror check --pair {}",
+            shell_word(&pair)
+        ));
+    }
     write_hook_manual(&cfg)?;
+    // pairs served from one box share its workspace, where each pair's key file sits
+    let others = cp
+        .parent()
+        .and_then(|d| fs::read_dir(d).ok())
+        .map(|rd| {
+            rd.flatten()
+                .filter(|e| {
+                    let n = e.file_name().to_string_lossy().to_string();
+                    n.ends_with(".toml") && n != format!("{pair}.toml")
+                })
+                .count()
+        })
+        .unwrap_or(0);
+    if others > 0 {
+        lines.push(format!(
+            "note: {others} other pair(s) are set up here; pairs served from one box share its workspace, and every bot there can read each pair's key file: give each pair its own workspace where the platform allows (docs/REFERENCE.md)"
+        ));
+    }
     Ok(Out {
         code: 0,
         lines,
@@ -884,7 +957,7 @@ fn nothing_yet(c: &Config) -> String {
         let hint = if nested.is_dir() {
             format!(
                 " (give --drive-dir {}: the pair's own folder)",
-                d.join(&c.pair).display()
+                shell_word(&d.join(&c.pair).to_string_lossy())
             )
         } else {
             String::new()
@@ -897,8 +970,339 @@ fn nothing_yet(c: &Config) -> String {
     "nothing from the Grok side yet: run digest-items there first (see docs)".into()
 }
 
+/// The Mirror bot's charter, as `mirror setup --print-charter` prints it for the owner to paste.
+const CHARTER: &str = include_str!("../docs/MIRROR-BOT.md");
+
+/// The Mirror bot's brief, as `mirror init` hands it to the owner.
+const BRIEFS: [(&str, &str); 2] = [
+    ("AGENT-MIRROR.md", include_str!("../docs/AGENT-MIRROR.md")),
+    ("MIRROR-BOT.md", CHARTER),
+];
+
+/// No automated step of onboarding needs a bot's agreement (docs/design/MIRROR.md 6.6): the owner creates one Mirror bot per
+/// account and pastes its charter themselves, and the Mirror bot reads each bot's setup from the box files. Writes the
+/// brief and the charter next to the pair config and returns what the owner does next.
+fn first_setup(a: &Args, pair: &str) -> Res<String> {
+    let dir = config_path(a, pair).with_extension("brief");
+    for (name, text) in BRIEFS {
+        crate::core::util::write_private_fixed(&dir, name, text)?;
+    }
+    Ok(format!(
+        "\nfirst setup: if your account has no Mirror bot yet, create one in the app yourself and paste {} (also printed by botport mirror setup --print-charter) as its instructions. Then send the Mirror bot this message yourself, in its chat, attaching {} and the box archive with SHA256SUMS from the botport release:\n  Please add the pair {pair} for my bot <its name>: follow the Setup section of the attached AGENT-MIRROR.md. This request is mine.",
+        dir.join(BRIEFS[1].0).display(),
+        dir.join(BRIEFS[0].0).display(),
+    ))
+}
+
+/// The box-wide skill that lets any bot read its own pair's recent Hermes-side activity (owner-visible text).
+const RECENT_SKILL: &str = include_str!("../docs/skills/mirror-recent/SKILL.md");
+
+/// `mirror setup --print-charter`: the Mirror bot's charter, for the owner to paste into the bot they create.
+/// `mirror setup --print-skill`: the box-wide `mirror-recent` skill.
+fn setup(a: &Args) -> Res<Out> {
+    let (key, text) = if a.has("print-charter") {
+        ("charter", CHARTER)
+    } else if a.has("print-skill") {
+        ("skill", RECENT_SKILL)
+    } else {
+        return err("mirror setup takes --print-charter (the text the owner pastes into their Mirror bot) or --print-skill (the box-wide mirror-recent skill)");
+    };
+    Ok(Out {
+        code: 0,
+        lines: text.lines().map(String::from).collect(),
+        json: json!({ key: text }),
+    })
+}
+
+/// `mirror applied ITEM`: the owner applied a listed change in the Grok app by hand; it leaves the list.
+fn applied(a: &Args) -> Res<Out> {
+    let c = load_config(a)?;
+    let id = item_arg(a)?;
+    let _lock = OpLock::try_acquire(&c.profile_dir)?;
+    let mut st = load_state(&c)?;
+    if st.to_apply.remove(&id).is_none() {
+        return err(format!(
+            "{id} is not on the list to apply (botport mirror status)"
+        ));
+    }
+    save_state(&c, &st)?;
+    Ok(Out {
+        code: 0,
+        lines: vec![format!("{id}: marked as applied in the Grok app")],
+        json: json!({"item": id.as_str(), "applied": true}),
+    })
+}
+
+/// `mirror recent (--root R [--pair P]... | --pair P --dir PAIRDIR --key F)` (in the Grok box): for each pair, the
+/// newest Hermes activity digest in the local copy of the pair folder (`digest/hermes-<n>.md`) whose `.mac` verifies
+/// with the pair key, checked like every digest (format, size, lines), written to `from-hermes/digest` there for the
+/// `mirror-recent` skill. An unsigned pair gets none: an unsigned digest is never put where a bot reads it.
+fn recent(a: &Args) -> Res<Out> {
+    // under --root each pair's folders are checked on its own: a bad pair gets its error line, the others go on
+    let pairs: Vec<(String, PathBuf, Option<PathBuf>, Option<String>)> = match a.path("root") {
+        Some(root) => root_pairs(a, &root)?
+            .into_iter()
+            .map(|bp| {
+                let bad = real_folders(&bp).err();
+                (bp.pair, bp.dir, bp.key, bad)
+            })
+            .collect(),
+        None => vec![(
+            a.get("pair").ok_or("--pair NAME is required")?.to_string(),
+            a.path("dir")
+                .ok_or("--dir PAIRDIR (a copy of the pair's Drive folder) is required")?,
+            a.path("key"),
+            None,
+        )],
+    };
+    let (mut lines, mut out, mut code) = (vec![], vec![], 0);
+    for (pair, dir, key, bad) in pairs {
+        if let Some(e) = bad {
+            code = 2;
+            lines.push(format!("{pair}: error: {e}"));
+            out.push(json!({"pair": pair, "error": e}));
+            continue;
+        }
+        // an unsigned pair: no digest is ever put where a bot reads it (nothing proves who wrote it)
+        if !key.as_deref().is_some_and(Path::exists) {
+            lines.push(format!(
+                "{pair}: unsigned pair (no pair key): no digest is put where a bot reads it"
+            ));
+            if let Err(e) = drop_recent(&dir) {
+                code = 2;
+                lines.push(format!("{pair}: error: {e}"));
+                out.push(json!({"pair": pair, "digest": null, "unsigned": true, "error": e}));
+                continue;
+            }
+            out.push(json!({"pair": pair, "digest": null, "unsigned": true}));
+            continue;
+        }
+        match recent_one(&pair, &dir, key.as_deref()) {
+            Ok(Some(n)) => {
+                lines.push(format!("{pair}: from-hermes/digest from hermes-{n}.md"));
+                out.push(json!({"pair": pair, "digest": n}));
+            }
+            Ok(None) => {
+                lines.push(format!("{pair}: no signed Hermes digest yet"));
+                out.push(json!({"pair": pair, "digest": null}));
+            }
+            Err(e) => {
+                code = 2;
+                lines.push(format!("{pair}: error: {e}"));
+                out.push(json!({"pair": pair, "error": e}));
+            }
+        }
+    }
+    Ok(Out {
+        code,
+        lines,
+        json: json!({ "pairs": out }),
+    })
+}
+
+/// Remove the pair's `from-hermes/digest` copy, if it is a regular file in a real folder (never through a link).
+/// Through directory handles, each opened refusing a link in the last part of its path (the pair folder, then
+/// `from-hermes`, then the copy itself), so a folder swapped for a link in between cannot redirect the removal. `Err`: a
+/// copy is there and could not be removed (it may be stale).
+#[cfg(unix)]
+fn drop_recent(dir: &Path) -> Res<()> {
+    use rustix::fs::{openat, statat, unlinkat, AtFlags, FileType, Mode, OFlags, CWD};
+    use rustix::io::Errno;
+    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let failed = |e: Errno| {
+        format!("the earlier from-hermes/digest could not be removed ({e}); it may be stale")
+    };
+    let pair = match openat(CWD, dir, flags, Mode::empty()) {
+        Ok(fd) => fd,
+        Err(Errno::NOENT) => return Ok(()),
+        Err(e) => return err(failed(e)),
+    };
+    let fh = match openat(&pair, "from-hermes", flags, Mode::empty()) {
+        Ok(fd) => fd,
+        Err(Errno::NOENT) => return Ok(()),
+        Err(e) => return err(failed(e)),
+    };
+    match statat(&fh, "digest", AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(st) if FileType::from_raw_mode(st.st_mode) == FileType::RegularFile => {}
+        Ok(_) => return err(
+            "from-hermes/digest is not a regular file: not removed; the copy there may be stale",
+        ),
+        Err(Errno::NOENT) => return Ok(()),
+        Err(e) => return err(failed(e)),
+    }
+    unlinkat(&fh, "digest", AtFlags::empty()).map_err(failed)
+}
+
+/// Elsewhere the removal is path-based: the folders are checked to be real (not links) before the file is removed by
+/// its path.
+#[cfg(not(unix))]
+fn drop_recent(dir: &Path) -> Res<()> {
+    let real = |d: &Path| fs::symlink_metadata(d).is_ok_and(|m| m.is_dir());
+    let p = dir.join("from-hermes").join("digest");
+    if !fs::symlink_metadata(&p).is_ok_and(|m| m.is_file()) {
+        return Ok(());
+    }
+    if !(real(dir) && real(&dir.join("from-hermes"))) {
+        return err(
+            "from-hermes is not a real folder: the copy there was not removed and may be stale",
+        );
+    }
+    fs::remove_file(&p).map_err(|e| {
+        format!("the earlier from-hermes/digest could not be removed ({e}); it may be stale")
+    })
+}
+
+fn recent_one(pair: &str, dir: &Path, key: Option<&Path>) -> Res<Option<u64>> {
+    let key = match key {
+        // a key that cannot be read: nothing verifies, so the copy written earlier goes too
+        Some(k) if k.exists() => match read_key_file(k) {
+            Ok(k) => k,
+            Err(e) => {
+                return match drop_recent(dir) {
+                    Ok(()) => err(e),
+                    Err(d) => err(format!("{e}; {d}")),
+                };
+            }
+        },
+        _ => return err("no pair key: an unsigned digest is never put where a bot reads it"),
+    };
+    // the summary is written only into real folders of this pair: a link is never followed
+    for f in [dir.to_path_buf(), dir.join("from-hermes")] {
+        if fs::symlink_metadata(&f).is_ok_and(|m| !m.is_dir()) {
+            return err(format!(
+                "{} is not a folder (a link is never followed)",
+                f.display()
+            ));
+        }
+    }
+    let d = dir.join("digest");
+    let mut ns: Vec<u64> = fs::read_dir(&d)
+        .map(|rd| {
+            rd.flatten()
+                .filter_map(|e| {
+                    let n = e.file_name().to_string_lossy().to_string();
+                    n.strip_prefix("hermes-")?.strip_suffix(".md")?.parse().ok()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    ns.sort_unstable();
+    // the newest one that is a regular file within the cap and signed with the pair key; with none, a copy written
+    // earlier is removed, so a bot never reads a summary that no longer verifies
+    for n in ns.into_iter().rev() {
+        let name = format!("hermes-{n}.md");
+        let p = d.join(&name);
+        if !fs::symlink_metadata(&p)
+            .is_ok_and(|m| m.is_file() && m.len() <= crate::core::digest::CAP as u64)
+        {
+            continue;
+        }
+        let text = fs::read(&p).map_err(|e| format!("{name}: {e}"))?;
+        let sig = fs::read(d.join(format!("{name}.mac"))).unwrap_or_default();
+        if !crate::core::auth::digest_mac_ok(&key, pair, &name, &text, &sig) {
+            continue;
+        }
+        let text = String::from_utf8(text).map_err(|_| format!("{name}: not UTF-8"))?;
+        let clean = crate::core::digest::sanitized(&text).map_err(|e| format!("{name}: {e}"))?;
+        write_private(&dir.join("from-hermes"), "digest", clean.as_bytes())?;
+        return Ok(Some(n));
+    }
+    drop_recent(dir)?;
+    Ok(None)
+}
+
+/// What the Grok side cannot take in itself goes on the owner's list to apply there by hand, never into a pack:
+/// - a kind it reads but never writes (`by_hand`, such as another bot's name read by the Mirror bot): a change bound
+///   there is listed and held; the entry goes once both sides agree again;
+/// - a kind it cannot read (`unread`): a local change since the item was last seen is listed (the first read with such
+///   kinds only notes what is there), and stays listed until `mirror applied ITEM`.
+fn to_apply(
+    st: &mut State,
+    plan: &mut [Decision],
+    local: &SideRead,
+    remote: &PeerRead,
+    local_only: &[String],
+) {
+    let now = utc_iso();
+    let list = |st: &mut State, id: &ItemId, n: String| {
+        // an item the owner keeps local-only is never listed
+        if local_only.iter().any(|i| i == id.as_str()) {
+            return;
+        }
+        if st.to_apply.get(id).is_none_or(|t| t.neutral != n) {
+            st.to_apply.insert(
+                id.clone(),
+                ToApply {
+                    neutral: n,
+                    since: now.clone(),
+                },
+            );
+        }
+    };
+    for d in plan.iter_mut() {
+        let Some(why) = remote.by_hand.get(&d.item.kind()) else {
+            continue;
+        };
+        match d.action {
+            Action::ToRemote | Action::RetireRemote => {
+                let n = d
+                    .local
+                    .as_ref()
+                    .map_or(ABSENT.to_string(), |v| v.neutral.clone());
+                list(st, &d.item, n);
+                d.action = Action::Unsupported(format!(
+                    "Grok side: {why} (listed to apply: botport mirror status)"
+                ));
+            }
+            Action::InSync => {
+                st.to_apply.remove(&d.item);
+            }
+            _ => {}
+        }
+    }
+    // a kind that became readable (or writable) again: its notes and list entries go, and the plan carries it
+    st.local_seen
+        .retain(|id, _| remote.unread.contains_key(&id.kind()));
+    st.local_seen_kinds
+        .retain(|k| remote.unread.contains_key(k));
+    st.to_apply.retain(|id, _| {
+        remote.unread.contains_key(&id.kind()) || remote.by_hand.contains_key(&id.kind())
+    });
+    for k in remote.unread.keys() {
+        // the first read of a kind only notes what is there
+        let first = !st.local_seen_kinds.contains(k);
+        if first {
+            st.local_seen_kinds.push(*k);
+        }
+        for (id, v) in local.items.iter().filter(|(id, _)| id.kind() == *k) {
+            if st.local_seen.get(id) != Some(&v.neutral) {
+                if !first {
+                    list(st, id, v.neutral.clone());
+                }
+                st.local_seen.insert(id.clone(), v.neutral.clone());
+            }
+        }
+    }
+    let gone: Vec<ItemId> = st
+        .local_seen
+        .keys()
+        .filter(|id| !local.items.contains_key(*id) && local.sees_all(id.kind()))
+        .cloned()
+        .collect();
+    for id in gone {
+        st.local_seen.remove(&id);
+        list(st, &id, ABSENT.to_string());
+    }
+}
+
+/// The highest state sequence accepted from the remote side, from Drive or, for a local-only pair, the local records
+/// (kept as the replay floor for the next run).
 fn remote_seq(link: &Link) -> Option<u64> {
-    link.drive.as_ref().and_then(Drive::floor)
+    // two numberings never share a floor: with Drive, only Drive's counts
+    match &link.drive {
+        Some(d) => d.floor(),
+        None => link.local.as_ref().and_then(LocalTransport::floor),
+    }
 }
 
 fn write_hook_manual(c: &Config) -> Res<()> {
@@ -938,7 +1342,11 @@ struct Planned {
 }
 
 fn planned(c: &Config, link: &mut Link) -> Res<Planned> {
-    let st = load_state(c)?;
+    let mut st = load_state(c)?;
+    // a local-only item is never sent: anything still in flight for it is withdrawn
+    for id in &c.local_only {
+        st.withdraw_item(id);
+    }
     let remote = link.read()?.ok_or("nothing from the Grok side yet")?;
     let local = hside(c, &st).read()?;
     // installs the box reports are taken in only from a read authenticated by the pair key
@@ -947,7 +1355,38 @@ fn planned(c: &Config, link: &mut Link) -> Res<Planned> {
     } else {
         &[]
     };
+    // a kind the Grok side cannot read at all is carried neither way (its items there are unknown, not absent), and a
+    // send still in flight for one is withdrawn
+    st.remote_unread = remote.unread.clone();
+    let unread_ids: Vec<String> = st
+        .items
+        .keys()
+        .filter(|k| {
+            remote.unread.contains_key(&k.kind())
+                || remote.by_hand.contains_key(&k.kind())
+                || remote.side.unsupported.get(*k).map(String::as_str) == Some(gmirror::NOT_IN_BOX)
+        })
+        .map(|k| k.as_str().to_string())
+        .collect();
+    for id in unread_ids {
+        st.withdraw_item(&id);
+    }
+    // a conflict over such an item (from before the pair read the box) has nothing to pick: it goes
+    st.conflicts
+        .retain(|k| !remote.unread.contains_key(&k.item.kind()));
     let mut plan = engine::plan(&st, &local.read, &remote.side, applied);
+    to_apply(&mut st, &mut plan, &local.read, &remote, &c.local_only);
+    for d in plan.iter_mut() {
+        if let Some(why) = remote.unread.get(&d.item.kind()) {
+            d.action = Action::Unsupported(format!("Grok side: {why}"));
+        }
+    }
+    // items the owner keeps on each side as they are: never mirrored, never a conflict
+    for d in plan.iter_mut() {
+        if c.local_only.iter().any(|i| i == d.item.as_str()) {
+            d.action = Action::Unsupported(LOCAL_ONLY.into());
+        }
+    }
     let signed = pair_key(c)?.is_some();
     for d in plan.iter_mut() {
         if let Some(why) = unsigned_package(signed, &d.item, &d.action) {
@@ -1031,8 +1470,15 @@ fn planned(c: &Config, link: &mut Link) -> Res<Planned> {
         if to_side == Side::Local && st.held_paused.contains_key(&d.item) {
             continue;
         }
+        // the Mirror bot installs for a bot read from the box files: every change bound there is the owner's call, so a
+        // pack for it carries only what the owner approved here, whatever the policy
+        let policy = if to_side == Side::Remote && !remote.by_hand.is_empty() {
+            "all"
+        } else {
+            c.approve.as_str()
+        };
         let why = needs_approval(
-            &c.approve,
+            policy,
             &d.item,
             to_side,
             from.as_ref(),
@@ -1103,6 +1549,9 @@ fn unsigned_package(signed: bool, id: &ItemId, a: &Action) -> Option<String> {
 /// Why an add to a Grok side read from its export waits for the owner.
 const ADD_TO_EXPORT_SIDE: &str =
     "new for the Grok side, whose export may have left out an item of this name: approve once you know it has none";
+
+/// Why an item on the pair's local-only list is not mirrored.
+const LOCAL_ONLY: &str = "local-only: kept on each side as it is (mirror pick --local-only)";
 
 /// Why a `persona.*` item is never sent as an add to a Grok side whose export lacks it: the bot always has one.
 fn persona_left_out(remote: &SideRead, id: &ItemId) -> Option<String> {
@@ -1234,6 +1683,7 @@ fn plan_cmd(a: &Args) -> Res<Out> {
 
 /// `mirror sync --pair P [--allow-retire]`
 fn sync_cmd(a: &Args) -> Res<Out> {
+    let mut routine_reads = 0u64;
     let t0 = Instant::now();
     let c = load_config(a)?;
     // one run at a time per profile, from the first read of the state to its last write
@@ -1334,18 +1784,63 @@ fn sync_cmd(a: &Args) -> Res<Out> {
         .values()
         .any(|e| !e.sent.is_empty() && (e.gen.unwrap_or(0) > head_gen || head_gen != st.gen));
     let mut sent_gen = None;
+    // a pack HEAD names that another release made (another neutral form) can never be applied: publish anew. Checked
+    // once per HEAD (its sha is remembered), so a quiet sync does not download the manifest every time.
+    let checked = c.profile_dir.join("botport/checked-head");
+    if let (Some(h), Some(d)) = (&head0, link.drive.as_mut()) {
+        let seen = fs::read_to_string(&checked).is_ok_and(|t| t.trim() == h.sha);
+        if sends.is_empty() && !unpublished && !st.republish && !seen {
+            match d.head_pack() {
+                Err(e) if e.contains(crate::core::package::NEUTRAL_FORM_MISMATCH) => {
+                    st.republish = true;
+                    // a send made under the old form (what it sends, or what it expects there) names a digest the
+                    // box can never match: plan the item afresh. A removal in flight (sent ABSENT, no local copy)
+                    // still matches and is kept.
+                    for dc in &plan {
+                        let now_local = dc.local.as_ref().map_or(ABSENT, |v| v.neutral.as_str());
+                        let now_remote = dc.remote.as_ref().map(|v| v.neutral.as_str());
+                        if let Some(e) = st.items.get_mut(&dc.item) {
+                            let stale = e.sent.last().is_some_and(|s| {
+                                s != now_local || e.neutral_remote.as_deref() != now_remote
+                            });
+                            if stale {
+                                e.sent.clear();
+                                e.gen = None;
+                                e.base_local = None;
+                            }
+                        }
+                    }
+                }
+                Ok(_) => {
+                    // only a hint: without it the manifest is read again next time
+                    let dir = c.profile_dir.join("botport");
+                    if let Err(e) = write_private(&dir, "checked-head", h.sha.as_bytes()) {
+                        eprintln!("botport: warning: {e}");
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+    }
     // a pick that kept the Grok copy withdrew an item from the pack in flight: publish one that supersedes it
     if !sends.is_empty() || unpublished || st.republish {
         if link.drive.is_none() {
             write_report(&c, &st, &plan)?;
             return err("there are changes for the Grok side, but the transport cannot send (use drive or hybrid)");
         }
-        let gen = st.gen.max(head0.as_ref().map_or(0, |h| h.gen)) + 1;
+        let gen = st
+            .gen
+            .max(head0.as_ref().map_or(0, |h| h.gen))
+            .checked_add(1)
+            .ok_or("the pack generation is at its limit: refused")?;
         for d in &sends {
             st.record(d, Outcome::Sent { gen }, &now);
             changed += 1;
         }
         let (pack, blobs) = build_pack(&c, &st, &local, gen, &now)?;
+        // what the Grok routine will read of it: the manifest and every blob it names
+        routine_reads += serde_json::to_vec(&pack).map_or(0, |b| b.len() as u64)
+            + blobs.iter().map(|(_, b)| b.len() as u64).sum::<u64>();
         st.gen = gen;
         // journal first: the state says what is being sent before HEAD moves
         save_state(&c, &st)?;
@@ -1363,7 +1858,6 @@ fn sync_cmd(a: &Args) -> Res<Out> {
     write_report(&c, &st, &plan)?;
     let in_flight = st.items.values().filter(|e| !e.sent.is_empty()).count() as u64;
     let io = link.io();
-    let dio = link.drive_io();
     let wall_ms = t0.elapsed().as_millis() as u64;
     let row = metrics::Row {
         ts: now.clone(),
@@ -1381,11 +1875,12 @@ fn sync_cmd(a: &Args) -> Res<Out> {
         net_ms: io.net_ms,
         local_ms: wall_ms.saturating_sub(io.net_ms),
         local_tokens: 0,
-        // what the Grok routine reads (written to Drive here) and wrote (read from Drive here), as an estimate
+        // what the Grok routine reads on its path because of this sync: HEAD (its cheap check) and, when a pack was
+        // published, the manifest and blobs; not this machine's own listing or downloads
         remote_payload_tokens_est: link
             .drive
             .is_some()
-            .then(|| metrics::payload_tokens(dio.read_bytes + dio.written_bytes)),
+            .then(|| metrics::payload_tokens(HEAD_LINE_BYTES + routine_reads)),
     };
     let mpath = a.path("metrics").unwrap_or_else(metrics::default_path);
     if let Err(e) = metrics::append(&mpath, &row) {
@@ -1438,6 +1933,410 @@ fn sync_cmd(a: &Args) -> Res<Out> {
                          "item": d.item.as_str(), "action": d.action.word(), "why": action_why(&d.action)})).collect::<Vec<_>>()}),
     })
 }
+
+/// `mirror watch --pair P [--interval 1s] [--every 5m] [--for DUR] [--now]`: run `mirror sync` whenever something it
+/// reads changes on this machine (design 6.5). It polls the times and sizes of the inputs (no model, no network
+/// between syncs): the Hermes profile's setup files, the local records and, for a folder transport, the
+/// pair folder's `HEAD` and Grok state files. `--every` also syncs that often when nothing changed (5 minutes by
+/// default on every transport: the Drive API backend cannot be watched locally, and a timed sync also catches an edit
+/// that keeps a file's size and time, or one in a file polling does not cover). The pair's configuration is read again
+/// when its file changes. `--for` stops after that long (for scripts and tests); `--now` syncs once at the start.
+fn watch(a: &Args) -> Res<Out> {
+    // flags that loosen or pin a single sync must not apply to every sync of a long watch
+    for f in ["allow-retire", "take-over", "trigger"] {
+        if a.has(f) || a.get(f).is_some() {
+            return err(format!(
+                "--{f} is for one `mirror sync`, not for `mirror watch`"
+            ));
+        }
+    }
+    let mut c = load_config(a)?;
+    let interval = parse_ms(a.get("interval").unwrap_or("1s"))?.max(100);
+    // a timed sync on every transport, as the fallback for what polling cannot see
+    let every = match a.get("every") {
+        Some(e) => parse_ms(e)?.max(10_000),
+        None => 300_000,
+    };
+    // the pair's configuration file, read again when it changes (a watch never syncs with an outdated one)
+    let cfg_file = config_path(a, &c.pair);
+    let mut cfg_seen = file_stamp(&cfg_file);
+    // a changed configuration that could not be read: retried every poll (its stamp is not taken as seen), said once
+    let mut cfg_failed = None;
+    let stop = a.get("for").map(parse_ms).transpose()?;
+    let quiet = a.has("json");
+    let t0 = Instant::now();
+    // `base`: the inputs as of the last successful sync's start; `prev`: as of the last poll
+    let mut base: Option<String> = None;
+    let mut prev: Option<String> = None;
+    let mut last_sync = Instant::now();
+    let (mut syncs, mut attention, mut failed, mut last_failed) = (0u64, 0u64, 0u64, false);
+    let mut first = a.has("now");
+    // polls a change has been pending without settling, and the pause after the last failure
+    let (mut unsettled, mut backoff) = (0u32, interval * 4);
+    loop {
+        let cfg_now = file_stamp(&cfg_file);
+        if cfg_now != cfg_seen {
+            match load_config(a) {
+                Ok(n) => {
+                    c = n;
+                    // what to poll may have changed: start again from the new inputs, with one sync
+                    base = None;
+                    prev = None;
+                    first = true;
+                    cfg_seen = cfg_now;
+                    cfg_failed = None;
+                }
+                Err(e) => {
+                    if cfg_failed != Some(cfg_now) {
+                        eprintln!(
+                            "botport: watch: the pair configuration changed but could not be read ({e}); still running on the previous configuration, and reading it again on every poll"
+                        );
+                        cfg_failed = Some(cfg_now);
+                    }
+                }
+            }
+        }
+        let sig = watch_signature(&c);
+        if base.is_none() {
+            base = Some(sig.clone());
+        }
+        let due = last_sync.elapsed().as_millis() as u64 >= every;
+        // a change counts once it has held for one poll (a burst of writes gives one sync, not several), or after ten
+        // polls of an input that keeps changing
+        let pending = base.as_ref() != Some(&sig);
+        unsettled = if pending { unsettled + 1 } else { 0 };
+        let changed = pending && (prev.as_ref() == Some(&sig) || unsettled >= 10);
+        if changed || due || first || last_failed {
+            first = false;
+            match sync_cmd(a) {
+                Ok(o) => {
+                    syncs += 1;
+                    if o.code != 0 {
+                        attention += 1;
+                    }
+                    if !quiet {
+                        if let Some(l) = o.lines.first() {
+                            println!("{l}");
+                        }
+                    }
+                    // the inputs as they were when this sync started: anything that changed since (its own writes
+                    // included) gives one more sync, which writes nothing when there is nothing left to do
+                    base = Some(sig.clone());
+                    last_failed = false;
+                    backoff = interval * 4;
+                    unsettled = 0;
+                }
+                Err(e) => {
+                    // a busy lock or an unreachable folder: the baseline stays, and it is tried again after a pause
+                    failed += 1;
+                    last_failed = true;
+                    eprintln!("botport: watch: {e}");
+                    std::thread::sleep(std::time::Duration::from_millis(backoff));
+                    backoff = (backoff * 2).min(every.max(interval * 4));
+                }
+            }
+            last_sync = Instant::now();
+        }
+        prev = Some(sig);
+        if stop.is_some_and(|s| t0.elapsed().as_millis() as u64 >= s) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(interval));
+    }
+    Ok(Out {
+        code: u8::from(last_failed),
+        lines: vec![format!(
+            "mirror watch {}: {syncs} syncs ({attention} left something to pick or approve), {failed} failed",
+            c.pair
+        )],
+        json: json!({"pair": c.pair, "syncs": syncs, "attention": attention, "failed": failed}),
+    })
+}
+
+/// `mirror check --pair P [--reset]`: the connection round trip through the pair folder, before the first sync
+/// (design 6.3). The Grok side has created the pair folder and written `probe/bot.txt`; botport starts a round in
+/// `probe/<round>/` with two files, `host-new.txt` and `host-old.txt`, each with a fresh token; the bot writes both
+/// contents to `probe/<round>/ack-1.txt`; botport overwrites `host-old.txt` with a second token and the bot writes
+/// it to `ack-2.txt`. Passing needs that second token, so a connection that hands back an old copy is caught. botport
+/// never deletes or overwrites a file the bot made (a narrowly scoped connection could not), and a round's answers are
+/// read only from that round's folder. Exit 0: passed; 3: waiting for the Grok side; 2: a direction failed.
+fn check(a: &Args) -> Res<Out> {
+    let c = load_config(a)?;
+    let mut link = Link::open(&c, None)?;
+    let drive = link
+        .drive
+        .as_mut()
+        .ok_or("mirror check is for a pair with a Drive folder (drive or hybrid)")?;
+    let store = drive.probe_store();
+    let tokens_file = config_path(a, &c.pair).with_extension("probe");
+    let save = |t: &str| -> Res<()> {
+        write_private(
+            tokens_file.parent().ok_or("config path has no directory")?,
+            &tokens_file.file_name().unwrap().to_string_lossy(),
+            t.as_bytes(),
+        )
+    };
+    if a.has("reset") {
+        fs::remove_file(&tokens_file).ok();
+    }
+    let out = |code: u8, line: &str, stage: &str| Out {
+        code,
+        lines: vec![line.to_string()],
+        json: json!({"pair": c.pair, "stage": stage}),
+    };
+    store.refresh();
+    // step 1: the Grok side's file, read by this machine
+    if probe_get(&mut *store, "probe/bot.txt")?.is_none() {
+        return Ok(out(
+            3,
+            "waiting: the Grok side has not written probe/bot.txt in the pair folder yet (see AGENT-MIRROR.md, Setup)",
+            "bot-file",
+        ));
+    }
+    let tokens: Vec<String> = fs::read_to_string(&tokens_file)
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(String::from)
+        .collect();
+    let host_write = |e: String| {
+        out(
+            2,
+            &format!("failed: this machine cannot write in the pair folder ({e}); check the folder's sharing and this machine's Drive access"),
+            "host-write",
+        )
+    };
+    let unread = |f: &str| {
+        out(
+            2,
+            &format!("failed: the Grok side could not read {f}, a file this machine created; give the Grok side a Drive connection that can read and create files in the pair folder, and let the bot create the folder"),
+            "bot-read-new",
+        )
+    };
+    match tokens.as_slice() {
+        // step 2: a new round with two new files from this machine
+        [] => {
+            let (round, new, old) = (random_id(), random_id(), random_id());
+            let wrote = store
+                .put(
+                    &format!("probe/{round}/host-new.txt"),
+                    format!("botport probe new {new}\n").as_bytes(),
+                )
+                .and_then(|_| {
+                    store.put(
+                        &format!("probe/{round}/host-old.txt"),
+                        format!("botport probe old {old}\n").as_bytes(),
+                    )
+                });
+            if let Err(e) = wrote {
+                return Ok(host_write(e));
+            }
+            save(&format!("{round} {new} {old}\n"))?;
+            Ok(out(
+                3,
+                &format!("probe files written: ask the Grok bot to read probe/{round}/host-new.txt and probe/{round}/host-old.txt and write both contents to probe/{round}/ack-1.txt, then run mirror check again"),
+                "host-files",
+            ))
+        }
+        // step 3: the first answer; then this machine overwrites host-old.txt with a second token
+        [round, new, old] => {
+            // an answer the bot's connection has created but not yet filled in is still waiting
+            let Some(ack) = probe_get(&mut *store, &format!("probe/{round}/ack-1.txt"))?
+                .filter(|b| !b.trim_ascii().is_empty())
+            else {
+                return Ok(out(
+                    3,
+                    &format!("waiting: the Grok side has not written probe/{round}/ack-1.txt yet"),
+                    "bot-ack",
+                ));
+            };
+            if !has(&ack, new) {
+                return Ok(unread("host-new.txt"));
+            }
+            if !has(&ack, old) {
+                return Ok(unread("host-old.txt"));
+            }
+            let second = random_id();
+            if let Err(e) = store.put(
+                &format!("probe/{round}/host-old.txt"),
+                format!("botport probe old {second}\n").as_bytes(),
+            ) {
+                return Ok(host_write(e));
+            }
+            save(&format!("{round} {new} {old} {second}\n"))?;
+            Ok(out(
+                3,
+                &format!("probe/{round}/host-old.txt overwritten: ask the Grok bot to read it again, fresh, and write its contents to probe/{round}/ack-2.txt, then run mirror check again"),
+                "host-overwrite",
+            ))
+        }
+        // step 4: the second answer must carry the overwritten file's new token
+        [round, _, old, second] => {
+            let Some(ack) = probe_get(&mut *store, &format!("probe/{round}/ack-2.txt"))?
+                .filter(|b| !b.trim_ascii().is_empty())
+            else {
+                return Ok(out(
+                    3,
+                    &format!("waiting: the Grok side has not written probe/{round}/ack-2.txt yet"),
+                    "bot-ack-2",
+                ));
+            };
+            if has(&ack, second) {
+                Ok(out(0, "passed: both directions work through the pair folder, overwritten files included", "passed"))
+            } else if has(&ack, old) {
+                Ok(out(
+                    2,
+                    "failed: the Grok side read an old copy of a file this machine overwrote; its connection may cache files: use one that reads them fresh",
+                    "bot-read-overwrite",
+                ))
+            } else {
+                Ok(unread("host-old.txt (overwritten)"))
+            }
+        }
+        _ => {
+            fs::remove_file(&tokens_file).ok();
+            err("the check's record was unreadable and has been cleared; run mirror check again")
+        }
+    }
+}
+
+/// The largest probe file botport reads from the pair folder: a token line is a few dozen bytes.
+const PROBE_MAX: u64 = 4096;
+
+/// A probe file from the pair folder; larger than [`PROBE_MAX`] is refused (by its listed size before it is read, and
+/// by what was read).
+fn probe_get(store: &mut dyn Store, path: &str) -> Res<Option<Vec<u8>>> {
+    let too_big = |n: u64| {
+        format!(
+            "{path} is {n} bytes, larger than a probe file can be ({PROBE_MAX}): refused (delete it in the pair folder and run mirror check again)"
+        )
+    };
+    if let Some((dir, name)) = path.rsplit_once('/') {
+        if let Ok(l) = store.list(dir) {
+            if let Some(e) = l.iter().find(|e| e.name == name && e.size > PROBE_MAX) {
+                return err(too_big(e.size));
+            }
+        }
+    }
+    // the listing can be stale: the read itself stops after PROBE_MAX + 1 bytes
+    let b = store.get_at_most(path, PROBE_MAX)?;
+    if b.as_ref().is_some_and(|b| b.len() as u64 > PROBE_MAX) {
+        return err(format!(
+            "{path} is larger than a probe file can be ({PROBE_MAX} bytes): refused (delete it in the pair folder and run mirror check again)"
+        ));
+    }
+    Ok(b)
+}
+
+/// Whether a probe answer holds a token, compared as bytes (a lossy reading never makes a match).
+fn has(ack: &[u8], token: &str) -> bool {
+    let t = token.as_bytes();
+    !t.is_empty() && ack.windows(t.len()).any(|w| w == t)
+}
+
+/// A file's modification time and size (`None` when it cannot be read), to see that it changed.
+fn file_stamp(p: &Path) -> Option<(std::time::SystemTime, u64)> {
+    let m = fs::symlink_metadata(p).ok()?;
+    Some((m.modified().ok()?, m.len()))
+}
+
+/// The times and sizes of what a sync reads on this machine, as one string (equal: nothing changed).
+fn watch_signature(c: &Config) -> String {
+    fn stamp(out: &mut String, p: &Path) {
+        if let Ok(m) = fs::symlink_metadata(p) {
+            let t = m
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_nanos());
+            out.push_str(&format!("{}|{t}|{}\n", p.display(), m.len()));
+        }
+    }
+    fn tree(out: &mut String, d: &Path, depth: u32) {
+        stamp(out, d);
+        let Ok(rd) = fs::read_dir(d) else { return };
+        let mut names: Vec<PathBuf> = rd
+            .flatten()
+            .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
+            .map(|e| e.path())
+            .collect();
+        names.sort();
+        for p in names {
+            if depth > 0 && fs::symlink_metadata(&p).is_ok_and(|m| m.is_dir()) {
+                tree(out, &p, depth - 1);
+            } else {
+                stamp(out, &p);
+            }
+        }
+    }
+    let mut s = String::new();
+    for f in ["SOUL.md", "config.yaml", "cron/jobs.json"] {
+        stamp(&mut s, &c.profile_dir.join(f));
+    }
+    for cat in &c.categories {
+        tree(&mut s, &c.profile_dir.join("skills").join(cat), 4);
+    }
+    if let Some(d) = &c.local_dir {
+        // the same bot key a sync reads with (the pair's name unless one was given)
+        tree(&mut s, &d.join(c.bot_key.as_deref().unwrap_or(&c.pair)), 1);
+    }
+    if let Some(d) = &c.drive_dir {
+        stamp(&mut s, &d.join("HEAD"));
+        tree(&mut s, &d.join("from-grok"), 0);
+    }
+    s
+}
+
+/// A duration such as `250ms`, `2s`, `5m` or `1h`, in milliseconds.
+fn parse_ms(s: &str) -> Res<u64> {
+    let bad = || format!("invalid duration {s:?} (e.g. 500ms, 2s, 5m, 1h)");
+    let (n, mult) = if let Some(n) = s.strip_suffix("ms") {
+        (n, 1)
+    } else if let Some(n) = s.strip_suffix('s') {
+        (n, 1000)
+    } else if let Some(n) = s.strip_suffix('m') {
+        (n, 60_000)
+    } else if let Some(n) = s.strip_suffix('h') {
+        (n, 3_600_000)
+    } else {
+        return Err(bad());
+    };
+    n.parse::<u64>()
+        .ok()
+        .and_then(|n| n.checked_mul(mult))
+        .ok_or_else(bad)
+}
+
+/// An export that yields no setup item at all is not read as "the bot has nothing": a wrong `--from` (a folder that
+/// holds the export file, say) must never become an empty state file that reads as everything removed.
+/// Where a bot's agent data is in its box.
+const AGENT_DATA: &str = "/home/box/agent-data";
+
+/// The bot's setup: read from the box files (`--agent-id`), or from an export.
+fn read_source(bp: &BoxPair) -> Res<gmirror::GrokItems> {
+    match &bp.agent {
+        Some((data, id)) => gmirror::read_box(data, id, bp.with_skills),
+        None => gmirror::read_items(&bp.from),
+    }
+}
+
+fn refuse_empty(items: &gmirror::GrokItems, from: &Path) -> Res<()> {
+    // items it cannot offer still count as setup found (their reasons go to the other side)
+    if !items.content.is_empty() || items.unsupported.keys().any(|k| k != "memory") {
+        return Ok(());
+    }
+    let hint = if from.is_dir() {
+        " (a folder: give the export file itself, or a bundle folder)"
+    } else {
+        ""
+    };
+    err(format!(
+        "no setup found in {}{hint}; nothing written",
+        from.display()
+    ))
+}
+
+/// About how long `HEAD` is (one line: gen, pack name, sha256, machine).
+const HEAD_LINE_BYTES: u64 = 140;
 
 /// Send the Hermes digest to Drive, and take in the Grok one: built from the local records when there are any, else
 /// the newest Grok digest on Drive that verifies with the pair key (none for a pair without a key), stored only if its
@@ -1668,6 +2567,24 @@ fn write_report(c: &Config, st: &State, plan: &[Decision]) -> Res<()> {
             ));
         }
     }
+    for (id, ta) in &st.to_apply {
+        let what = if ta.neutral == ABSENT {
+            "remove it there"
+        } else {
+            "make it there as it is here"
+        };
+        t.push_str(&format!(
+            "## {id}: to apply in the Grok app by hand (since {})
+The Grok side cannot take this change in itself: {what}.
+See it: botport mirror show --pair {pair} {}
+When done: botport mirror applied --pair {pair} {}
+
+",
+            ta.since,
+            shell_word(id.as_str()),
+            shell_word(id.as_str())
+        ));
+    }
     for d in plan {
         if let Action::NeedsApproval(why) = &d.action {
             t.push_str(&format!(
@@ -1772,13 +2689,62 @@ fn status(a: &Args) -> Res<Out> {
             st.approvals.len()
         ));
     }
+    // what the Grok side cannot be read for is said here, never left as a silent gap
+    for (k, why) in &st.remote_unread {
+        lines.push(format!(
+            "  not mirrored: {} (Grok side: {why})",
+            kind_word(*k)
+        ));
+    }
+    for (id, t) in &st.to_apply {
+        let what = if t.neutral == ABSENT {
+            "remove"
+        } else {
+            "apply"
+        };
+        lines.push(format!(
+            "  to {what} in the Grok app by hand: {id} (since {}; see it: botport mirror show --pair {} {}; done: botport mirror applied --pair {} {})",
+            t.since,
+            shell_word(&c.pair),
+            shell_word(id.as_str()),
+            shell_word(&c.pair),
+            shell_word(id.as_str())
+        ));
+    }
     let code = u8::from(!st.conflicts.is_empty() || stale_head || !old.is_empty());
     Ok(Out {
         code,
         lines,
         json: json!({"pair": c.pair, "conflicts": st.conflicts, "in_flight": in_flight, "gen": st.gen,
-                     "head_gen": head.map(|h| h.gen)}),
+                     "head_gen": head.map(|h| h.gen), "grok_unread": st.remote_unread, "to_apply": st.to_apply}),
     })
+}
+
+/// Why a connector change whose url moves to another host waits for approval, whatever the policy.
+const CROSS_ORIGIN: &str = "a changed connector whose url moves to another host: the headers and auth kept on this side for the old host are dropped, never sent to the new one";
+
+/// Whether a connector change moves its url to another origin (scheme, host or port).
+fn moves_origin(new: &BTreeMap<String, Value>, old: &BTreeMap<String, Value>) -> bool {
+    match (
+        new.get("url").and_then(Value::as_str),
+        old.get("url").and_then(Value::as_str),
+    ) {
+        // "no origin" (userinfo, a backslash, percent-encoding, a non-ASCII host) on either side counts as a move
+        (Some(n), Some(o)) => !crate::core::util::same_origin(n, o),
+        // an entry without a url that gains one: whatever it kept was not for that host
+        (Some(_), None) => true,
+        _ => false,
+    }
+}
+
+/// A kind as the owner reads it in a sentence.
+fn kind_word(k: Kind) -> &'static str {
+    match k {
+        Kind::Persona => "name and instructions",
+        Kind::Skill => "skills",
+        Kind::Routine => "routines",
+        Kind::Connector => "connectors",
+    }
 }
 
 fn item_arg(a: &Args) -> Res<ItemId> {
@@ -1873,6 +2839,93 @@ fn show(a: &Args) -> Res<Out> {
     })
 }
 
+/// `mirror pick ITEM --local-only`: keep the item on each side as it is from now on (the pair config lists it; it is
+/// shown as not mirrored and never a conflict). `mirror pick ITEM --forget`: clear a conflict over an item neither
+/// side has now (a side read in part can never confirm "absent on both").
+fn pick_out(a: &Args, mut c: Config, id: ItemId) -> Res<Out> {
+    let _lock = OpLock::try_acquire(&c.profile_dir)?;
+    let mut st = load_state(&c)?;
+    let had = st.conflicts.iter().any(|k| k.item == id);
+    if a.has("forget") {
+        let mut link = Link::open(&c, Some(&st))?;
+        let remote = link.read()?.ok_or("nothing from the Grok side yet")?;
+        let local = side(&c).read()?;
+        if local.read.items.contains_key(&id) || remote.side.items.contains_key(&id) {
+            return err(format!(
+                "{id}: one side has it, so there is something to pick (--keep grok|hermes, or --local-only)"
+            ));
+        }
+        if local.read.unsupported.contains_key(&id) || remote.side.unsupported.contains_key(&id) {
+            return err(format!(
+                "{id}: one side has it but does not offer it (shown as not mirrored); keep it with --local-only"
+            ));
+        }
+        if !had {
+            return err(format!("{id} has no open conflict"));
+        }
+        let unseen: Vec<&str> = [
+            ("Hermes", local.read.sees_all(id.kind())),
+            ("Grok", remote.side.sees_all(id.kind())),
+        ]
+        .into_iter()
+        .filter(|(_, all)| !all)
+        .map(|(s, _)| s)
+        .collect();
+        let what = if unseen.is_empty() {
+            format!("forget the conflict over {id} (neither side has it now)?")
+        } else {
+            format!(
+                "botport cannot see whether the {} side still has {id} (read in part): forget the conflict over it?",
+                unseen.join(" or the ")
+            )
+        };
+        confirm(a, &what)?;
+        st.conflicts.retain(|k| k.item != id);
+        save_state(&c, &st)?;
+        write_report(&c, &st, &[])?;
+        return Ok(Out {
+            code: 0,
+            lines: vec![if unseen.is_empty() {
+                format!("{id}: conflict forgotten (neither side has it)")
+            } else {
+                format!(
+                    "{id}: conflict forgotten (not on a side read in full; botport cannot see the {} side)",
+                    unseen.join(" or the ")
+                )
+            }],
+            json: json!({"item": id.as_str(), "forgotten": true, "unseen_on": unseen}),
+        });
+    }
+    confirm(
+        a,
+        &format!("keep {id} on each side as it is and never mirror it?"),
+    )?;
+    if !c.local_only.iter().any(|i| i == id.as_str()) {
+        c.local_only.push(id.as_str().to_string());
+        c.local_only.sort();
+    }
+    let cp = config_path(a, &c.pair);
+    let dir = cp.parent().ok_or("config path has no directory")?;
+    let text = toml::to_string(&c).map_err(|e| e.to_string())?;
+    write_private(
+        dir,
+        &cp.file_name().unwrap().to_string_lossy(),
+        text.as_bytes(),
+    )?;
+    st.conflicts.retain(|k| k.item != id);
+    let was_sent = st.items.get(&id).is_some_and(|e| !e.sent.is_empty());
+    st.withdraw_item(id.as_str());
+    save_state(&c, &st)?;
+    write_report(&c, &st, &[])?;
+    Ok(Out {
+        code: 0,
+        lines: vec![format!(
+            "{id}: local-only from now on (kept on each side as it is, shown as not mirrored)"
+        )],
+        json: json!({"item": id.as_str(), "local_only": true, "conflict_cleared": had, "send_withdrawn": was_sent}),
+    })
+}
+
 /// The mass-retire guard for a pick or approval that retires `id`: refused when the plan already trips it, unless
 /// `--allow-retire`.
 fn retire_check(a: &Args, plan: &[Decision], st: &State, id: &ItemId, on: Side) -> Res<()> {
@@ -1925,6 +2978,9 @@ fn confirm(a: &Args, what: &str) -> Res<()> {
 fn pick(a: &Args) -> Res<Out> {
     let c = load_config(a)?;
     let id = item_arg(a)?;
+    if a.has("local-only") || a.has("forget") {
+        return pick_out(a, c, id);
+    }
     let keep_side = match a.get("keep") {
         Some("grok") => Side::Remote,
         Some("hermes") => Side::Local,
@@ -1971,6 +3027,16 @@ fn pick(a: &Args) -> Res<Out> {
             grok_copy.clone(),
         ),
     };
+    if let Some(why) = remote.unread.get(&id.kind()) {
+        return err(format!("{id}: not mirrored (Grok side: {why})"));
+    }
+    if keep_side == Side::Local {
+        if let Some(why) = remote.by_hand.get(&id.kind()) {
+            return err(format!(
+                "{id}: {why}; once both sides agree the conflict clears (or keep grok)"
+            ));
+        }
+    }
     if keep_side == Side::Local {
         if let Some(why) = persona_left_out(&remote.side, &id) {
             return err(format!("{id}: {why}"));
@@ -2280,67 +3346,408 @@ fn stats(a: &Args) -> Res<Out> {
     })
 }
 
-/// `mirror digest-items --pair P --from EXPORT --out DIR [--log FILE] [--all]` (in the Grok box).
-fn digest_items(a: &Args) -> Res<Out> {
-    let pair = a.get("pair").ok_or("--pair NAME is required")?;
-    let from = a.path("from").ok_or("--from EXPORT is required")?;
-    let out = a.path("out").ok_or("--out DIR is required")?;
-    let mut items = gmirror::read_items(&from)?;
-    // an export is written by the bot itself and may leave items out: partial unless a program read the live setup
-    items.partial = match a.get("coverage") {
-        None | Some("partial") => true,
-        Some("complete") => false,
-        Some(_) => return err("--coverage must be partial or complete"),
+/// Where one pair's files are in the Grok box: given by flags for one pair, or by the coordinator layout under
+/// `--root` (see [`root_pairs`]).
+struct BoxPair {
+    pair: String,
+    /// the bot's setup export
+    from: PathBuf,
+    /// or, read from the box files with no request to the bot: the box's agent data folder and the bot's agent id
+    agent: Option<(PathBuf, String)>,
+    /// the owner's opt-in for this pair to the box's skills, which every bot in the box shares
+    with_skills: bool,
+    /// the local copy of the pair's Drive folder (`apply-pack`)
+    dir: PathBuf,
+    /// where `digest-items` writes the state file and blobs
+    out: PathBuf,
+    stage: Option<PathBuf>,
+    log: Option<PathBuf>,
+    key: Option<PathBuf>,
+}
+
+/// One pair given by flags, checked in the order the usage lists them.
+fn one_pair(a: &Args, digest: bool) -> Res<BoxPair> {
+    let pair = a.get("pair").ok_or("--pair NAME is required")?.to_string();
+    let dir = if digest {
+        PathBuf::new()
+    } else {
+        a.path("dir")
+            .ok_or("--dir PAIRDIR (a copy of the pair's Drive folder) is required")?
     };
-    let log = a
-        .path("log")
-        .map(|p| gmirror::read_log(&p))
-        .unwrap_or_default();
-    let key = a.path("key").map(|p| read_key_file(&p)).transpose()?;
-    let f = gmirror::digest_items(
-        &items,
-        &out,
+    let agent = a.get("agent-id").map(|id| {
+        (
+            a.path("agent-data")
+                .unwrap_or_else(|| PathBuf::from(AGENT_DATA)),
+            id.to_string(),
+        )
+    });
+    let from = match (a.path("from"), &agent) {
+        (Some(_), Some(_)) => {
+            return err("give --from EXPORT or --agent-id ID (box files), not both")
+        }
+        (Some(f), None) => f,
+        (None, Some(_)) => PathBuf::new(),
+        (None, None) => {
+            return err("--from EXPORT or --agent-id ID (read from the box files) is required")
+        }
+    };
+    let out = if digest {
+        a.path("out").ok_or("--out DIR is required")?
+    } else {
+        PathBuf::new()
+    };
+    Ok(BoxPair {
         pair,
-        &log,
-        &utc_iso(),
-        a.has("all"),
-        key.as_deref(),
-    )?;
-    let with = f.items.values().filter(|e| e.blob.is_some()).count();
-    Ok(Out {
-        code: 0,
-        lines: vec![format!(
-            "state-{}.json: {} items ({with} with content), {} not mirrored",
-            f.n,
-            f.items.len(),
-            items.unsupported.len()
-        )],
-        json: json!({"n": f.n, "items": f.items.len(), "with_content": with, "unsupported": items.unsupported.keys().collect::<Vec<_>>()}),
+        from,
+        agent,
+        with_skills: a.has("with-skills"),
+        dir,
+        out,
+        stage: a.path("stage"),
+        log: a.path("log"),
+        key: a.path("key"),
     })
 }
 
-/// `mirror apply-pack --pair P --dir PAIRDIR --from EXPORT --stage DIR [--log FILE] [--check] [--precheck ITEM --gen N]`
+/// The pairs a coordinator serves from one root (`--root R`): those named with `--pair`, else every pair with an
+/// export there. One bot can then run the box steps for several pairs in one routine. The layout:
+///
+/// ```text
+/// R/<pair>/                     the local copy of the pair's Drive folder (HEAD, to-grok/, from-grok/)
+/// R/.work/<pair>/agent-id       that bot's agent id: its setup is read from the box files (`--agent-data`)
+/// R/.work/<pair>/export         or, as a manual option, an export the owner had the bot make
+/// R/.work/<pair>/stage/         where apply-pack stages
+/// R/.work/<pair>/applied.jsonl  the applied log
+/// R/.work/<pair>/pair.key       the pair key (0600), for a signed pair
+/// ```
+fn root_pairs(a: &Args, root: &Path) -> Res<Vec<BoxPair>> {
+    for f in ["from", "out", "dir", "stage", "log", "key"] {
+        if a.get(f).is_some() {
+            return err(format!("--root sets every path itself: drop --{f}"));
+        }
+    }
+    let work = root.join(".work");
+    let mut names: Vec<String> = a.all("pair").to_vec();
+    if names.is_empty() {
+        let rd = fs::read_dir(&work).map_err(|e| format!("read {}: {e}", work.display()))?;
+        for e in rd.flatten() {
+            let n = e.file_name().to_string_lossy().to_string();
+            // only real folders that hold an export: a link is never followed out of the root
+            let real = fs::symlink_metadata(e.path()).is_ok_and(|m| m.is_dir());
+            let source = e.path().join("export").exists() || e.path().join("agent-id").exists();
+            if real && engine::valid_name(&n).is_ok() && source {
+                names.push(n);
+            }
+        }
+    }
+    names.sort();
+    names.dedup();
+    if names.is_empty() {
+        return err(format!(
+            "no pairs under {}: each needs .work/<pair>/agent-id (or an export)",
+            root.display()
+        ));
+    }
+    names
+        .into_iter()
+        .map(|pair| {
+            engine::valid_name(&pair)?;
+            let w = work.join(&pair);
+            // the bot's agent id, one line: its setup is read from the box files
+            let agent = match fs::read_to_string(w.join("agent-id")) {
+                Ok(id) => Some((
+                    a.path("agent-data")
+                        .unwrap_or_else(|| PathBuf::from(AGENT_DATA)),
+                    id.trim().to_string(),
+                )),
+                Err(_) => None,
+            };
+            Ok(BoxPair {
+                agent,
+                // the owner's opt-in to the box's shared skills for this pair: an empty file `with-skills`
+                with_skills: w.join("with-skills").is_file(),
+                from: w.join("export"),
+                dir: root.join(&pair),
+                out: root.join(&pair).join("from-grok"),
+                stage: Some(w.join("stage")),
+                log: Some(w.join("applied.jsonl")),
+                key: Some(w.join("pair.key")),
+                pair,
+            })
+        })
+        .collect::<Res<Vec<BoxPair>>>()
+        .inspect(|bps| {
+            let opted: Vec<&str> = bps
+                .iter()
+                .filter(|bp| bp.with_skills)
+                .map(|bp| bp.pair.as_str())
+                .collect();
+            if opted.len() > 1 {
+                eprintln!(
+                    "botport: warning: {} pairs take the box's shared skills ({}): every one of them sees the others' skills; keep with-skills on one pair",
+                    opted.len(),
+                    opted.join(", ")
+                );
+            }
+        })
+}
+
+/// Under `--root`, a pair's inputs and outputs stay inside its own folders: the root, `.work`, the pair's work folder,
+/// its pair folder copy, `from-grok` and `stage` must be real folders (a link is never followed), and the export must
+/// not be a link either (a file or a folder, as the bot wrote it).
+fn real_folders(bp: &BoxPair) -> Res<()> {
+    let work = bp.from.parent().ok_or("export path has no folder")?;
+    let dot_work = work.parent().ok_or("work folder has no parent")?;
+    let root = dot_work.parent().ok_or("work folder has no root")?;
+    for d in [
+        root.to_path_buf(),
+        dot_work.to_path_buf(),
+        work.to_path_buf(),
+        bp.dir.clone(),
+        bp.out.clone(),
+        work.join("stage"),
+    ] {
+        if fs::symlink_metadata(&d).is_ok_and(|m| !m.is_dir()) {
+            return err(format!(
+                "{} is not a folder (a link is never followed)",
+                d.display()
+            ));
+        }
+    }
+    if fs::symlink_metadata(&bp.from).is_ok_and(|m| m.file_type().is_symlink()) {
+        return err(format!(
+            "{} is a link: the export must be the bot's own file or folder",
+            bp.from.display()
+        ));
+    }
+    // every path is the pair's own: under `.work/<pair>/` or `<root>/<pair>/`
+    let own = |p: &Path, base: &Path| {
+        p.starts_with(base)
+            && p.components()
+                .all(|c| !matches!(c, std::path::Component::ParentDir))
+    };
+    let pair_dir = root.join(&bp.pair);
+    if !(own(&bp.from, work)
+        && own(&bp.dir, &pair_dir)
+        && own(&bp.out, &pair_dir)
+        && bp.stage.as_deref().is_none_or(|s| own(s, work))
+        && bp.log.as_deref().is_none_or(|l| own(l, work))
+        && bp.key.as_deref().is_none_or(|k| own(k, work)))
+    {
+        return err(format!("{}: a path left the pair's own folders", bp.pair));
+    }
+    Ok(())
+}
+
+/// The number of the newest state file the bot has uploaded: `--uploaded N` for one pair, or under `--root` the pair's
+/// `uploaded` file (one line, written by the bot after a complete upload). None: nothing is known to be uploaded.
+fn uploaded(a: &Args, bp: &BoxPair) -> Res<Option<u64>> {
+    // an unreadable record (an empty or half-written file) is no record of any upload: 0 matches no state file, so
+    // the next file is written with every blob
+    let num = |v: &str| Some(v.trim().parse().unwrap_or(0));
+    match (a.get("uploaded"), a.get("root")) {
+        (Some(_), Some(_)) => {
+            err("--uploaded is per pair: under --root it is read from .work/<pair>/uploaded")
+        }
+        (Some(n), None) => Ok(num(n)),
+        (None, Some(_)) => {
+            let f = bp.from.with_file_name("uploaded");
+            match fs::read_to_string(&f) {
+                Ok(t) => Ok(num(&t)),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                Err(e) => err(format!("read {}: {e}", f.display())),
+            }
+        }
+        (None, None) => Ok(None),
+    }
+}
+
+/// The pair key: the given file, or under `--root` the pair's `pair.key`, which must exist unless the pair's folder
+/// holds an `unsigned` file (a signed pair's files are never written unsigned by mistake).
+fn box_key(a: &Args, bp: &BoxPair) -> Res<Option<Vec<u8>>> {
+    match &bp.key {
+        Some(k) if a.get("root").is_some() && !k.exists() => {
+            if k.with_file_name("unsigned").exists() {
+                Ok(None)
+            } else {
+                err(format!(
+                    "no pair key at {} (for a pair made with --no-pair-key, put an empty file named unsigned beside it)",
+                    k.display()
+                ))
+            }
+        }
+        Some(k) => read_key_file(k).map(Some),
+        None => Ok(None),
+    }
+}
+
+/// Runs a box command for one pair, or under `--root` for each pair there: one failing pair does not stop the others
+/// (it gets an `error:` line and the exit code is 2); every pair's first line starts with its name.
+fn box_run(a: &Args, digest: bool, one: fn(&Args, &BoxPair) -> Res<Out>) -> Res<Out> {
+    let Some(root) = a.path("root") else {
+        return one(a, &one_pair(a, digest)?);
+    };
+    if root
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return err("give --root without '..' (an absolute path works best)");
+    }
+    let pairs = root_pairs(a, &root)?;
+    if a.get("precheck").is_some() && pairs.len() != 1 {
+        return err("--precheck with --root needs exactly one --pair");
+    }
+    let (mut lines, mut js, mut code) = (vec![], serde_json::Map::new(), 0u8);
+    for p in &pairs {
+        match real_folders(p).and_then(|()| one(a, p)) {
+            Ok(o) => {
+                for (i, l) in o.lines.iter().enumerate() {
+                    lines.push(if i == 0 {
+                        format!("{}: {l}", p.pair)
+                    } else {
+                        l.clone()
+                    });
+                }
+                code = code.max(o.code);
+                js.insert(p.pair.clone(), o.json);
+            }
+            Err(e) => {
+                lines.push(format!("{}: error: {e}", p.pair));
+                code = 2;
+                js.insert(p.pair.clone(), json!({ "error": e }));
+            }
+        }
+    }
+    Ok(Out {
+        code,
+        lines,
+        json: json!({ "pairs": js }),
+    })
+}
+
+/// `mirror digest-items (--pair P --from EXPORT --out DIR [--log FILE] [--key F] [--uploaded N] | --root R [--pair P]...)
+/// [--all]` (in the Grok box).
+fn digest_items(a: &Args) -> Res<Out> {
+    box_run(a, true, digest_one)
+}
+
+fn digest_one(a: &Args, bp: &BoxPair) -> Res<Out> {
+    let (pair, from, out) = (bp.pair.as_str(), &bp.from, &bp.out);
+    let mut items = read_source(bp)?;
+    refuse_empty(&items, from)?;
+    without(a, &mut items)?;
+    // an export is written by the bot itself and may leave items out: partial unless a program read the live setup
+    // (the box files never hold the whole setup, so a box read stays partial)
+    items.partial = match a.get("coverage") {
+        None | Some("partial") => true,
+        Some("complete") if bp.agent.is_some() => {
+            return err("--coverage complete: the box files do not hold the whole setup")
+        }
+        Some("complete") => false,
+        Some(_) => return err("--coverage must be partial or complete"),
+    };
+    let log = bp.log.as_deref().map(gmirror::read_log).unwrap_or_default();
+    let key = box_key(a, bp)?;
+    let mut all = a.has("all");
+    if let Some(u) = uploaded(a, bp)? {
+        // nothing new since the state file the bot last uploaded: write nothing, so there is nothing to upload
+        if !all && gmirror::unchanged(&items, out, pair, &log, key.as_deref()) == Some(u) {
+            return Ok(Out {
+                code: 0,
+                lines: vec![format!(
+                    "unchanged: state-{u}.json is current, nothing new to upload"
+                )],
+                json: json!({"n": u, "unchanged": true}),
+            });
+        }
+        // the pair folder holds a newer file than this copy: a file written here would be numbered below it and never
+        // read, so the copy has to be restored first
+        let newest = gmirror::newest_seq(out);
+        if u > newest.unwrap_or(0) {
+            return err(format!(
+                "state-{u}.json was uploaded, but {} has no file that new: restore it from the pair's Drive folder first",
+                out.display()
+            ));
+        }
+        // a newer file was written but never uploaded (a failed or interrupted run): every blob is written again, so
+        // nothing the new file needs is missing from the upload
+        all |= newest != Some(u);
+    }
+    let f = gmirror::digest_items(&items, out, pair, &log, &utc_iso(), all, key.as_deref())?;
+    let with = f.items.values().filter(|e| e.blob.is_some()).count();
+    let mut lines = vec![format!(
+        "state-{}.json: {} items ({with} with content), {} not mirrored",
+        f.n,
+        f.items.len(),
+        items.unsupported.len()
+    )];
+    // the mirror never carries them, so an export for it should not hold them at all
+    let memories = items.unsupported.contains_key("memory");
+    if memories {
+        lines.push(
+            "note: the export holds memories or user facts; they were left out, but export setup only next time (AGENT-EXPORT.md, Step 3)"
+                .into(),
+        );
+    }
+    Ok(Out {
+        code: 0,
+        lines,
+        json: json!({"n": f.n, "unchanged": false, "items": f.items.len(), "with_content": with, "unsupported": items.unsupported.keys().collect::<Vec<_>>(), "memories_in_export": memories}),
+    })
+}
+
+/// Why a bot's instructions are not mirrored when it chose not to share them (`--without instructions`).
+const DECLINED: &str = "declined: the bot does not share its instructions";
+
+/// `--without instructions`: the bot keeps its live instructions to itself. Whatever the export holds for them is
+/// dropped and the item is reported as not mirrored, so both sides keep their own copy and nothing is staged over it.
+fn without(a: &Args, items: &mut gmirror::GrokItems) -> Res<()> {
+    for w in a.all("without") {
+        if w != "instructions" {
+            return err("--without takes only: instructions");
+        }
+        let id = ItemId::parse("persona.instructions")?;
+        items.content.remove(&id);
+        items
+            .unsupported
+            .insert(id.as_str().to_string(), DECLINED.into());
+    }
+    Ok(())
+}
+
+/// `mirror apply-pack (--pair P --dir PAIRDIR --from EXPORT --stage DIR [--log FILE] [--key F] | --root R [--pair P]...)
+/// [--check] [--precheck ITEM --gen N]` (in the Grok box).
 fn apply_pack(a: &Args) -> Res<Out> {
-    let pair = a.get("pair").ok_or("--pair NAME is required")?;
-    let dir = a
-        .path("dir")
-        .ok_or("--dir PAIRDIR (a copy of the pair's Drive folder) is required")?;
-    let from = a.path("from").ok_or("--from EXPORT is required")?;
-    let live = gmirror::read_items(&from)?;
-    let key = a.path("key").map(|p| read_key_file(&p)).transpose()?;
+    box_run(a, false, apply_one)
+}
+
+fn apply_one(a: &Args, bp: &BoxPair) -> Res<Out> {
+    let (pair, dir, from) = (bp.pair.as_str(), &bp.dir, &bp.from);
+    // a coordinator's pair that has had nothing sent to it yet
+    if a.get("root").is_some() && a.get("precheck").is_none() && !dir.join("HEAD").exists() {
+        return Ok(Out {
+            code: 0,
+            lines: vec!["no pack yet (no HEAD in the pair folder)".into()],
+            json: json!({"gen": null, "pending": 0}),
+        });
+    }
+    let mut live = read_source(bp)?;
+    refuse_empty(&live, from)?;
+    without(a, &mut live)?;
+    let key = box_key(a, bp)?;
     if let Some(item) = a.get("precheck") {
         let gen: u64 = a
             .get("gen")
             .and_then(|g| g.parse().ok())
             .ok_or("--precheck needs --gen N")?;
         gmirror::precheck(
-            &dir,
+            dir,
             pair,
             gen,
             &live,
             &ItemId::parse(item)?,
             key.as_deref(),
-            a.path("stage").as_deref(),
+            bp.stage.as_deref(),
         )?;
         return Ok(Out {
             code: 0,
@@ -2348,21 +3755,39 @@ fn apply_pack(a: &Args) -> Res<Out> {
             json: json!({"ok": true}),
         });
     }
-    let stage = a.path("stage").ok_or("--stage DIR is required")?;
-    let logp = a.path("log");
+    let stage = bp.stage.clone().ok_or("--stage DIR is required")?;
+    let logp = bp.log.clone();
     let log = logp.as_deref().map(gmirror::read_log).unwrap_or_default();
+    // the newest generation applied in full, kept beside the applied log (which may be trimmed or moved)
+    let floorp = logp
+        .as_deref()
+        .map(|l| l.with_file_name(gmirror::FLOOR_FILE));
+    let floor = floorp.as_deref().and_then(gmirror::read_floor);
     let gmirror::PackRun {
         pack: p,
         steps,
         added,
-    } = gmirror::apply_pack(&dir, pair, &live, &stage, &log, key.as_deref())?;
+    } = gmirror::apply_pack(dir, pair, &live, &stage, &log, key.as_deref(), floor)?;
+    if floor == Some(p.gen) {
+        return Ok(Out {
+            code: 0,
+            lines: vec![format!(
+                "pack gen {}: applied in full already (nothing staged)",
+                p.gen
+            )],
+            json: json!({"gen": p.gen, "pending": 0}),
+        });
+    }
     // only a pack signed with the pair key is ever logged (apply_pack holds every item of an unsigned one)
     if let (Some(lp), Some(_)) = (&logp, &key) {
         gmirror::append_log(lp, &added)?;
     }
+    // an item the bot declined is never installed: not pending, and reported in its own words
+    let declined =
+        |id: &ItemId| live.unsupported.get(id.as_str()).map(String::as_str) == Some(DECLINED);
     let pending = steps
         .iter()
-        .filter(|(_, s)| !matches!(s, gmirror::Step::Done))
+        .filter(|(id, s)| !matches!(s, gmirror::Step::Done) && !declined(id))
         .count();
     let mut lines = vec![format!(
         "pack gen {}: {} items, {pending} pending",
@@ -2389,10 +3814,22 @@ fn apply_pack(a: &Args) -> Res<Out> {
             gmirror::Step::Held => {
                 format!("  held     {id} (the pack is not signed with the pair key: not applied; report it to the owner)")
             }
+            gmirror::Step::Refused if declined(id) => {
+                format!("  held     {id} (not mirrored: you run with --without instructions)")
+            }
             gmirror::Step::Refused => {
                 format!("  refused  {id} (changed since the pack was made; report it)")
             }
         });
+    }
+    // a pack applied in full raises the floor: an older one is refused from then on, and this one stages nothing
+    if key.is_some() && pending == 0 && steps.iter().all(|(_, s)| matches!(s, gmirror::Step::Done))
+    {
+        if let Some(fp) = &floorp {
+            if floor.is_none_or(|f| p.gen > f) {
+                gmirror::write_floor(fp, p.gen)?;
+            }
+        }
     }
     let code = if a.has("check") {
         u8::from(pending > 0)
@@ -2406,26 +3843,188 @@ fn apply_pack(a: &Args) -> Res<Out> {
     })
 }
 
-/// Why a connector change whose url moves to another host waits for approval, whatever the policy.
-const CROSS_ORIGIN: &str = "a changed connector whose url moves to another host: the headers and auth kept on this side for the old host are dropped, never sent to the new one";
-
-/// Whether a connector change moves its url to another origin (scheme, host or port).
-fn moves_origin(new: &BTreeMap<String, Value>, old: &BTreeMap<String, Value>) -> bool {
-    match (
-        new.get("url").and_then(Value::as_str),
-        old.get("url").and_then(Value::as_str),
-    ) {
-        // "no origin" (userinfo, a backslash, percent-encoding, a non-ASCII host) on either side counts as a move
-        (Some(n), Some(o)) => !crate::core::util::same_origin(n, o),
-        // an entry without a url that gains one: whatever it kept was not for that host
-        (Some(_), None) => true,
-        _ => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_probe_file_larger_than_a_few_kb_is_refused() {
+        let d = crate::core::util::test_dir("probe-cap");
+        fs::create_dir_all(d.join("probe/r1")).unwrap();
+        fs::write(d.join("probe/r1/ack-1.txt"), vec![b'x'; 5000]).unwrap();
+        fs::write(d.join("probe/r1/ack-2.txt"), b"botport probe old t\n").unwrap();
+        let mut st = FolderStore::open(&d).unwrap();
+        assert!(probe_get(&mut st, "probe/r1/ack-1.txt")
+            .unwrap_err()
+            .contains("larger than a probe file can be"));
+        assert_eq!(
+            probe_get(&mut st, "probe/r1/ack-2.txt").unwrap().unwrap(),
+            b"botport probe old t\n"
+        );
+        assert_eq!(probe_get(&mut st, "probe/r1/missing.txt").unwrap(), None);
+        fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn a_stale_recent_copy_is_removed_only_through_real_folders() {
+        let d = crate::core::util::test_dir("drop-recent");
+        let pair = d.join("demo-bot");
+        fs::create_dir_all(pair.join("from-hermes")).unwrap();
+        fs::write(pair.join("from-hermes/digest"), "old").unwrap();
+        drop_recent(&pair).unwrap();
+        assert!(!pair.join("from-hermes/digest").exists());
+        // nothing there: nothing to do
+        drop_recent(&pair).unwrap();
+        drop_recent(&d.join("no-such-pair")).unwrap();
+        #[cfg(unix)]
+        {
+            // a from-hermes that is a link to another folder: refused, the file there untouched
+            let other = d.join("elsewhere");
+            fs::create_dir_all(&other).unwrap();
+            fs::write(other.join("digest"), "keep").unwrap();
+            fs::remove_dir_all(pair.join("from-hermes")).unwrap();
+            std::os::unix::fs::symlink(&other, pair.join("from-hermes")).unwrap();
+            assert!(drop_recent(&pair).is_err());
+            assert_eq!(fs::read_to_string(other.join("digest")).unwrap(), "keep");
+        }
+        fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn a_connector_moving_to_another_host_says_what_happens_to_kept_credentials() {
+        let conn = |url: &str| {
+            let mut m = BTreeMap::new();
+            m.insert("id".to_string(), json!("example-connector"));
+            m.insert("url".to_string(), json!(url));
+            Content::Connector(m)
+        };
+        let id = ItemId::parse("connector:example-connector").unwrap();
+        let (old, same, moved) = (
+            conn("https://mcp.example.test/mcp"),
+            conn("https://mcp.example.test/v2"),
+            conn("https://other.example.test/mcp"),
+        );
+        for policy in ["all", "runnable"] {
+            let why =
+                needs_approval(policy, &id, Side::Local, Some(&moved), Some(&old), None).unwrap();
+            assert_eq!(why, CROSS_ORIGIN, "{policy}");
+            let why =
+                needs_approval(policy, &id, Side::Local, Some(&same), Some(&old), None).unwrap();
+            assert_ne!(why, CROSS_ORIGIN, "{policy}");
+        }
+    }
+
+    #[test]
+    fn content_is_shown_without_terminal_controls() {
+        let t = term_safe(
+            "line one\n\u{1b}[2Jcleared\tok \u{202e}txt.exe\u{7}\u{200b}\u{2028}\u{feff}\u{61c}",
+        );
+        for c in [
+            '\u{1b}', '\u{202e}', '\u{7}', '\u{200b}', '\u{2028}', '\u{feff}', '\u{61c}',
+        ] {
+            assert!(!t.contains(c), "{c:?}");
+        }
+        assert!(t.contains("\\u{1b}[2J") && t.contains("line one\n") && t.contains("\tok"));
+        let b = binary_line("demo.bin", &[0xff, 0x00]);
+        assert!(b.contains("2 bytes") && b.contains(&crate::core::util::sha256_hex(&[0xff, 0x00])));
+        assert!(b.contains("not scanned"));
+    }
+
+    #[test]
+    fn the_hook_commands_quote_every_path() {
+        let d = crate::core::util::test_dir("hook").join("demo bot's \"profile\"");
+        fs::create_dir_all(&d).unwrap();
+        let c = Config {
+            pair: "demo-bot".into(),
+            profile_dir: d.clone(),
+            profile: "demo-bot".into(),
+            hermes_home: None,
+            hermes_bin: "hermes".into(),
+            cron: false,
+            transport: "drive".into(),
+            machine: "m".into(),
+            categories: vec!["mirror".into()],
+            approve: "all".into(),
+            local_dir: None,
+            bot_key: None,
+            signing_file: None,
+            drive_dir: None,
+            drive_folder_id: None,
+            token_cmd: vec![],
+            local_only: vec![],
+            drive_api_base: None,
+        };
+        write_hook_manual(&c).unwrap();
+        let m = fs::read_to_string(d.join(sync::MANUAL)).unwrap();
+        let block = m
+            .split("```yaml\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let y: serde_yaml::Value = crate::core::yaml11::parse(block).unwrap();
+        let cmd = y["hooks"]["on_session_end"][0]["command"].as_str().unwrap();
+        assert!(
+            cmd.ends_with(&format!(
+                "digest write --hermes-home {}",
+                shell_word(&d.display().to_string())
+            )),
+            "{cmd}"
+        );
+        assert!(cmd.contains("demo bot'\\''s \"profile\"'"), "{cmd}");
+        fs::remove_dir_all(d.parent().unwrap()).ok();
+    }
+
+    #[test]
+    fn the_watch_signature_covers_the_inputs_a_sync_reads() {
+        let d = crate::core::util::test_dir("watch-sig");
+        let c = Config {
+            pair: "demo-bot".into(),
+            profile_dir: d.join("hermes"),
+            profile: "demo-bot".into(),
+            hermes_home: None,
+            hermes_bin: "hermes".into(),
+            cron: false,
+            transport: "hybrid".into(),
+            machine: "m".into(),
+            categories: vec!["mirror".into()],
+            approve: "runnable".into(),
+            local_dir: Some(d.join("local")),
+            bot_key: None,
+            signing_file: None,
+            drive_dir: Some(d.join("drive")),
+            drive_folder_id: None,
+            token_cmd: vec![],
+            local_only: vec![],
+            drive_api_base: None,
+        };
+        let base = watch_signature(&c);
+        let touch = |rel: &str, body: &str| {
+            let p = d.join(rel);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, body).unwrap();
+        };
+        let mut last = base;
+        // each input moves the signature: with no bot key, the local records folder is the pair's name
+        for rel in [
+            "local/demo-bot/entries.jsonl",
+            "drive/from-grok/state-1.json",
+            "drive/HEAD",
+            "hermes/SOUL.md",
+            "hermes/skills/mirror/demo-skill/SKILL.md",
+        ] {
+            touch(rel, "x");
+            let now = watch_signature(&c);
+            assert_ne!(now, last, "{rel}");
+            last = now;
+        }
+        // botport's own files are not inputs
+        touch("hermes/botport/stage/mirror/x", "x");
+        touch("hermes/botport.mirror.json", "x");
+        assert_eq!(watch_signature(&c), last);
+        fs::remove_dir_all(&d).ok();
+    }
 
     #[test]
     fn a_name_is_only_a_name() {

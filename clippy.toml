@@ -1,0 +1,9 @@
+# YAML is parsed only through botport's core::yaml11::parse, which applies size and nesting limits first.
+disallowed-methods = [
+  { path = "serde_yaml::from_str", reason = "parse YAML with core::yaml11::parse (size and nesting limits)" },
+  { path = "serde_yaml::from_slice", reason = "parse YAML with core::yaml11::parse (size and nesting limits)" },
+  { path = "serde_yaml::from_reader", reason = "parse YAML with core::yaml11::parse (size and nesting limits)" },
+  { path = "serde_yaml::Deserializer::from_str", reason = "parse YAML with core::yaml11::parse (size and nesting limits)" },
+  { path = "serde_yaml::Deserializer::from_slice", reason = "parse YAML with core::yaml11::parse (size and nesting limits)" },
+  { path = "serde_yaml::Deserializer::from_reader", reason = "parse YAML with core::yaml11::parse (size and nesting limits)" },
+]

@@ -41,6 +41,9 @@ pub struct StateFile {
     pub n: u64,
     /// When it was written (the writer's clock).
     pub written: String,
+    /// The neutral form the digests were made with ([`crate::core::package::NEUTRAL_FORM`]).
+    #[serde(default = "crate::core::package::neutral_form_v1")]
+    pub neutral_form: u32,
     /// Newest change pack generation applied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub applied_gen: Option<u64>,
@@ -51,6 +54,12 @@ pub struct StateFile {
     /// Items the writer has but cannot offer, with the reason (held on both sides, never read as deleted).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub unsupported: BTreeMap<ItemId, String>,
+    /// Kinds the writer could not read at all, with the reason (none of them is carried; the owner is told).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub unread: BTreeMap<Kind, String>,
+    /// Kinds the writer reads but never writes, with the reason (a change bound for it is applied by hand).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub by_hand: BTreeMap<Kind, String>,
     /// The applied log (newest entries; the writer keeps a bounded tail).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub applied: Vec<Applied>,
@@ -83,6 +92,11 @@ impl StateFile {
 
     /// Parse and check a state file for `pair`.
     pub fn parse(b: &[u8], pair: &str) -> Res<StateFile> {
+        StateFile::parse_keyed(b, pair, None)
+    }
+
+    /// [`StateFile::parse`]; a file in another neutral form is reported only when it verifies with `key`.
+    fn parse_keyed(b: &[u8], pair: &str, key: Option<&[u8]>) -> Res<StateFile> {
         let mut f: StateFile =
             serde_json::from_slice(b).map_err(|e| format!("state file is not valid: {e}"))?;
         if f.schema != SCHEMA {
@@ -94,6 +108,7 @@ impl StateFile {
         if f.pair != pair {
             return err(format!("state file is for pair {:?}, not {pair:?}", f.pair));
         }
+        crate::core::package::check_form_of(b, "the state file", f.neutral_form, key)?;
         let mac = f.mac.take();
         let claimed = std::mem::take(&mut f.sha256);
         if sha256_hex(json_sorted(&f).as_bytes()) != claimed {
@@ -104,9 +119,26 @@ impl StateFile {
         Ok(f)
     }
 
+    /// Why a state file that failed [`StateFile::parse_with`] stops the reader: only when it is this pair's, intact
+    /// and (with a key) signed, and written in another neutral form. Decided on the file's fields, after it
+    /// verified, never on an error's text.
+    pub fn other_form(b: &[u8], pair: &str, key: Option<&[u8]>) -> Option<String> {
+        let raw: serde_json::Value = serde_json::from_slice(b).ok()?;
+        if raw["schema"] != SCHEMA || raw["pair"] != pair {
+            return None;
+        }
+        let v = raw
+            .get("neutral_form")
+            .map_or(Some(1), |v| v.as_u64().and_then(|v| u32::try_from(v).ok()))?;
+        if !crate::core::package::verified_other_form(b, v, key) {
+            return None;
+        }
+        crate::core::package::check_neutral_form("the state file", v).err()
+    }
+
     /// [`StateFile::parse`], and with a pair key the file must carry a valid `mac`.
     pub fn parse_with(b: &[u8], pair: &str, key: Option<&[u8]>) -> Res<StateFile> {
-        let f = StateFile::parse(b, pair)?;
+        let f = StateFile::parse_keyed(b, pair, key)?;
         if let Some(k) = key {
             crate::core::auth::verify(&serde_json::to_value(&f).expect("serializable"), k)?;
         }
@@ -133,6 +165,17 @@ impl StateFile {
             },
             applied: self.applied.clone(),
             applied_gen: self.applied_gen,
+            // the Grok side's reasons are its text: shown escaped wherever the report, status and pick print them
+            unread: self
+                .unread
+                .iter()
+                .map(|(k, why)| (*k, crate::core::util::name_safe(why)))
+                .collect(),
+            by_hand: self
+                .by_hand
+                .iter()
+                .map(|(k, why)| (*k, crate::core::util::name_safe(why)))
+                .collect(),
             // set by the reader that checked the mac (`StateDir::peer`), never from the file's say
             authenticated: false,
         }
@@ -208,8 +251,15 @@ impl<S: Store> StateDir<S> {
             let Some(b) = self.store.get(&self.path(&name))? else {
                 continue;
             };
-            let Ok(f) = StateFile::parse_with(&b, &self.pair, self.key.as_deref()) else {
-                continue;
+            let f = match StateFile::parse_with(&b, &self.pair, self.key.as_deref()) {
+                Ok(f) => f,
+                Err(_) => match StateFile::other_form(&b, &self.pair, self.key.as_deref()) {
+                    // the newest file verifies but is from a release that compares copies another way: say so,
+                    // never fall back
+                    Some(why) => return err(crate::core::util::name_safe(&why)),
+                    // damaged, forged or for another pair: skipped like any bad file
+                    None => continue,
+                },
             };
             if f.n != n {
                 continue;
@@ -333,6 +383,7 @@ pub(crate) mod tests {
             schema: SCHEMA.into(),
             pair: "demo-bot".into(),
             n,
+            neutral_form: crate::core::package::NEUTRAL_FORM,
             written: "2000-01-01T00:00:00Z".into(),
             applied_gen: Some(4),
             coverage: [
@@ -343,6 +394,8 @@ pub(crate) mod tests {
             .collect(),
             items,
             unsupported: BTreeMap::new(),
+            unread: BTreeMap::new(),
+            by_hand: BTreeMap::new(),
             applied: vec![],
             sha256: String::new(),
             mac: None,
@@ -366,6 +419,18 @@ pub(crate) mod tests {
         let bytes = f.seal();
         s.put(&p(&format!("state-{n}.json")), &bytes).unwrap();
         f
+    }
+
+    #[test]
+    fn remote_reasons_are_read_escaped() {
+        let (mut f, _) = sample(3);
+        f.unread
+            .insert(Kind::Skill, "demo\u{202e}reason\nfake line".into());
+        f.by_hand
+            .insert(Kind::Persona, "demo\u{2066}by hand".into());
+        let r = f.to_read();
+        assert_eq!(r.unread[&Kind::Skill], "demo\\u{202e}reason\\nfake line");
+        assert_eq!(r.by_hand[&Kind::Persona], "demo\\u{2066}by hand");
     }
 
     #[test]
@@ -460,6 +525,81 @@ pub(crate) mod tests {
         ] {
             assert_eq!(state_seq(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn a_newest_file_with_another_neutral_form_is_reported_not_skipped() {
+        let d = tmp("form");
+        publish(&d, "from-grok", 1);
+        let mut s = FolderStore::open(&d).unwrap();
+        let (mut f, _) = sample(2);
+        f.neutral_form = 1;
+        s.put("from-grok/state-2.json", &f.seal()).unwrap();
+        let mut r = StateDir::new(
+            FolderStore::open(&d).unwrap(),
+            "from-grok",
+            "demo-bot",
+            None,
+        );
+        let e = r.read().unwrap_err();
+        assert!(
+            e.contains("run the same botport release on the host and in the box"),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    /// Only a verified file in another neutral form stops the reader: a forged unsigned file that carries the
+    /// mismatch wording in its own text is skipped like any other bad file.
+    #[test]
+    fn a_forged_file_with_the_mismatch_wording_is_skipped() {
+        let key = [9u8; 32];
+        let d = crate::core::util::test_dir("state-forged");
+        let mut s = FolderStore::open(&d).unwrap();
+        let (mut good, _) = sample(1);
+        s.put("from-grok/state-1.json", &good.seal_with(Some(&key)))
+            .unwrap();
+        let (mut forged, _) = sample(2);
+        forged.schema = format!("{SCHEMA} {}", crate::core::package::NEUTRAL_FORM_MISMATCH);
+        forged.neutral_form = 1;
+        s.put("from-grok/state-2.json", &forged.seal()).unwrap();
+        let mut r = StateDir::new(
+            FolderStore::open(&d).unwrap(),
+            "from-grok",
+            "demo-bot",
+            None,
+        )
+        .with_key(Some(key.to_vec()));
+        assert_eq!(
+            r.read().unwrap().map(|f| f.n),
+            Some(1),
+            "the forged file is skipped"
+        );
+        // the same wording in a field of an unsigned pair's intact current-form file is no reason to stop either
+        let d2 = crate::core::util::test_dir("state-forged-unsigned");
+        let mut s2 = FolderStore::open(&d2).unwrap();
+        let (mut g1, _) = sample(1);
+        s2.put("from-grok/state-1.json", &g1.seal()).unwrap();
+        let (mut g2, _) = sample(2);
+        g2.schema = format!("{SCHEMA} {}", crate::core::package::NEUTRAL_FORM_MISMATCH);
+        s2.put("from-grok/state-2.json", &g2.seal()).unwrap();
+        let mut r2 = StateDir::new(
+            FolderStore::open(&d2).unwrap(),
+            "from-grok",
+            "demo-bot",
+            None,
+        );
+        assert_eq!(r2.read().unwrap().map(|f| f.n), Some(1));
+        std::fs::remove_dir_all(&d).ok();
+        std::fs::remove_dir_all(&d2).ok();
+    }
+
+    #[test]
+    fn state_numbers_are_bounded() {
+        assert_eq!(state_seq("state-1000000000000.json"), Some(MAX_SEQ));
+        assert_eq!(state_seq("state-1000000000001.json"), None);
+        assert_eq!(state_seq("state-99999999999999999999999.json"), None);
+        assert_eq!(state_seq("state-01.json"), None);
     }
 
     #[test]

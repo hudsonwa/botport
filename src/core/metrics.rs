@@ -68,15 +68,22 @@ pub fn payload_tokens(bytes: u64) -> u64 {
 
 /// A field safe to put in the CSV unquoted: commas, quotes and line breaks become `_`.
 fn field(s: &str) -> String {
-    s.chars()
+    let s: String = s
+        .chars()
         .map(|c| {
-            if matches!(c, ',' | '"' | '\n' | '\r') {
+            if matches!(c, ',' | '"' | '\n' | '\r' | '\t') {
                 '_'
             } else {
                 c
             }
         })
-        .collect()
+        .collect();
+    // a spreadsheet would read a cell starting with one of these as a formula
+    if s.starts_with(['=', '+', '-', '@']) {
+        format!("'{s}")
+    } else {
+        s
+    }
 }
 
 impl Row {
@@ -161,12 +168,19 @@ pub fn append(p: &Path, r: &Row) -> Res<()> {
     }
     b.create(dir)
         .map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
-    if fs::symlink_metadata(p).is_ok_and(|m| !m.is_file()) {
+    let before = fs::symlink_metadata(p).ok();
+    if before.as_ref().is_some_and(|m| !m.is_file()) {
         return err(format!("{} is not a regular file", p.display()));
     }
-    let new = !p.exists();
+    let new = before.is_none();
     let mut o = fs::OpenOptions::new();
-    o.append(true).create(true);
+    // a new file is created exclusively (never through a link someone placed meanwhile); an existing one must still be
+    // the regular file seen a moment ago once it is open
+    if new {
+        o.append(true).create_new(true);
+    } else {
+        o.append(true);
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -175,6 +189,23 @@ pub fn append(p: &Path, r: &Row) -> Res<()> {
     let mut f = o
         .open(p)
         .map_err(|e| format!("open {}: {e}", p.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let m = f
+            .metadata()
+            .map_err(|e| format!("stat {}: {e}", p.display()))?;
+        if let Some(b) = &before {
+            if (b.dev(), b.ino()) != (m.dev(), m.ino()) {
+                return err(format!("{} changed while it was opened", p.display()));
+            }
+        }
+        // the owner's metrics are private, whatever mode an older file had
+        if m.permissions().mode() & 0o077 != 0 {
+            f.set_permissions(fs::Permissions::from_mode(0o600))
+                .map_err(|e| format!("chmod {}: {e}", p.display()))?;
+        }
+    }
     let mut s = String::new();
     if new {
         s.push_str(HEADER);
@@ -311,6 +342,32 @@ pub fn render(groups: &[Group]) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cells_never_read_as_formulas() {
+        assert_eq!(super::field("=cmd"), "'=cmd");
+        assert_eq!(super::field("@x,y"), "'@x_y");
+        assert_eq!(super::field("demo-bot"), "demo-bot");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_existing_metrics_file_is_made_private_and_a_link_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = crate::core::util::test_dir("metrics-mode");
+        let f = d.join("metrics.csv");
+        std::fs::write(&f, format!("{HEADER}\n")).unwrap();
+        std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o644)).unwrap();
+        append(&f, &row("2000-01-01T00:00:00Z", "mirror-sync", 1, None)).unwrap();
+        assert_eq!(
+            std::fs::metadata(&f).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let link = d.join("linked.csv");
+        std::os::unix::fs::symlink(&f, &link).unwrap();
+        assert!(append(&link, &row("2000-01-01T00:00:00Z", "mirror-sync", 1, None)).is_err());
+        std::fs::remove_dir_all(&d).ok();
+    }
+
     use super::*;
 
     fn tmp(tag: &str) -> PathBuf {

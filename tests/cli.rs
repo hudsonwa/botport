@@ -124,6 +124,33 @@ fn export_is_deterministic_secret_free_and_verifies() {
     assert_eq!(run(&["export", "--from-dir", s(&g), "--out", s(&f)]).0, 2);
 }
 
+/// YAML skill files: a multi-document file and a template are exported; one that cannot be checked as YAML (a
+/// parse error) is left out with the reason, and the export still succeeds.
+#[test]
+fn export_keeps_multi_document_and_templated_yaml_and_leaves_out_unreadable_yaml() {
+    let t = Tmp::new("export-yaml");
+    let (g, _) = fixture(&t.0);
+    w(
+        &g.join("skills/alpha/multi.yaml"),
+        "kind: A\n---\nkind: B\n",
+    );
+    w(
+        &g.join("skills/alpha/deploy.yaml"),
+        "image: {{ .Values.image }}\nreplicas: 2\n",
+    );
+    w(&g.join("skills/alpha/dup.yaml"), "a: [unclosed\n");
+    let out = t.0.join("bundle");
+    let (rc, o) = run(&["export", "--from-dir", s(&g), "--out", s(&out)]);
+    assert_eq!(rc, 0, "{o}");
+    assert!(out.join("raw/skills/alpha/multi.yaml").exists(), "{o}");
+    assert!(out.join("raw/skills/alpha/deploy.yaml").exists(), "{o}");
+    assert!(!out.join("raw/skills/alpha/dup.yaml").exists(), "{o}");
+    assert!(
+        o.contains("skills/alpha/dup.yaml: left out, it could not be checked as YAML"),
+        "{o}"
+    );
+}
+
 #[test]
 fn memory_drop_and_freshness_gate() {
     let t = Tmp::new("drop");
@@ -1191,9 +1218,10 @@ fn every_created_cron_job_is_paused_unless_explicitly_enabled() {
     let hb = cron_hermes(&t.0);
     let (rc, out, dest) = acme_apply(&t.0, &hb);
     assert_eq!(rc, 0, "{out}");
-    let spec: serde_yaml::Value =
-        serde_yaml::from_str(&fs::read_to_string("examples/acme/template/cron.yaml").unwrap())
-            .unwrap();
+    let spec: serde_yaml::Value = botport::core::yaml11::parse(
+        &fs::read_to_string("examples/acme/template/cron.yaml").unwrap(),
+    )
+    .unwrap();
     let enabled: Vec<&str> = spec["jobs"]
         .as_sequence()
         .unwrap()

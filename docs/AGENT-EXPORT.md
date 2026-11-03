@@ -1,5 +1,8 @@
 # botport — export brief for Grok Bots
 
+*A manual option: the owner sends this file in a bot's own chat when they want that bot's full export. botport never
+sends it, and no bot asks another bot to run it (mirror mode reads the box files instead: [AGENT-MIRROR.md](AGENT-MIRROR.md)).*
+
 You are a Grok Bot. Your owner sent you this file so you can export yourself (or, if asked, coordinate the export of
 other bots) into a portable bundle that is imported into Hermes on the owner's machine. Read it all, then follow
 **Step 0**. (Owners: if a step stops working because the platform changed, see
@@ -19,7 +22,7 @@ Decide from the owner's message:
 - **Export other bots** (the message names other bots, says "all bots", or asks you to pass this on): do Step 7.
 
 Then ask **only** the questions below whose answer you can't work out yourself, in **one** message, and wait:
-1. *(Only if Step 1 finds no archive)* "Please attach `botport-x86_64-unknown-linux-musl.tar.gz` (or `-aarch64-`, my
+1. *(Only if Step 1 finds no archive or no `SHA256SUMS`)* "Please attach `botport-x86_64-unknown-linux-musl.tar.gz` (or `-aarch64-`, my
    box is `<uname -m>`), and `SHA256SUMS` from the same release."
 2. *(Only if Step 2 finds several agents and you can't tell which one is you)* "Which of these is me: <names/ids>?"
 3. *(Only in Step 7 mode, if the owner didn't name them)* "Which bots should I export: <list of names>, or all?"
@@ -32,19 +35,34 @@ uname -m
 mkdir -p /workspace/exports
 ```
 Find the attached archive matching `uname -m` (`x86_64` → `botport-x86_64-unknown-linux-musl.tar.gz`, `aarch64` →
-`botport-aarch64-unknown-linux-musl.tar.gz`). If the owner attached `SHA256SUMS`, check the **archive** first, from
-the directory that holds both files, and stop on a mismatch:
+`botport-aarch64-unknown-linux-musl.tar.gz`) and the attached `SHA256SUMS`. Check the **archive** before extracting
+anything, from the directory that holds both files, and stop on a mismatch (without `SHA256SUMS`, ask the owner for
+it; never extract an unchecked archive). `SHA256SUMS` comes from the same release, so this shows the archive arrived
+intact, not who made it; the owner checks the release's attestation before attaching the files. Then take only the
+`botport` binary out of it, in a fresh private temporary folder, and copy it to its own folder,
+`/workspace/.botport/bin/botport`. Never copy over something that is already there (a file or a folder of that
+name): stop and tell the owner instead. Run it as one block: it stops at the first failing step (`set -e`), so a
+checksum mismatch never reaches the extract or the copy.
 ```sh
-arch=$(uname -m)   # x86_64 or aarch64
-grep -F "  botport-$arch-unknown-linux-musl.tar.gz" SHA256SUMS > archive.sha256 && sha256sum -c archive.sha256
-# must print "<archive>: OK"; works with GNU and busybox sha256sum. No line found (grep fails) is a mismatch too.
-```
-Then extract it and copy the `botport` binary to `/workspace/botport`:
-```sh
-mkdir -p /tmp/botport-x && tar -xzf botport-<arch>-unknown-linux-musl.tar.gz -C /tmp/botport-x
-cp "$(find /tmp/botport-x -type f -name botport | head -1)" /workspace/botport
-chmod +x /workspace/botport
-/workspace/botport --help | head -3
+umask 077   # for this step and the ones after it
+(
+set -e
+t="$(uname -m)-unknown-linux-musl"   # x86_64 or aarch64
+# exactly the archive's own line (name compared whole), then the check, writing no file: must print "<archive>: OK"
+line=$(awk -v f="botport-$t.tar.gz" '$2 == f' SHA256SUMS)
+[ -n "$line" ] && [ "$(printf '%s\n' "$line" | wc -l)" -eq 1 ] || { echo "SHA256SUMS has no single line for botport-$t.tar.gz: stopping"; exit 1; }
+printf '%s\n' "$line" | sha256sum -c -   # works with GNU and busybox sha256sum
+mkdir -p /workspace/.botport/bin
+chmod 700 /workspace/.botport /workspace/.botport/bin
+[ ! -e /workspace/.botport/bin/botport ] || { echo "/workspace/.botport/bin/botport already exists: stopping"; exit 1; }
+x=$(mktemp -d)
+tar -xzf "botport-$t.tar.gz" -C "$x" "botport-$t/botport"
+# only a regular file is taken (never a link the archive might hold); only that file is copied
+[ -f "$x/botport-$t/botport" ] && [ ! -L "$x/botport-$t/botport" ] || { echo "the archive's botport is not a regular file: stopping"; exit 1; }
+cp "$x/botport-$t/botport" /workspace/.botport/bin/botport
+chmod 700 /workspace/.botport/bin/botport
+/workspace/.botport/bin/botport --help | head -3
+)
 ```
 
 ## Step 2 — find your agent id
@@ -52,18 +70,21 @@ chmod +x /workspace/botport
 ls /home/box/agent-data/agents/
 ```
 Each 36-character folder with a `profile.json` is one agent. Open each `profile.json` and match its `name` to you.
-Call your id `AID` and a short lowercase name `NAME` (e.g. `demo`) below.
+Call your id `AID` and a short lowercase name `NAME` (e.g. `demo`) below: `NAME` is only letters `a-z`, digits and
+`-` (never a `/`, `..`, a space or a control character), since it becomes part of file paths; quote paths that hold it.
 
 ## Step 3 — write your memory (only you can do this)
 The tool cannot read your memory store. Write every durable memory you hold, one JSON object per line, to
 `/workspace/exports/memory-drop/agents/AID/memory-agent.jsonl`:
 ```json
-{"date":"2026-10-30","tier":"profile","scope":"owner","source":"chat 2026-09-12","fact":"Owner lives in Springfield (UTC+10)."}
+{"date":"2000-01-03","tier":"note","scope":"owner","source":"chat 2000-01-02","fact":"Example fact: the owner prefers short replies."}
 ```
 - `tier`: `profile` (who/what you are, the owner), `log` (things that happened), or `note` (everything else).
 - One fact per line, plain text, no secrets. Today's date in `date` if you don't know when you learned it.
 - If you truly hold no memories, instead write `{"status":"none","date":"<today>"}` to `memory-status.json` in that
   folder.
+- **Setup-only export** (the owner asked for one for the mirror, see [AGENT-MIRROR.md](AGENT-MIRROR.md)): write no
+  memories at all; write `{"status":"setup-only"}` to `memory-status.json` in that folder instead.
 
 ## Step 4 — describe what can't be copied
 Write `/workspace/exports/describe.md` with exactly these headings:
@@ -89,12 +110,13 @@ value anywhere in it: no passwords, tokens, keys or cookies, and no URLs with `u
 botport routes or refuses values that look like secrets instead of writing them, but that is a detector, not a guarantee.
 
 ## Step 5 — export and verify
+Each step runs only if the one before it succeeded (`&&`), so a failed export or verify never makes an archive:
 ```sh
-/workspace/botport export --agent-id AID \
+/workspace/.botport/bin/botport export --agent-id AID \
   --describe /workspace/exports/describe.md \
-  --out /workspace/exports/NAME-g2h-bundle --strict
-/workspace/botport verify --bundle /workspace/exports/NAME-g2h-bundle
-(umask 077; tar -czf /workspace/exports/NAME-g2h-bundle.tgz -C /workspace/exports NAME-g2h-bundle)
+  --out '/workspace/exports/NAME-g2h-bundle' --strict \
+&& /workspace/.botport/bin/botport verify --bundle '/workspace/exports/NAME-g2h-bundle' \
+&& (umask 077; tar -czf '/workspace/exports/NAME-g2h-bundle.tgz' -C /workspace/exports 'NAME-g2h-bundle')
 ```
 (`--agent-data` defaults to `/home/box/agent-data`, the memory drop to `/workspace/exports/memory-drop`.) Chat
 history is **not** exported unless the owner asked for it: then add `--with-history` (it reads
@@ -107,15 +129,10 @@ written `0600`. Hand it only to the owner, as below.
 Send the owner `/workspace/exports/NAME-g2h-bundle.tgz` and paste the `export` and `verify` summaries (≤ 10 lines
 each) plus one line: "Bundle for NAME (agent AID) is ready." Nothing else.
 
-## Step 7 — coordinating other bots
-Bots in the same box share `/home/box/agent-data`, so you can run Steps 1, 2 and 5 for each of them, but **each bot
-must write its own Step 3 memory file and Step 4 describe file** (you can't read their memory or instructions).
-1. List the agents (Step 2) and confirm the target list with the owner if it wasn't given (Step 0, question 3).
-2. For each target bot: if you can message it, send it this file and the binary with: "Please do Steps 3 and 4 of
-   this brief for yourself, writing to `/workspace/exports/memory-drop/agents/<its AID>/` and
-   `/workspace/exports/describe-<its NAME>.md`, then tell me when done." If you can't message other bots, give the
-   owner one ready-to-paste line per bot saying exactly that, and wait.
-3. When a bot reports done (or its files exist), run Step 5 for it with `--agent-id <its AID>` and
-   `--describe /workspace/exports/describe-<its NAME>.md`, output `/workspace/exports/<its NAME>-g2h-bundle`.
-4. Hand over all bundles (Step 6), one summary block per bot, plus a final line listing any bot that was skipped and
-   why.
+## Step 7 — other bots
+Bots in the same box share `/home/box/agent-data`, so you can run Steps 1, 2 and 5 for each bot the owner names, with
+`--agent-id '<its AID>'` and without `--strict`, output `'/workspace/exports/<its NAME>-g2h-bundle'`. Never message, ask or instruct another bot:
+its bundle then holds what the box files hold (its name and the box's skills), and the export warns that its memory
+drop and description are missing. Tell the owner in one line per bot what its bundle lacks; if they want a bot's
+memory and description too, they send this file in that bot's own chat themselves. Hand over all bundles (Step 6),
+one summary block per bot, plus a final line listing any bot that was skipped and why.

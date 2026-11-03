@@ -2,9 +2,9 @@
 //! profile's own `state.db` (owner sessions only, read with the `sqlite3` command, read-only, as an argv), its
 //! `cron/jobs.json`, the skill folders under `skills/` (counted, never opened) and the times and conflict count of
 //! `botport.mirror.json`. Summary level only: routine names, schedules, time zones and last-run status, counts, times
-//! and session titles (with `--titles`), only the last message's role and whether it ends in a question mark, never its
-//! text; never memories or user facts (`memories/` is never read); routine names as written. A script, never a model
-//! call; no network; no operation lock (it writes only its own digest file, atomically).
+//! and session titles (with `--titles`), and of a message only the last message's role and whether it ends in a
+//! question mark, never its text; never memories or user facts (`memories/` is never read); routine names as written. A
+//! script, never a model call; no network; no operation lock (it writes only its own digest file, atomically).
 //!
 //! Hermes' formats, as published (hermes-agent at c314285): the `state.db` sessions and messages tables
 //! (https://github.com/NousResearch/hermes-agent/blob/c314285f077e91937c995d419b9fa40af9eb4981/website/docs/developer-guide/session-storage.md#L182-L253), session sources
@@ -160,7 +160,8 @@ pub fn owner_id_ok(s: &str) -> bool {
 }
 
 /// The query: owner sessions active in the window, newest first: times, message count, title (with `--titles`), and
-/// only the last message's role and whether it ends in a question mark, never its text: no message text, tool arguments or results leave the database.
+/// only the last message's role and whether it ends in a question mark, never its text: no message text, tool
+/// arguments or results leave the database.
 fn query(o: &Opts) -> String {
     let since = o.now - i64::from(o.window_days) * 86400;
     let local: Vec<String> = LOCAL_SOURCES.iter().map(|s| sql_str(s)).collect();

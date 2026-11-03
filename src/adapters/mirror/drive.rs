@@ -20,7 +20,7 @@ use super::{IoStats, PeerRead, Sent, Transport};
 use crate::core::item::Content;
 use crate::core::mirror::{ItemId, View};
 use crate::core::util::{err, sha256_hex, Res};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// How many files of each kind are kept.
 pub const KEEP: usize = 3;
@@ -32,6 +32,7 @@ pub fn pack_gen(name: &str) -> Option<u64> {
     let rest = name.strip_prefix("pack-")?.strip_suffix(".json")?;
     let (g, id) = rest.split_once('-')?;
     let ok = !g.is_empty()
+        && g.len() <= 13
         && g.bytes().all(|b| b.is_ascii_digit())
         && (1..=32).contains(&id.len())
         && id
@@ -66,6 +67,11 @@ impl<S: Store> DriveTransport<S> {
     }
 
     fn store(&mut self) -> &mut S {
+        &mut self.from.store
+    }
+
+    /// The pair folder's store, for the connection check (`mirror check`): files outside the sync layout only.
+    pub fn probe_store(&mut self) -> &mut dyn Store {
         &mut self.from.store
     }
 
@@ -205,7 +211,7 @@ impl<S: Store> DriveTransport<S> {
             match self
                 .store()
                 .get(&format!("to-grok/{name}"))?
-                .map(|b| Pack::parse(&b, &self.pair.clone()))
+                .map(|b| Pack::parse_with(&b, &self.pair.clone(), self.key.as_deref()))
             {
                 Some(Ok(p)) => referenced.extend(p.items.into_iter().filter_map(|i| i.blob)),
                 _ => all_read = false,
@@ -231,13 +237,13 @@ impl<S: Store> DriveTransport<S> {
             .list("digest")?
             .into_iter()
             .filter_map(|e| {
-                let n = e
+                let n: u64 = e
                     .name
                     .strip_prefix(&prefix)?
                     .strip_suffix(".md")?
                     .parse()
                     .ok()?;
-                Some((n, e.name))
+                (n <= crate::adapters::mirror::state::MAX_SEQ).then_some((n, e.name))
             })
             .collect();
         v.sort();
@@ -259,32 +265,41 @@ impl<S: Store> Transport for DriveTransport<S> {
     }
 
     fn read_peer_digest(&mut self) -> Res<Option<Vec<u8>>> {
-        let Some((_, name)) = self.digests("grok")?.pop() else {
-            return Ok(None);
-        };
+        /// How many of the newest Grok digests are checked, newest first, for one that verifies.
+        const DIGEST_SCAN: usize = 64;
         // text placed in a model's context must come from the pair: only a digest signed with the pair key is read
-        // (a pair without a key reads none from the folder)
+        // (a pair without a key reads none from the folder); the newest one that verifies counts
         let Some(key) = self.key.clone() else {
             return Ok(None);
         };
-        // a digest is capped at a few kilobytes; anything far larger is not one
-        if self
+        let pair = self.pair.clone();
+        let sizes: BTreeMap<String, u64> = self
             .store()
             .list("digest")?
-            .iter()
-            .any(|e| e.name == name && e.size > DIGEST_MAX)
-        {
-            return Ok(None);
+            .into_iter()
+            .map(|e| (e.name, e.size))
+            .collect();
+        let mut names = self.digests("grok")?;
+        names.reverse();
+        // newest first, each checked before any is passed over: the newest one that verifies counts (the scan is
+        // bounded so a folder filled with unsigned files cannot cost unbounded reads)
+        for (_, name) in names.into_iter().take(DIGEST_SCAN) {
+            // a digest is capped at a few kilobytes; anything far larger is not one
+            if sizes.get(&name).is_some_and(|s| *s > DIGEST_MAX) {
+                continue;
+            }
+            let Some(text) = self.store().get(&format!("digest/{name}"))? else {
+                continue;
+            };
+            let sig = self
+                .store()
+                .get(&format!("digest/{name}.mac"))?
+                .unwrap_or_default();
+            if crate::core::auth::digest_mac_ok(&key, &pair, &name, &text, &sig) {
+                return Ok(Some(text));
+            }
         }
-        let Some(text) = self.store().get(&format!("digest/{name}"))? else {
-            return Ok(None);
-        };
-        let sig = self
-            .store()
-            .get(&format!("digest/{name}.mac"))?
-            .unwrap_or_default();
-        let pair = self.pair.clone();
-        Ok(crate::core::auth::digest_mac_ok(&key, &pair, &name, &text, &sig).then_some(text))
+        Ok(None)
     }
 
     fn send_digest(&mut self, text: &[u8]) -> Res<Sent> {
@@ -553,6 +568,10 @@ mod tests {
         assert_eq!(t.read_peer_digest().unwrap(), None);
         let good = crate::core::auth::digest_mac(&key, "demo-bot", "grok-1.md", b"from the pair");
         s.put("digest/grok-1.md.mac", good.as_bytes()).unwrap();
+        assert_eq!(t.read_peer_digest().unwrap().unwrap(), b"from the pair");
+        // a newer digest that does not verify is passed over for the newest one that does
+        s.put("digest/grok-2.md", b"placed by someone else")
+            .unwrap();
         assert_eq!(t.read_peer_digest().unwrap().unwrap(), b"from the pair");
         // rotation removes old signatures with their digests
         for i in 2..=5 {

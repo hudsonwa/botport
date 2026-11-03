@@ -125,6 +125,28 @@ impl Package {
         })
     }
 
+    /// The digest the two sides compare (the item's neutral form): as [`Package::digest`], except that a root
+    /// `SKILL.md` counts by its [`skill_md_neutral`] text, so formatting a platform's export adds on the way (quoted
+    /// front-matter values, blank lines, trailing spaces) is not a change. Any other difference still is.
+    pub fn neutral_digest(&self) -> String {
+        let lines: String = self
+            .entries()
+            .iter()
+            .map(|e| {
+                let sha = match self.files.get(&e.path) {
+                    // a SKILL.md that is not UTF-8 counts by its bytes: a lossy reading could make two files equal
+                    Some((b, _)) if e.path == "SKILL.md" => match std::str::from_utf8(b) {
+                        Ok(t) => sha256_hex(skill_md_neutral(t).as_bytes()),
+                        Err(_) => e.sha256.clone(),
+                    },
+                    _ => e.sha256.clone(),
+                };
+                format!("{}\0{}\0{}\n", e.path, if e.exec { "x" } else { "-" }, sha)
+            })
+            .collect();
+        sha256_hex(lines.as_bytes())
+    }
+
     /// The package digest (see the module docs).
     pub fn digest(&self) -> String {
         let lines: String = self
@@ -307,6 +329,168 @@ impl Package {
         }
         Ok(())
     }
+}
+
+/// The version of the neutral form ([`Package::neutral_digest`], [`skill_md_neutral`]). State files and change packs
+/// carry it, and a side refuses a file written with another one: the two sides' botport must agree on what counts as
+/// the same copy.
+pub const NEUTRAL_FORM: u32 = 2;
+
+/// Version 1 (no `neutral_form` field in a file).
+pub fn neutral_form_v1() -> u32 {
+    1
+}
+
+/// The words every neutral-form refusal carries (a reader that skips unreadable files reports this one instead).
+pub const NEUTRAL_FORM_MISMATCH: &str = "compares copies another way";
+
+/// Refuses a state file or pack (`b`, its bytes) written with another neutral form `v`, but only when the file is
+/// intact and, with a pair key, signed with it: a damaged or forged file is refused as such, so a reader skips it like
+/// any other bad file instead of stopping on it. The checks run on the raw JSON, so they hold for a file whose release
+/// had fields this one lacks or the other way round.
+pub fn check_form_of(
+    b: &[u8],
+    what: &str,
+    v: u32,
+    key: Option<&[u8]>,
+) -> crate::core::util::Res<()> {
+    if v == NEUTRAL_FORM {
+        return Ok(());
+    }
+    intact_and_signed(b, what, key)?;
+    check_neutral_form(what, v)
+}
+
+/// Whether `b`, a state file or pack written in neutral form `v`, is in another form than this release's and is
+/// intact and (with a pair key) signed with it: the one case a reader stops on instead of skipping the file. A
+/// typed answer, never read from an error's text (which can quote the file).
+pub fn verified_other_form(b: &[u8], v: u32, key: Option<&[u8]>) -> bool {
+    v != NEUTRAL_FORM && intact_and_signed(b, "the file", key).is_ok()
+}
+
+/// `b` matches its own sha256 (the field left empty, `mac` left out) and, with a pair key, carries a valid `mac`.
+fn intact_and_signed(b: &[u8], what: &str, key: Option<&[u8]>) -> crate::core::util::Res<()> {
+    let raw: serde_json::Value =
+        serde_json::from_slice(b).map_err(|e| format!("{what} is not valid: {e}"))?;
+    let mut c = raw.clone();
+    let o = c.as_object_mut().ok_or(format!("{what} is not valid"))?;
+    let claimed = o.insert("sha256".into(), serde_json::json!(""));
+    o.remove("mac");
+    if claimed.as_ref().and_then(|c| c.as_str())
+        != Some(sha256_hex(super::util::json_sorted(&c).as_bytes()).as_str())
+    {
+        return Err(format!("{what} does not match its own sha256"));
+    }
+    if let Some(k) = key {
+        crate::core::auth::verify(&raw, k)?;
+    }
+    Ok(())
+}
+
+/// Refuses a file written with another neutral form.
+pub fn check_neutral_form(what: &str, v: u32) -> crate::core::util::Res<()> {
+    if v == NEUTRAL_FORM {
+        Ok(())
+    } else {
+        Err(format!(
+            "{what} was written by a botport that {NEUTRAL_FORM_MISMATCH} (neutral form {v}, this one {NEUTRAL_FORM}): run the same botport release on the host and in the box"
+        ))
+    }
+}
+
+/// `SKILL.md` as the two sides compare it: the front matter as parsed YAML in a canonical JSON form (quoting and key
+/// order do not matter; every value, list item and nesting level does); the body with trailing spaces dropped (a
+/// Markdown hard break, two or more spaces, kept as two), runs of blank lines as one and no leading or trailing blank
+/// lines, all outside fenced code blocks (``` or ~~~, closed only by the same character at least as long; kept exactly).
+/// Front matter that does not parse to a plain mapping (or holds a comment, a document marker or a directive, which
+/// YAML would drop or read across) is compared as it is, so no text is ever dropped.
+pub fn skill_md_neutral(text: &str) -> String {
+    let text = text.replace("\r\n", "\n");
+    let mut out = String::new();
+    let mut body = text.as_str();
+    if let Some(rest) = text.strip_prefix("---\n") {
+        if let Some(end) = rest
+            .find("\n---\n")
+            .or_else(|| rest.strip_suffix("\n---").map(|r| r.len()))
+        {
+            let front = &rest[..end];
+            // only a plain mapping is compared as data: anything YAML would drop or read across the delimiter (a
+            // comment, a document marker or directive, a scalar that is really body text) is compared as written
+            let plain = !front.lines().any(|l| {
+                l.contains('#')
+                    || l.starts_with("---")
+                    || l.starts_with("...")
+                    || l.starts_with('%')
+            });
+            match super::yaml11::parse::<serde_yaml::Value>(front) {
+                Ok(v @ serde_yaml::Value::Mapping(_)) if plain && all_strings(&v) => {
+                    let j = serde_json::to_value(&v).unwrap_or_default();
+                    out.push_str(&super::util::json_sorted(&j))
+                }
+                _ => out.push_str(front),
+            }
+            out.push_str("\n---\n");
+            body = rest.get(end + 5..).unwrap_or("");
+        }
+    }
+    let mut blank = false;
+    // the open code fence (its character and length): inside it every line is kept exactly
+    let mut fenced: Option<(char, usize)> = None;
+    let mut lines: Vec<String> = vec![];
+    for raw in body.lines() {
+        if let Some((c, n)) = fenced {
+            lines.push(raw.to_string());
+            let t = raw.trim();
+            if t.len() >= n && t.chars().all(|x| x == c) {
+                fenced = None;
+            }
+            continue;
+        }
+        // trailing whitespace is dropped, except a Markdown hard line break (two or more spaces), kept as two
+        let trimmed = raw.trim_end();
+        let hard_break = raw[trimmed.len()..].chars().filter(|c| *c == ' ').count() >= 2;
+        let l = if hard_break && !trimmed.is_empty() {
+            format!("{trimmed}  ")
+        } else {
+            trimmed.to_string()
+        };
+        let l = l.as_str();
+        if l.is_empty() {
+            blank = true;
+            continue;
+        }
+        if blank && !lines.is_empty() {
+            lines.push(String::new());
+        }
+        blank = false;
+        if let Some(f) = fence(l) {
+            fenced = Some(f);
+        }
+        lines.push(l.to_string());
+    }
+    out.push_str(&lines.join("\n"));
+    out
+}
+
+/// Whether every key and value is a string that no YAML 1.1 or 1.2 reader would type: only then can quoting be
+/// ignored without making two different values equal (`1.10` and `1.1`, `yes` and `'yes'` to PyYAML).
+/// (serde_yaml refuses a mapping with a duplicate key, so such front matter is compared as written.)
+fn all_strings(v: &serde_yaml::Value) -> bool {
+    use serde_yaml::Value as Y;
+    match v {
+        Y::String(s) => !super::yaml11::typed11(s),
+        Y::Sequence(xs) => xs.iter().all(all_strings),
+        Y::Mapping(m) => m.iter().all(|(k, v)| all_strings(k) && all_strings(v)),
+        _ => false,
+    }
+}
+
+/// A line that opens a code fence: three or more backticks or tildes (CommonMark).
+fn fence(l: &str) -> Option<(char, usize)> {
+    let t = l.trim_start();
+    let c = t.chars().next().filter(|c| *c == '`' || *c == '~')?;
+    let n = t.chars().take_while(|x| *x == c).count();
+    (n >= 3).then_some((c, n))
 }
 
 /// Read and check a received package: `dir` must hold a manifest that matches the files beside it exactly.
@@ -649,6 +833,124 @@ mod tests {
             p
         );
         fs::remove_dir_all(&w).ok();
+    }
+
+    #[test]
+    fn an_export_reformatting_skill_md_is_not_a_change() {
+        let installed = "---\nname: demo-skill\ndescription: Example skill\n---\n# Demo skill\n\nExample steps.\n";
+        let exported = "---\nname: demo-skill\ndescription: \"Example skill\"\n---\n\n# Demo skill \n\n\nExample steps.\n\n";
+        assert_eq!(skill_md_neutral(installed), skill_md_neutral(exported));
+        let pkg = |t: &str| {
+            Package::from_files(
+                "demo-skill",
+                BTreeMap::from([("SKILL.md".to_string(), (t.as_bytes().to_vec(), false))]),
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            pkg(installed).neutral_digest(),
+            pkg(exported).neutral_digest()
+        );
+        assert_ne!(pkg(installed).digest(), pkg(exported).digest());
+        // a real change still is one
+        let changed = installed.replace("Example steps.", "Other steps.");
+        assert_ne!(
+            pkg(installed).neutral_digest(),
+            pkg(&changed).neutral_digest()
+        );
+        let renamed = installed.replace("description: Example skill", "description: Another skill");
+        assert_ne!(
+            pkg(installed).neutral_digest(),
+            pkg(&renamed).neutral_digest()
+        );
+        // every front-matter value counts: list items, block scalars, nesting
+        let base = "---\nname: demo-skill\nallowed-tools:\n  - read\nmeta:\n  author: a\nnotes: |\n  one\n---\nBody.\n";
+        for other in [
+            base.replace("  - read\n", "  - read\n  - write\n"),
+            base.replace("  one\n", "  two\n"),
+            base.replace("meta:\n  author: a\n", "author: a\n"),
+        ] {
+            assert_ne!(skill_md_neutral(base), skill_md_neutral(&other), "{other}");
+        }
+        // fenced code is kept exactly
+        let code = "# T\n\n```\na\n\n\nb\n```\n";
+        assert_ne!(
+            skill_md_neutral(code),
+            skill_md_neutral(&code.replace("a\n\n\nb", "a\nb"))
+        );
+        // front matter that does not parse is compared as it is
+        let bad = "---\nname: [unclosed\n---\nBody.\n";
+        assert_ne!(
+            skill_md_neutral(bad),
+            skill_md_neutral(&bad.replace("name: [unclosed", "name:  [unclosed"))
+        );
+    }
+
+    #[test]
+    fn the_neutral_skill_md_never_drops_text() {
+        // two files that differ in text never compare equal, whatever the delimiters look like
+        let pairs = [
+            // the closing delimiter is the last line: what sits before it is front matter only if it is a mapping
+            (
+                "---\nIntro line\nmore intro\n---",
+                "---\nIntro line more intro\n---",
+            ),
+            (
+                "---\nname: x\n---body one\n---",
+                "---\nname: x\n---body two\n---",
+            ),
+            // YAML would drop a comment or read past a document marker
+            (
+                "---\nname: x # one\n---\nBody.\n",
+                "---\nname: x # two\n---\nBody.\n",
+            ),
+            (
+                "---\nname: x\n...\nkept one\n---\nBody.\n",
+                "---\nname: x\n...\nkept two\n---\nBody.\n",
+            ),
+            // a longer fence holds a shorter one; tildes are fences too
+            ("````\n```\na\n\n\nb\n````\n", "````\n```\na\nb\n````\n"),
+            ("~~~\na  \n\n\nb\n~~~\n", "~~~\na\nb\n~~~\n"),
+        ];
+        for (a, b) in pairs {
+            assert_ne!(skill_md_neutral(a), skill_md_neutral(b), "{a:?} vs {b:?}");
+        }
+        // the formatting rules still hold outside fences
+        assert_eq!(
+            skill_md_neutral("---\nname: x\n---\n# T\n\n\nBody. \n"),
+            skill_md_neutral("---\nname: 'x'\n---\n# T\n\nBody.\n")
+        );
+        // front matter compares as data only when no value could be read two ways
+        for (a, b) in [
+            ("---\nversion: 1.10\n---\n", "---\nversion: 1.1\n---\n"),
+            ("---\nx: 0123\n---\n", "---\nx: 123\n---\n"),
+            ("---\nflag: yes\n---\n", "---\nflag: 'yes'\n---\n"),
+            ("---\nd: a\nd: b\n---\n", "---\nd: b\n---\n"),
+        ] {
+            assert_ne!(skill_md_neutral(a), skill_md_neutral(b), "{a:?} vs {b:?}");
+        }
+        // what changes Markdown's meaning is a change: a repeated heading, a hard line break
+        assert_ne!(
+            skill_md_neutral("# T\n# T\nBody.\n"),
+            skill_md_neutral("# T\nBody.\n")
+        );
+        assert_ne!(
+            skill_md_neutral("Line one  \nline two\n"),
+            skill_md_neutral("Line one\nline two\n")
+        );
+        assert_eq!(
+            skill_md_neutral("Line one   \nline two\n"),
+            skill_md_neutral("Line one  \nline two\n")
+        );
+        // a SKILL.md that is not UTF-8 counts by its bytes
+        let raw = |b: &[u8]| {
+            let d = crate::core::util::test_dir("skill-raw");
+            fs::write(d.join("SKILL.md"), b).unwrap();
+            let p = Package::read(&d, "demo-skill", &Limits::default()).unwrap();
+            fs::remove_dir_all(&d).ok();
+            p.neutral_digest()
+        };
+        assert_ne!(raw(b"\xffBody.\n"), raw(b"\xfeBody.\n"));
     }
 
     #[test]

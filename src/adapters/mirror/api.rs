@@ -273,6 +273,19 @@ impl ApiStore {
         url: &str,
         body: Option<(&[u8], &str)>,
     ) -> Res<(u16, Vec<u8>)> {
+        self.call_capped(what, method, url, body, None)
+    }
+
+    /// [`Self::call`]; with `cap`, the request asks for at most that many bytes (a Range) and the response body goes
+    /// to a private file of which at most `cap` bytes are read.
+    fn call_capped(
+        &mut self,
+        what: &str,
+        method: &str,
+        url: &str,
+        body: Option<(&[u8], &str)>,
+        cap: Option<u64>,
+    ) -> Res<(u16, Vec<u8>)> {
         if let Some(rest) = self.cfg.base.strip_prefix("http://") {
             if !local_stub(rest) {
                 return err("Drive API: a plain http base is allowed only for a local stub");
@@ -284,12 +297,30 @@ impl ApiStore {
             Some((b, _)) => Some(tmp.file("b", b)?),
             None => None,
         };
-        let args = curl_args(
+        let mut args = curl_args(
             &self.cfg,
             method,
             url,
             bp.as_deref().zip(body.map(|(_, c)| c)),
         );
+        let capped_out = match cap {
+            Some(c) => {
+                let p = tmp.file("o", b"")?;
+                // before the url (the last argument): ask for bytes 0..c-1 only, and write the body to the file
+                let at = args.len() - 1;
+                args.splice(
+                    at..at,
+                    [
+                        "-r".to_string(),
+                        format!("0-{}", c.saturating_sub(1)),
+                        "-o".to_string(),
+                        p.display().to_string(),
+                    ],
+                );
+                Some((p, c))
+            }
+            None => None,
+        };
         let t0 = Instant::now();
         let out = (|| -> Res<std::process::Output> {
             let mut child = Command::new(crate::core::util::tool(&self.cfg.curl)?)
@@ -309,6 +340,16 @@ impl ApiStore {
                 .wait_with_output()
                 .map_err(|e| format!("Drive API {what}: {}", e.kind()))
         })();
+        let capped_body = match &capped_out {
+            Some((p, c)) => {
+                let mut b = Vec::new();
+                let f = fs::File::open(p).map_err(|e| format!("Drive API {what}: {}", e.kind()))?;
+                std::io::Read::read_to_end(&mut std::io::Read::take(f, *c), &mut b)
+                    .map_err(|e| format!("Drive API {what}: {}", e.kind()))?;
+                Some(b)
+            }
+            None => None,
+        };
         drop(tmp);
         let out = out?;
         self.io.net_ms += t0.elapsed().as_millis() as u64;
@@ -327,6 +368,13 @@ impl ApiStore {
                 format!("Drive API {what}: no HTTP status (network error or timeout)")
             })?;
         b.truncate(nl);
+        if let Some(cb) = capped_body {
+            b = cb;
+        }
+        // a Range past the end of a file that emptied since the listing: nothing to read
+        if cap.is_some() && code == 416 {
+            return Ok((code, vec![]));
+        }
         self.io.read_bytes += b.len() as u64;
         if !(200..300).contains(&code) {
             return err(format!("Drive API {what}: HTTP {code}"));
@@ -650,6 +698,24 @@ impl Store for ApiStore {
         Ok(Some(b))
     }
 
+    fn get_at_most(&mut self, path: &str, max: u64) -> Res<Option<Vec<u8>>> {
+        safe_rel("mirror file", path)?;
+        let (dir, name) = path.rsplit_once('/').unwrap_or(("", path));
+        let Some(n) = self.node(dir, name, false)? else {
+            return Ok(None);
+        };
+        // an empty file (an answer created but not filled in yet) needs no download: a Range on it is unsatisfiable
+        if n.size == 0 {
+            return Ok(Some(vec![]));
+        }
+        let url = format!("{}/drive/v3/files/{}?alt=media", self.cfg.base, pct(&n.id));
+        let cap = max.saturating_add(1);
+        let b = self
+            .call_capped("download", "GET", &url, None, Some(cap))?
+            .1;
+        Ok(Some(b))
+    }
+
     fn put(&mut self, path: &str, data: &[u8]) -> Res<()> {
         safe_rel("mirror file", path)?;
         let (dir, name) = path.rsplit_once('/').unwrap_or(("", path));
@@ -946,6 +1012,40 @@ mod tests {
 
     fn echo_token() -> Vec<String> {
         vec!["echo".into(), TOKEN.into()]
+    }
+
+    #[test]
+    fn a_bounded_download_keeps_at_most_max_plus_one_bytes() {
+        if Command::new("curl").arg("--version").output().is_err() {
+            eprintln!("curl not found; skipping");
+            return;
+        }
+        let fake = Arc::new(Mutex::new(Fake::default()));
+        let base = serve(fake.clone());
+        let mut s = store(&base, echo_token());
+        s.put("probe/bot.txt", &vec![b'x'; 10_000]).unwrap();
+        // the stand-in ignores the Range the request carries: at most max + 1 bytes are read all the same
+        let got =
+            |s: &mut ApiStore, max| s.get_at_most("probe/bot.txt", max).unwrap().unwrap().len();
+        assert_eq!(got(&mut s, 4096), 4097);
+        assert_eq!(got(&mut s, 20_000), 10_000);
+        assert_eq!(s.get_at_most("probe/none.txt", 4096).unwrap(), None);
+        // an empty answer file is read as empty, with no download at all
+        s.put("probe/r1/ack-1.txt", b"").unwrap();
+        let downloads = |f: &Arc<Mutex<Fake>>| {
+            f.lock()
+                .unwrap()
+                .calls
+                .iter()
+                .filter(|c| c.starts_with("GET /drive/v3/files/"))
+                .count()
+        };
+        let before = downloads(&fake);
+        assert_eq!(
+            s.get_at_most("probe/r1/ack-1.txt", 4096).unwrap(),
+            Some(vec![])
+        );
+        assert_eq!(downloads(&fake), before);
     }
 
     #[test]

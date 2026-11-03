@@ -60,7 +60,7 @@ impl Content {
     pub fn neutral_digest(&self, id: &ItemId) -> String {
         match self {
             Content::Text(t) => sha256_hex(canonical_text(id, t).as_bytes()),
-            Content::Package(p) => p.digest(),
+            Content::Package(p) => p.neutral_digest(),
             Content::Routine(s) => {
                 super::routines::neutral_digest(s, super::routines::DEFAULT_TZ, false)
             }
@@ -311,7 +311,7 @@ mod tests {
         let c = Content::Package(p.clone());
         let blob = c.to_blob(&s);
         assert_eq!(Content::from_blob(&s, &blob).unwrap(), c);
-        assert_eq!(c.neutral_digest(&s), p.digest());
+        assert_eq!(c.neutral_digest(&s), p.neutral_digest());
         // the wrong item, a renamed package, a broken file, an unknown schema
         assert!(Content::from_blob(&id("skill:other"), &blob).is_err());
         let t = String::from_utf8(blob.clone()).unwrap();

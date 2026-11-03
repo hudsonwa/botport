@@ -15,7 +15,7 @@ use crate::core::mirror::{Coverage, ItemId, Kind, SideRead, View};
 use crate::core::model::{Schedule, ScheduleKind};
 use crate::core::package::{Limits, Package};
 use crate::core::secrets;
-use crate::core::util::{err, json_sorted, read_str, sha256_hex, utc_stamp, write_atomic, Res};
+use crate::core::util::{err, json_sorted, sha256_hex, utc_stamp, write_atomic, Res};
 use serde_json::{json, Value};
 use serde_yaml::{Mapping, Value as Y};
 use std::collections::{BTreeMap, BTreeSet};
@@ -101,6 +101,63 @@ fn job_side_form(j: &Value) -> Vec<u8> {
     v.to_string().into_bytes()
 }
 
+/// The first line of a failed hermes call's stderr, for the error: the values botport passed (which can be another
+/// side's text) are masked, a line that looks like it holds a secret is left out, and it is cut short.
+fn stderr_hint(stderr: &[u8], args: &[&str]) -> String {
+    let first = String::from_utf8_lossy(stderr)
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("")
+        .to_string();
+    let mut line = first;
+    for a in args {
+        // the whole argument and its value after `=`, each wherever it is repeated
+        for v in [*a, a.split_once('=').map_or(*a, |(_, v)| v)] {
+            if v.len() >= 4 {
+                line = line.replace(v, "…");
+            }
+        }
+    }
+    // never a control or direction character on the owner's terminal
+    let line: String = line
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}') {
+                '?'
+            } else {
+                c
+            }
+        })
+        .collect();
+    if line.is_empty() || secrets::find_secret("hermes stderr", line.as_bytes()).is_some() {
+        return String::new();
+    }
+    let cut: String = line.chars().take(160).collect();
+    format!(": {cut}")
+}
+
+/// The error for a failed hermes call. A command that carried a routine prompt (`cron create`, or `--prompt=`) gets
+/// only its exit code and a fixed hint: its stderr can repeat the prompt, so none of it is shown. Any other command
+/// gets the first stderr line ([`stderr_hint`]), shown escaped.
+fn failure_message(args: &[&str], code: i32, stderr: &[u8]) -> String {
+    let (verb, sub) = (
+        args.first().copied().unwrap_or(""),
+        args.get(1).copied().unwrap_or(""),
+    );
+    let carried_prompt = sub == "create" || args.iter().any(|a| a.starts_with("--prompt="));
+    if carried_prompt {
+        return format!(
+            "hermes {verb} {sub} failed (exit {code}); its output is not shown because the command carried a routine \
+             prompt: run `hermes cron list` to see the job, or rerun with the Hermes logs open"
+        );
+    }
+    format!(
+        "hermes {verb} {sub} failed (exit {code}){}",
+        crate::core::util::name_safe(&stderr_hint(stderr, args))
+    )
+}
+
 /// A job's own zone: Hermes keeps it in the top-level `timezone` (empty: the profile's default).
 fn job_tz(j: &Value) -> String {
     j["timezone"].as_str().unwrap_or("").to_string()
@@ -127,8 +184,10 @@ fn load_config(dest: &Path) -> Res<Option<Y>> {
     if !p.is_file() {
         return Ok(None);
     }
-    let y: Y = serde_yaml::from_str(&crate::core::yaml11::read(&read_str(&p)?))
-        .map_err(|e| format!("{}: {e}", p.display()))?;
+    let y: Y = crate::core::yaml11::parse(&crate::core::yaml11::read(
+        &crate::core::yaml11::read_yaml_file(&p)?,
+    ))
+    .map_err(|e| format!("{}: {e}", p.display()))?;
     Ok(Some(y))
 }
 
@@ -371,7 +430,7 @@ impl HermesSide {
             if let Content::Package(p) = c {
                 out.read
                     .items
-                    .insert(id.clone(), View::new(p.digest(), p.digest()));
+                    .insert(id.clone(), View::new(p.digest(), p.neutral_digest()));
             }
         }
         for k in [Kind::Persona, Kind::Skill, Kind::Routine, Kind::Connector] {
@@ -569,15 +628,45 @@ impl HermesSide {
             .output()
             .map_err(|e| format!("{}: {e}", self.hermes_bin))?;
         if !o.status.success() {
-            // its stderr is not quoted: it can repeat a prompt
-            return err(format!(
-                "hermes {} {} failed (exit {})",
-                args.first().copied().unwrap_or(""),
-                args.get(1).copied().unwrap_or(""),
-                o.status.code().unwrap_or(-1)
+            return err(failure_message(
+                args,
+                o.status.code().unwrap_or(-1),
+                &o.stderr,
             ));
         }
         Ok(())
+    }
+
+    /// Whether this Hermes's `cron create` takes `--timezone` (read once per Hermes binary from its help; a help that
+    /// cannot be read counts as yes, and the create itself then says what went wrong).
+    fn cron_has_timezone(&self) -> bool {
+        static SEEN: std::sync::Mutex<Vec<(String, bool)>> = std::sync::Mutex::new(Vec::new());
+        let bin = self.hermes_bin.clone();
+        if let Some(v) = SEEN
+            .lock()
+            .ok()
+            .and_then(|s| s.iter().find(|(b, _)| *b == bin).map(|(_, v)| *v))
+        {
+            return v;
+        }
+        let mut cmd = Command::new(&self.hermes_bin);
+        if let Some(h) = &self.hermes_home {
+            cmd.env("HERMES_HOME", h);
+        }
+        let has = match cmd
+            .args(["-p", &self.profile, "cron", "create", "--help"])
+            .output()
+        {
+            Ok(o) if o.status.success() => {
+                let text = [o.stdout, o.stderr].concat();
+                String::from_utf8_lossy(&text).contains("--timezone")
+            }
+            _ => true,
+        };
+        if let Ok(mut s) = SEEN.lock() {
+            s.push((bin, has));
+        }
+        has
     }
 
     fn write_routine(&self, id: &ItemId, s: &Schedule, paused: bool) -> Res<()> {
@@ -592,7 +681,23 @@ impl HermesSide {
             ));
         }
         let sched = super::schedule::normalize(s.cron.as_deref().unwrap_or(""))?;
-        let tz = (!s.tz.is_empty() && s.tz != "local").then_some(s.tz.as_str());
+        let mut tz = (!s.tz.is_empty() && s.tz != "local").then_some(s.tz.as_str());
+        // a Hermes whose cron cannot store a zone: UTC (also what an export without a zone reads as) is left out, any
+        // other zone is refused with the reason rather than written at the wrong time
+        if tz.is_some() && !self.cron_has_timezone() {
+            match tz {
+                Some(z) if crate::core::routines::UTC.contains(&z.to_ascii_lowercase().as_str()) => {
+                    tz = None
+                }
+                Some(z) => {
+                    return err(format!(
+                        "{id}: this Hermes cannot store a routine timezone ({}): update Hermes, or set the routine up there by hand",
+                        crate::core::routines::shown_tz(z)
+                    ))
+                }
+                None => {}
+            }
+        }
         let enable = s.enabled && !paused;
         // every value goes as --opt=value and every positional after `--`: no text from the other side can be read
         // as an option by the hermes CLI
@@ -716,7 +821,7 @@ impl HermesSide {
             }
         }
         // the same writer as v0.1's MCP entries: YAML 1.1-safe scalars, the file's leading comment lines kept
-        let head: String = fs::read_to_string(&p)
+        let head: String = crate::core::yaml11::read_yaml_file(&p)
             .unwrap_or_default()
             .lines()
             .take_while(|l| l.starts_with('#'))
@@ -735,6 +840,44 @@ impl HermesSide {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_call_that_carried_a_prompt_shows_no_stderr() {
+        let stderr = b"error: bad prompt: Demo secret plan for Tuesday\n";
+        for args in [
+            &[
+                "cron",
+                "create",
+                "--name=demo",
+                "--",
+                "0 9 * * 1",
+                "Demo secret plan for Tuesday",
+            ][..],
+            &[
+                "cron",
+                "edit",
+                "--schedule=0 9 * * 1",
+                "--prompt=Demo secret plan for Tuesday",
+                "--",
+                "j1",
+            ][..],
+        ] {
+            let m = failure_message(args, 2, stderr);
+            assert!(m.contains("(exit 2)") && m.contains("not shown"), "{m}");
+            assert!(
+                !m.contains("Demo") && !m.contains("Tuesday") && !m.contains("bad prompt"),
+                "{m}"
+            );
+        }
+        // a call without a prompt shows its first stderr line, escaped
+        let m = failure_message(
+            &["cron", "remove", "--", "j1"],
+            1,
+            b"no job \xe2\x80\xae1j here\n",
+        );
+        assert!(m.starts_with("hermes cron remove failed (exit 1): "), "{m}");
+        assert!(!m.contains('\u{202e}'), "{m}");
+    }
 
     #[test]
     fn a_job_runs_only_when_hermes_would_run_it() {
@@ -933,6 +1076,17 @@ mod tests {
             "{cfg}"
         );
         assert!(cfg.contains("model: \"example-model\""), "{cfg}");
+        // a url on another host: the headers kept for the old one are dropped, never sent to the new one
+        let cur = s.current(&c).unwrap().unwrap();
+        m.insert("url".to_string(), json!("https://other.example.test/mcp"));
+        s.write(&c, &Content::Connector(m.clone()), Some(&cur.digest), false)
+            .unwrap()
+            .unwrap();
+        let cfg = fs::read_to_string(d.join("config.yaml")).unwrap();
+        assert!(
+            cfg.contains("https://other.example.test/mcp") && !cfg.contains("X-Demo"),
+            "{cfg}"
+        );
         // a url with a credential in it is refused
         let cur = s.current(&c).unwrap().unwrap();
         m.insert(

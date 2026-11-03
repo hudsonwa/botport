@@ -117,6 +117,17 @@ pub fn read_confined_if(
     rel: &str,
     ok: impl Fn(&fs::Metadata) -> bool,
 ) -> Result<Vec<u8>, Confined> {
+    read_confined_capped(root, dir, rel, ok, u64::MAX)
+}
+
+/// [`read_confined_if`], reading at most `cap` bytes: nothing past them is ever read.
+pub fn read_confined_capped(
+    root: &Path,
+    dir: &Path,
+    rel: &str,
+    ok: impl Fn(&fs::Metadata) -> bool,
+    cap: u64,
+) -> Result<Vec<u8>, Confined> {
     if safe_rel("path", rel).is_err() {
         return Err(Confined::Outside);
     }
@@ -145,7 +156,8 @@ pub fn read_confined_if(
         return Err(Confined::NotRegular);
     }
     let mut b = Vec::new();
-    std::io::Read::read_to_end(&mut f, &mut b).map_err(|e| Confined::Io(e.to_string()))?;
+    std::io::Read::read_to_end(&mut std::io::Read::take(&mut f, cap), &mut b)
+        .map_err(|e| Confined::Io(e.to_string()))?;
     Ok(b)
 }
 
@@ -484,6 +496,19 @@ pub fn name_safe(s: &str) -> String {
 /// 0600, and `root` plus every directory below it on the way to the file 0700. A directory on the way that is a
 /// symlink or not a directory is refused.
 pub fn write_private(root: &Path, rel: &str, data: &[u8]) -> Res<()> {
+    private_folders(root, rel)?;
+    write_atomic(&root.join(rel), data, Some(0o600))
+}
+
+/// [`write_private`] for botport's own fixed text (a brief compiled into the binary): written without the secret
+/// guard, whose patterns would misread a document that explains which values never to write.
+pub fn write_private_fixed(root: &Path, rel: &str, data: &'static str) -> Res<()> {
+    private_folders(root, rel)?;
+    write_unguarded(&root.join(rel), data.as_bytes(), Some(0o600))
+}
+
+/// `root` and every folder below it on the way to `rel`: created 0700 if missing, refused if a symlink or not a folder.
+fn private_folders(root: &Path, rel: &str) -> Res<()> {
     safe_rel("bundle file", rel)?;
     fs::create_dir_all(root).map_err(|e| format!("mkdir {}: {e}", root.display()))?;
     private_dir(root, fs::metadata(root).ok())?;
@@ -497,7 +522,7 @@ pub fn write_private(root: &Path, rel: &str, data: &[u8]) -> Res<()> {
         }
         private_dir(&d, m.or_else(|| fs::symlink_metadata(&d).ok()))?;
     }
-    write_atomic(&root.join(rel), data, Some(0o600))
+    Ok(())
 }
 
 /// Create `d` (and its parents) if needed and make it a private directory (0700); a symlink or non-directory is
@@ -743,6 +768,24 @@ impl Args {
     }
 }
 
+/// For tests: a new private (0700) directory under the system temp directory with a random name, so no other
+/// process can predict it or have made it first.
+#[cfg(test)]
+pub fn test_dir(tag: &str) -> PathBuf {
+    let d = std::env::temp_dir().join(format!(
+        "botport-{tag}-{}",
+        crate::adapters::mirror::pack::random_id()
+    ));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().mode(0o700).create(&d).unwrap();
+    }
+    #[cfg(not(unix))]
+    std::fs::create_dir(&d).unwrap();
+    d
+}
+
 /// The origin of a url (scheme, host and port, lowercased): `https://mcp.example.test:8443`. Credentials kept for one
 /// origin never go to another. `None`, "no origin", for anything a browser-style parser could read differently from a
 /// plain one: a scheme other than http or https, userinfo (an `@` in the authority), a backslash, percent-encoding, or
@@ -815,24 +858,6 @@ pub fn url_origin(url: &str) -> Option<String> {
 /// Whether two urls share one origin; "no origin" on either side never does.
 pub fn same_origin(a: &str, b: &str) -> bool {
     matches!((url_origin(a), url_origin(b)), (Some(x), Some(y)) if x == y)
-}
-
-/// For tests: a new private (0700) directory under the system temp directory with a random name, so no other
-/// process can predict it or have made it first.
-#[cfg(test)]
-pub fn test_dir(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!(
-        "botport-{tag}-{}",
-        crate::adapters::mirror::pack::random_id()
-    ));
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        std::fs::DirBuilder::new().mode(0o700).create(&d).unwrap();
-    }
-    #[cfg(not(unix))]
-    std::fs::create_dir(&d).unwrap();
-    d
 }
 
 /// An external program (`sqlite3`, `curl`, a token command) to run by absolute path: a name with a `/` is taken as
@@ -990,10 +1015,11 @@ fn safe_dir_at(dir: &Path, depth: u8) -> bool {
         }
         true
     }
+    // the ownership and mode checks are Unix-only: elsewhere no folder is trusted
     #[cfg(not(unix))]
     {
-        let _ = depth;
-        dir.is_dir()
+        let _ = (dir, depth);
+        false
     }
 }
 
@@ -1018,7 +1044,8 @@ fn safe_program(p: &Path) -> bool {
     }
     #[cfg(not(unix))]
     {
-        p.is_file()
+        let _ = p;
+        false
     }
 }
 

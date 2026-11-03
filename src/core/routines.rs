@@ -252,7 +252,7 @@ pub fn normalize_schedule(s: &str) -> String {
 pub const DEFAULT_TZ: &str = "UTC";
 
 /// Spellings of UTC (case-insensitive) that all compare as `UTC`.
-const UTC: [&str; 9] = [
+pub const UTC: [&str; 9] = [
     "utc",
     "etc/utc",
     "etc/universal",

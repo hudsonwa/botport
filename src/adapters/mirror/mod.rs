@@ -11,8 +11,9 @@
 //! - [`drive`]: the Drive transport (folder layout, change packs, `HEAD`); [`api`]: its Drive API store; [`pack`]: the
 //!   change pack and `HEAD` formats.
 use crate::core::item::Content;
-use crate::core::mirror::{Applied, ItemId, SideRead, View};
+use crate::core::mirror::{Applied, ItemId, Kind, SideRead, View};
 use crate::core::util::Res;
+use std::collections::BTreeMap;
 
 pub mod api;
 pub mod drive;
@@ -36,6 +37,10 @@ pub struct PeerRead {
     pub applied_gen: Option<u64>,
     /// Whether the read was authenticated with the pair key.
     pub authenticated: bool,
+    /// Kinds the Grok side could not read at all, with the reason.
+    pub unread: BTreeMap<Kind, String>,
+    /// Kinds the Grok side reads but never writes, with the reason.
+    pub by_hand: BTreeMap<Kind, String>,
 }
 
 /// Bytes moved and time spent on the network, for the metrics row.

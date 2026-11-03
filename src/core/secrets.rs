@@ -752,6 +752,62 @@ pub fn guard(what: &str, data: &[u8]) -> Result<(), String> {
         .map_err(|at| format!("refusing to write {what}: {at}; route it to the checklist"))
 }
 
+/// What a refused, structurally unreadable YAML file is reported as (the guard's error starts with it).
+pub const UNCHECKED: &str = "it could not be checked as YAML";
+
+/// The reason inside a guard error for a YAML file that could not be checked, if that is why it was refused.
+pub fn unchecked_reason(err: &str) -> Option<&str> {
+    let i = err.find(UNCHECKED)?;
+    let rest = &err[i..];
+    Some(
+        rest.split("; route it to the checklist")
+            .next()
+            .unwrap_or(rest),
+    )
+}
+
+/// The first YAML text that looks like it holds a secret, with where it is: every string, every key (every entry
+/// of a mapping, duplicate keys included, so none is dropped) and every tag's text, in every document.
+fn walk_nodes(
+    docs: &[crate::core::yaml11::Node],
+    check: fn(&str) -> Option<Reason>,
+) -> Option<(String, Reason)> {
+    use crate::core::yaml11::Node;
+    let mut stack: Vec<(String, &Node)> = docs
+        .iter()
+        .enumerate()
+        .map(|(i, d)| (format!("$[{i}]"), d))
+        .collect();
+    while let Some((at, n)) = stack.pop() {
+        match n {
+            Node::Str(t) => {
+                if let Some(r) = check(t) {
+                    return Some((at, r));
+                }
+            }
+            Node::Seq(q) => {
+                stack.extend(q.iter().enumerate().map(|(i, x)| (format!("{at}[{i}]"), x)))
+            }
+            Node::Map(m) => {
+                // locations name entries by position, never by key text; each key is checked before its value
+                // (pushed after it, so popped first)
+                for (i, (k, v)) in m.iter().enumerate().rev() {
+                    stack.push((format!("{at}{{entry {i}}}"), v));
+                    stack.push((format!("the key of entry {i} under {at}"), k));
+                }
+            }
+            Node::Tagged(tag, v) => {
+                if let Some(r) = check(tag) {
+                    return Some((format!("a tag under {at}"), r));
+                }
+                stack.push((at, v));
+            }
+            Node::Null | Node::Bool(_) | Node::Number(_) => {}
+        }
+    }
+    None
+}
+
 /// Where `data` looks like it holds a secret ("line 2 looks like it holds a secret (…)"), never the value.
 pub fn find_secret(what: &str, data: &[u8]) -> Option<String> {
     guard_with(what, data, guard_str).err()
@@ -770,17 +826,32 @@ fn guard_with(what: &str, data: &[u8], check: fn(&str) -> Option<Reason>) -> Res
             .collect();
         v.filter(|v| !v.is_empty()).map(serde_json::Value::Array)
     };
-    let yaml = || {
-        [".yaml", ".yml"]
-            .iter()
-            .any(|e| what.ends_with(e))
-            .then(|| serde_yaml::from_str::<serde_json::Value>(text).ok())
-            .flatten()
+    let lower = what.to_ascii_lowercase();
+    let is_yaml = [".yaml", ".yml"].iter().any(|e| lower.ends_with(e));
+    // a YAML-named file is always read as YAML (JSON is YAML too): the JSON reader keeps only the last of
+    // duplicate keys, the YAML node reader keeps every entry
+    let tree = if is_yaml {
+        None
+    } else {
+        serde_json::from_str::<serde_json::Value>(text)
+            .ok()
+            .or_else(jsonl)
     };
-    let tree = serde_json::from_str::<serde_json::Value>(text)
-        .ok()
-        .or_else(jsonl)
-        .or_else(yaml);
+    let mut yaml_text = false;
+    if tree.is_none() && is_yaml {
+        // fail closed: a YAML file that cannot be read structurally (a parse error, or over the size, nesting or
+        // node limits) is refused, never checked line by line instead
+        match yaml_tree(text, check) {
+            YamlRead::Nodes(docs) => {
+                if let Some((at, r)) = walk_nodes(&docs, check) {
+                    return hit(at, r);
+                }
+                yaml_text = true;
+            }
+            YamlRead::Hit(at) => return Err(at),
+            YamlRead::Unreadable(e) => return Err(format!("{UNCHECKED} ({e})")),
+        }
+    }
     match tree {
         Some(v) => {
             let mut stack = vec![("$".to_string(), &v)];
@@ -806,6 +877,7 @@ fn guard_with(what: &str, data: &[u8], check: fn(&str) -> Option<Reason>) -> Res
                 }
             }
         }
+        None if yaml_text => {}
         None => {
             for (n, l) in text.lines().enumerate() {
                 if let Some(r) = check(l) {
@@ -814,7 +886,165 @@ fn guard_with(what: &str, data: &[u8], check: fn(&str) -> Option<Reason>) -> Res
             }
         }
     }
+    // comments, anchor and alias names and directives are not part of the YAML values: check them as text, on
+    // the lines a YAML reader sees
+    if yaml_text {
+        for (n, l) in crate::core::yaml11::yaml_lines(text).enumerate() {
+            let at = || format!("line {} (outside the values)", n + 1);
+            if l.trim_start().starts_with('%') {
+                if let Some(r) = check(l) {
+                    return hit(at(), r);
+                }
+            }
+            if let Some(c) = comment_of(l) {
+                if let Some(r) = check(c) {
+                    return hit(at(), r);
+                }
+            }
+            for w in
+                l.split(|c: char| c.is_whitespace() || matches!(c, ',' | '[' | ']' | '{' | '}'))
+            {
+                if let Some(name) = w.strip_prefix('&').or_else(|| w.strip_prefix('*')) {
+                    if let Some(r) = check(name) {
+                        return hit(at(), r);
+                    }
+                }
+            }
+        }
+    }
     Ok(())
+}
+
+/// The text from a line's first `#` that starts a comment (at the line start or after whitespace), if any. May
+/// also catch a `#` inside a quoted string; that text is then checked twice, never skipped.
+fn comment_of(l: &str) -> Option<&str> {
+    let b = l.as_bytes();
+    (0..b.len())
+        .find(|&i| b[i] == b'#' && (i == 0 || b[i - 1] == b' ' || b[i - 1] == b'\t'))
+        .map(|i| &l[i..])
+}
+
+/// The spans of template markup: `{{ … }}` and `{% … %}` (possibly over several lines), as byte ranges.
+fn template_spans(text: &str) -> Vec<std::ops::Range<usize>> {
+    let mut out = vec![];
+    let mut i = 0;
+    while let Some(off) = text[i..].find('{') {
+        let at = i + off;
+        let close = match text[at..].get(..2) {
+            Some("{{") => "}}",
+            Some("{%") => "%}",
+            _ => {
+                i = at + 1;
+                continue;
+            }
+        };
+        match text[at + 2..].find(close) {
+            Some(e) => {
+                let end = at + 2 + e + 2;
+                out.push(at..end);
+                i = end;
+            }
+            None => break,
+        }
+    }
+    out
+}
+
+/// What [`yaml_tree`] made of a YAML file.
+enum YamlRead {
+    /// every document as a node tree to walk (duplicate keys kept)
+    Nodes(Vec<crate::core::yaml11::Node>),
+    /// a template span holds a secret (where, never the value)
+    Hit(String),
+    /// not readable as YAML (why, by position only)
+    Unreadable(String),
+}
+
+/// `\xHH`, `\uHHHH`, `\UHHHHHHHH` and one-letter escapes of a double-quoted YAML scalar decoded, and escaped line
+/// breaks joined, so a secret spelled with escapes inside a template span is still seen.
+fn yaml_unescape(s: &str) -> String {
+    let mut out = String::new();
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        let hex = |n: usize, it: &mut std::iter::Peekable<std::str::Chars>| -> Option<char> {
+            let h: String = (0..n).filter_map(|_| it.next()).collect();
+            u32::from_str_radix(&h, 16).ok().and_then(char::from_u32)
+        };
+        match it.next() {
+            Some('x') => out.extend(hex(2, &mut it)),
+            Some('u') => out.extend(hex(4, &mut it)),
+            Some('U') => out.extend(hex(8, &mut it)),
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('\n') | Some('\r') => {
+                while it.peek().is_some_and(|c| c.is_whitespace()) {
+                    it.next();
+                }
+            }
+            Some(o) => out.push(o),
+            None => {}
+        }
+    }
+    out
+}
+
+/// A YAML file for the checks. A template (Helm, Jinja) that is not YAML as written is read again with its markup
+/// set aside, positions kept: a span that is the only content of its lines (`{{- if … }}`, `{% for … %}`,
+/// `{{- toYaml … | nindent 4 }}`) is blanked, a span used inline becomes a plain placeholder. The text inside every
+/// span is checked on its own (also with escapes decoded; a quoted span over several lines is refused), and the
+/// result must parse (a key repeated by if/else branches is kept, both values checked); a template that still
+/// does not parse is refused, never line-checked.
+fn yaml_tree(text: &str, check: fn(&str) -> Option<Reason>) -> YamlRead {
+    let first = match crate::core::yaml11::parse_all_nodes(text) {
+        Ok(docs) => return YamlRead::Nodes(docs),
+        Err(e) => e,
+    };
+    let spans = template_spans(text);
+    if spans.is_empty() {
+        return YamlRead::Unreadable(first);
+    }
+    for r in &spans {
+        let span = &text[r.clone()];
+        if span.contains(['\n', '\r']) && span.contains(['"', '\'']) {
+            return YamlRead::Unreadable(
+                "a template expression with quotes spans several lines".into(),
+            );
+        }
+        if let Some(why) = check(span).or_else(|| check(&yaml_unescape(span))) {
+            return YamlRead::Hit(format!(
+                "a template expression looks like it holds a secret ({why})"
+            ));
+        }
+    }
+    let line_start = |i: usize| text[..i].rfind('\n').map_or(0, |p| p + 1);
+    let line_end = |i: usize| text[i..].find('\n').map_or(text.len(), |p| i + p);
+    let mut sub: Vec<u8> = text.as_bytes().to_vec();
+    for r in &spans {
+        // the only content of its lines (a control line) is blanked; a span used inline becomes a placeholder
+        let alone = text[line_start(r.start)..r.start].trim().is_empty()
+            && text[r.end..line_end(r.end)].trim().is_empty();
+        let fill = if alone || text[r.clone()].starts_with("{%") {
+            b' '
+        } else {
+            b'x'
+        };
+        for i in r.clone() {
+            if sub[i] != b'\n' && sub[i] != b'\r' {
+                sub[i] = fill;
+            }
+        }
+    }
+    let Ok(sub) = String::from_utf8(sub) else {
+        return YamlRead::Unreadable(first);
+    };
+    match crate::core::yaml11::parse_all_nodes(&sub) {
+        Ok(docs) => YamlRead::Nodes(docs),
+        Err(e) => YamlRead::Unreadable(format!("{e}, also with its template markup set aside")),
+    }
 }
 
 const HIGH_ENTROPY: &str = "long high-entropy string";
@@ -1009,6 +1239,158 @@ pub fn display(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `.yaml`/`.yml` file is checked structurally or not written: a parse error, or a document over the size,
+    /// nesting or alias limits, is refused instead of falling back to the line check.
+    #[test]
+    fn yaml_guard_fails_closed() {
+        for bad in [
+            "a: [unclosed\n".to_string(),
+            "a: \"open\n".to_string(),
+            format!("a: {}1{}\n", "[".repeat(100), "]".repeat(100)),
+        ] {
+            let e = guard("demo.yaml", bad.as_bytes()).unwrap_err();
+            assert!(e.contains("could not be checked as YAML"), "{bad:?}: {e}");
+            assert!(guard("demo.yml", bad.as_bytes()).is_err());
+        }
+        // the same text under another name is still checked line by line
+        assert_eq!(guard("demo.txt", b"a: [unclosed\n"), Ok(()));
+        // non-string keys and tags are walked too
+        assert_eq!(
+            guard(
+                "demo.yaml",
+                b"1: one\n!!str t: two\nn: 12345678901234567890\n"
+            ),
+            Ok(())
+        );
+        assert!(guard("demo.yaml", b"7: api_key=abc123def456ghi789\n").is_err());
+        assert!(guard("demo.yaml", b"? [k]\n: api_key=abc123def456ghi789\n").is_err());
+        // the extension in any case
+        assert!(guard("demo.YAML", b"a: [unclosed\n").is_err());
+        // multi-document files are read whole: every document is checked
+        assert_eq!(guard("demo.yaml", b"a: 1\n---\nb: 2\n"), Ok(()));
+        assert!(guard("demo.yaml", b"a: 1\n---\nb: api_key=abc123def456ghi789\n").is_err());
+        // templates: read with their markup set aside (expressions become placeholders, control lines blank); the
+        // markup itself is checked, and the rest must still be YAML
+        let tpl = b"image: {{ .Values.image }}\nreplicas: {{ .Values.n }}\n";
+        assert_eq!(guard("deploy.yaml", tpl), Ok(()));
+        let jinja = b"{% if prod %}\nreplicas: 3\n{% endif %}\nname: demo\n";
+        assert_eq!(guard("deploy.yaml", jinja), Ok(()));
+        assert!(guard(
+            "deploy.yaml",
+            b"image: {{ .Values.image }}\ntoken: api_key=abc123def456ghi789\n"
+        )
+        .is_err());
+        assert!(guard(
+            "deploy.yaml",
+            b"{% if x %}\na: {{ \"api_key=abc123def456ghi789\" }}\n{% endif %}\n"
+        )
+        .is_err());
+        // everyday Helm shapes: a whole-file if wrapper, an indented if inside a mapping, if/else repeating a key,
+        // and a lone `toYaml | nindent` line
+        let helm = b"{{- if .Values.enabled }}\napiVersion: v1\nkind: ConfigMap\ndata:\n  {{- if .Values.extra }}\n  extra: \"1\"\n  {{- end }}\n  name: demo\n{{- end }}\n";
+        assert_eq!(guard("cm.yaml", helm), Ok(()));
+        let branches =
+            b"{{- if .Values.prod }}\nreplicas: 3\n{{- else }}\nreplicas: 1\n{{- end }}\n";
+        assert_eq!(guard("deploy.yaml", branches), Ok(()));
+        assert!(guard("deploy.yaml", b"{{- if .Values.prod }}\nreplicas: 3\n{{- else }}\nreplicas: 1\ntoken: api_key=abc123def456ghi789\n{{- end }}\n").is_err());
+        let nindent = b"spec:\n  template:\n    metadata:\n      labels:\n        {{- toYaml .Values.labels | nindent 8 }}\n    name: demo\n";
+        assert_eq!(guard("deploy.yaml", nindent), Ok(()));
+        // escapes inside a span are decoded before the check; a quoted span over several lines is refused
+        assert!(guard(
+            "deploy.yaml",
+            b"a: {{ \"api\\x5fkey=abc123def456ghi789\" }}\nb: [\n"
+        )
+        .is_err());
+        assert!(guard("deploy.yaml", b"a: {{ \"x\n  y\" }}\nb: [\n")
+            .unwrap_err()
+            .contains("spans several lines"));
+        // comments after a line break other than \n, or after a BOM, are found; anchors, aliases and directives
+        // are checked too
+        assert!(guard(
+            "demo.yaml",
+            "a: 1\r# api_key=abc123def456ghi789\n".as_bytes()
+        )
+        .is_err());
+        assert!(guard(
+            "demo.yaml",
+            "a: 1\u{2028}# api_key=abc123def456ghi789\n".as_bytes()
+        )
+        .is_err());
+        assert!(guard(
+            "demo.yaml",
+            "\u{feff}# api_key=abc123def456ghi789\na: 1\n".as_bytes()
+        )
+        .is_err());
+        assert!(guard("demo.yaml", b"a: &api_key=abc123def456ghi789 1\n").is_err());
+        assert!(guard(
+            "demo.yaml",
+            b"%TAG !x! api_key=abc123def456ghi789\n---\na: 1\n"
+        )
+        .is_err());
+        // a template marker does not excuse a file that is not YAML
+        let e = guard("deploy.yaml", b"a: [unclosed\n# {{ x }}\n").unwrap_err();
+        assert!(e.contains(UNCHECKED), "{e}");
+        // the parser's message (which can quote the document) is never passed on: position only
+        let e = guard("demo.yaml", b"demo-key-name: [1\n").unwrap_err();
+        assert!(
+            e.contains("not valid YAML at line") && !e.contains("demo-key-name"),
+            "{e}"
+        );
+        // comments are checked as text
+        assert!(guard("demo.yaml", b"a: 1 # api_key=abc123def456ghi789\n").is_err());
+        assert!(guard("demo.yaml", b"# api_key=abc123def456ghi789\na: 1\n").is_err());
+        assert_eq!(guard("demo.yaml", b"a: 1 # a plain note\n"), Ok(()));
+        // a tag's text is checked
+        assert!(guard("demo.yaml", b"a: !api_key=abc123def456ghi789 x\n").is_err());
+        // duplicate keys (also keys that read as the same text) are all kept: every value is checked
+        assert_eq!(guard("demo.yaml", b"a: 1\na: 2\n"), Ok(()));
+        assert!(guard("demo.yaml", b"a: x\na: api_key=abc123def456ghi789\n").is_err());
+        assert!(guard("demo.yaml", b"1: x\n\"1\": api_key=abc123def456ghi789\n").is_err());
+        assert!(guard("demo.yaml", b"\"1\": api_key=abc123def456ghi789\n1: x\n").is_err());
+        // a template that does not parse even with its markup set aside is refused, never line-checked
+        let e = guard(
+            "deploy.yaml",
+            b"{{- if .Values.x }}\na: [unclosed\n{{- end }}\n",
+        )
+        .unwrap_err();
+        assert!(e.contains(UNCHECKED), "{e}");
+        // the reason is recoverable for the checklist
+        let e = guard("demo.yaml", b"a: [unclosed\n").unwrap_err();
+        assert!(
+            unchecked_reason(&e)
+                .is_some_and(|r| r.starts_with(UNCHECKED) && !r.contains("checklist")),
+            "{e}"
+        );
+        assert!(
+            unchecked_reason("refusing to write x: line 1 looks like it holds a secret").is_none()
+        );
+        // a YAML-named file written as JSON is read as YAML, so a duplicate key cannot hide the first value
+        assert!(guard(
+            "deploy.yaml",
+            br#"{"a":"api_key=abc123def456ghi789","a":"x"}"#
+        )
+        .is_err());
+        assert!(guard(
+            "deploy.yaml",
+            br#"{"a":"x","a":"api_key=abc123def456ghi789"}"#
+        )
+        .is_err());
+        assert_eq!(guard("deploy.yaml", br#"{"a":"x","b":[1,2]}"#), Ok(()));
+        // a location never carries key text: a secret-looking key is reported by its position
+        let e = guard("demo.yaml", b"api_key=abc123def456ghi789: x\n").unwrap_err();
+        assert!(e.contains("the key of entry 0"), "{e}");
+        assert!(!e.contains("abc123def456ghi789"), "{e}");
+        let e = guard(
+            "demo.yaml",
+            b"api_key=abc123def456ghi789:\n  inner: api_key=zzz999yyy888xxx777\n",
+        )
+        .unwrap_err();
+        assert!(
+            e.contains("the key of entry 0") && !e.contains("abc123def456ghi789"),
+            "the key is checked before its value: {e}"
+        );
+    }
 
     const SEEDED: &str = include_str!("../../tests/fixtures/describe/seeded.md");
     const SEEDED_SECRETS: &str = include_str!("../../tests/fixtures/describe/seeded-secrets.txt");
