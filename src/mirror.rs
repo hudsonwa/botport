@@ -649,12 +649,13 @@ fn init(a: &Args) -> Res<Out> {
                         .map(PathBuf::from)
                 })
                 .unwrap_or_else(|| crate::core::util::home().join(".hermes"));
-            (
-                p.to_string(),
-                home.join("profiles").join(p),
-                a.path("hermes-home"),
-                true,
-            )
+            // the default profile is the Hermes home itself, every other one lives under profiles/
+            let dir = if p == "default" {
+                home.clone()
+            } else {
+                home.join("profiles").join(p)
+            };
+            (p.to_string(), dir, a.path("hermes-home"), true)
         }
         (None, Some(d)) => (pair.clone(), d, None, a.get("hermes-bin").is_some()),
         _ => return err("give one of --profile NAME or --profile-dir DIR"),
@@ -995,6 +996,14 @@ fn planned(c: &Config, link: &mut Link) -> Res<Planned> {
                     );
                     continue;
                 }
+                if let Some(why) = local
+                    .content
+                    .get(&d.item)
+                    .and_then(|cn| url_refused(cn, to.as_ref()))
+                {
+                    unsupported.insert(d.item.clone(), why);
+                    continue;
+                }
                 (Side::Remote, local.content.get(&d.item).cloned(), to)
             }
             Action::ToLocal => match d.remote.as_ref().map(|v| link.fetch(&d.item, v)) {
@@ -1147,6 +1156,22 @@ fn secret_in(id: &ItemId, cn: &Content) -> Option<String> {
     }
     crate::core::secrets::find_secret(id.as_str(), &cn.to_blob(id))
         .map(|at| format!("looks like it holds a secret ({at})"))
+}
+
+/// Why a Grok-bound connector's url may not be carried: the same url policy as on the Hermes side (https, no
+/// credentials, a private host only if the Grok copy already has that url).
+fn url_refused(cn: &Content, grok: Option<&Content>) -> Option<String> {
+    let url_of = |c: &Content| match c {
+        Content::Connector(f) => f.get("url").and_then(|v| v.as_str()).map(String::from),
+        _ => None,
+    };
+    let url = url_of(cn)?;
+    let configured: std::collections::BTreeSet<String> =
+        grok.and_then(url_of).into_iter().collect();
+    crate::core::secrets::connector_url(&url)
+        .map(|r| r.to_string())
+        .or_else(|| crate::adapters::connectors::check_url(&url, &configured).err())
+        .map(|r| format!("url refused ({r})"))
 }
 
 fn remote_copy(link: &mut Link, d: &Decision) -> Option<Content> {
@@ -1422,10 +1447,34 @@ fn exchange_digests(c: &Config, link: &mut Link) -> Res<()> {
         if let Ok(b) = fs::read(c.profile_dir.join("botport/digest-hermes.md")) {
             drive.t().send_digest(&b)?;
         }
+    }
+    if let Some(local) = link.local.as_mut() {
+        if let Ok(Some(r)) = local.records() {
+            let d = crate::core::digest::from_records(&r, "grok", &c.pair, &utc_iso());
+            crate::core::digest::write_if_changed(
+                &c.profile_dir,
+                "botport/digest-grok.md",
+                &d.render(),
+            )?;
+            return Ok(());
+        }
+    }
+    if let Some(drive) = link.drive.as_mut() {
         if let Some(b) = drive.t().read_peer_digest()? {
-            if b.len() <= 16 * 1024 {
-                write_private(&c.profile_dir, "botport/digest-grok.md", &b)?;
+            let text =
+                std::str::from_utf8(&b).map_err(|_| "the Grok digest is not text".to_string())?;
+            let d = crate::core::digest::parse(text)?;
+            if d.side != "grok"
+                || d.pair != c.pair
+                || crate::core::util::parse_iso(&d.written).is_none()
+            {
+                return err("the Grok digest's header does not match this pair");
             }
+            crate::core::digest::write_if_changed(
+                &c.profile_dir,
+                "botport/digest-grok.md",
+                &d.render(),
+            )?;
         }
     }
     Ok(())
@@ -2007,6 +2056,13 @@ fn pick(a: &Args) -> Res<Out> {
             if let Some(why) = local.content.get(&id).and_then(|cn| secret_in(&id, cn)) {
                 return err(format!("{id}: {why}; not sent"));
             }
+            if let Some(why) = local
+                .content
+                .get(&id)
+                .and_then(|cn| url_refused(cn, grok_copy.as_ref()))
+            {
+                return err(format!("{id}: {why}; not sent"));
+            }
             if let Some(cn) = &grok_copy {
                 keep(&c.profile_dir, &id, cn)?;
             }
@@ -2300,7 +2356,8 @@ fn apply_pack(a: &Args) -> Res<Out> {
         steps,
         added,
     } = gmirror::apply_pack(&dir, pair, &live, &stage, &log, key.as_deref())?;
-    if let Some(lp) = &logp {
+    // only a pack signed with the pair key is ever logged (apply_pack holds every item of an unsigned one)
+    if let (Some(lp), Some(_)) = (&logp, &key) {
         gmirror::append_log(lp, &added)?;
     }
     let pending = steps
@@ -2330,7 +2387,7 @@ fn apply_pack(a: &Args) -> Res<Out> {
             }
             gmirror::Step::Remove => format!("  remove   {id}"),
             gmirror::Step::Held => {
-                format!("  held     {id} (the pack is not signed with the pair key: make this change by hand)")
+                format!("  held     {id} (the pack is not signed with the pair key: not applied; report it to the owner)")
             }
             gmirror::Step::Refused => {
                 format!("  refused  {id} (changed since the pack was made; report it)")

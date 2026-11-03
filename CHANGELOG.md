@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `docs/AGENT-MIRROR.md`: the brief for the Grok side's mirror routine (cheap HEAD check, stage with `apply-pack`,
+  install by copying staged files after a per-item precheck, record with `digest-items`, upload the state file).
 - `core::mirror`: mirror mode's merge engine (`botport-mirror/1` state). Each item is compared with a base per side;
   a change on one side is carried to the other, a change on both sides is a conflict that stays open until picked or
   made equal. Items missing from an incomplete read are never deleted; more than 3 retires on a side, or more than 20% of a
@@ -25,6 +27,8 @@ All notable changes to this project are documented here. The format is based on
   `mirror apply-pack`: equal-peer sync of a bot's setup between Grok and Hermes, with a pick-one list for items
   changed on both sides, approvals for changes that can make a bot run something new, restore points before Hermes
   writes and kept copies of what a change replaces on the Grok side, and one metrics row per sync. v0.1 commands are unchanged. See docs/REFERENCE.md "Mirror mode".
+- Mirror sync uses the routine-parity normalisation for routine digests, maps app-only connectors through the public
+  table, checks a received digest before storing it, and builds the Grok side's digest from the local records.
 - `core::package`: opaque skill/tool packages (`botport-package/1`) for mirror mode. A package is carried byte for
   byte with its executable bits; its digest covers every path, byte and executable bit; a generated manifest lets a
   receiver check it. Symlinks, special files, setuid/setgid/sticky bits, unsafe paths, paths that collide by case or

@@ -422,7 +422,7 @@ fn emit(a: &Args, cmd: &str, r: Report) -> ExitCode {
         Err(e) => {
             eprintln!(
                 "botport: warning: could not write the details report {}: {e}",
-                details.display()
+                name_safe(&details.display().to_string())
             );
             false
         }
@@ -439,7 +439,10 @@ fn emit(a: &Args, cmd: &str, r: Report) -> ExitCode {
     } else {
         let mut lines = r.lines;
         if wrote && !quiet_ok {
-            lines.push(format!("details: {}", details.display()));
+            lines.push(format!(
+                "details: {}",
+                name_safe(&details.display().to_string())
+            ));
         }
         if lines.len() > 10 {
             let extra = lines.len() - 9;
@@ -1183,7 +1186,23 @@ fn cmd_mirror_routines(a: &Args) -> Res<Report> {
         paused_by_policy_b: paused,
         ..Opts::default()
     };
-    let rows = compare(&g.schedules, &hs, &o);
+    // the export may list one name twice (the model keeps the first): every entry counts, so such a name is reported
+    // as duplicate-name, never compared by its first entry
+    let mut gs = g.schedules.clone();
+    if export_json::is_export(&bdir) {
+        let mut listed = std::collections::BTreeMap::<String, usize>::new();
+        for s in export_json::read_model(&bdir)?.schedules {
+            *listed.entry(s.name).or_default() += 1;
+        }
+        for (name, k) in listed {
+            if let Some(first) = g.schedules.iter().find(|s| s.name == name) {
+                for _ in 1..k {
+                    gs.push(first.clone());
+                }
+            }
+        }
+    }
+    let rows = compare(&gs, &hs, &o);
     let word = |s: Status| match s {
         Status::OnlyA => "only-grok",
         Status::OnlyB => "only-hermes",
@@ -1195,7 +1214,8 @@ fn cmd_mirror_routines(a: &Args) -> Res<Report> {
     }
     let ok = rows.iter().all(|r| r.ok());
     let head = format!(
-        "mirror routines {profile}: {} ({} routines, default timezone {tz})",
+        "mirror routines {}: {} ({} routines, default timezone {})",
+        name_safe(&profile),
         if rows.is_empty() {
             "no routines on either side".to_string()
         } else if counts.len() == 1 && counts.contains_key("same") {
@@ -1207,7 +1227,8 @@ fn cmd_mirror_routines(a: &Args) -> Res<Report> {
                 .collect::<Vec<_>>()
                 .join(", ")
         },
-        rows.len()
+        rows.len(),
+        name_safe(tz)
     );
     let line = |r: &botport::core::routines::Parity| {
         let detail = match r.status {
@@ -1220,28 +1241,20 @@ fn cmd_mirror_routines(a: &Args) -> Res<Report> {
             }
             Status::PausedDiffers if r.expected => format!(
                 ": grok {}, hermes {} (expected: botport paused it awaiting approval)",
-                r.a, r.b
+                name_safe(&r.a),
+                name_safe(&r.b)
             ),
             Status::ScheduleDiffers => format!(": grok {:?}, hermes {:?}", r.a, r.b),
             Status::DuplicateName => format!(
                 ": entries with this name: grok {}, hermes {}; not compared, each needs a look",
-                r.a, r.b
+                name_safe(&r.a),
+                name_safe(&r.b)
             ),
-            _ => format!(": grok {}, hermes {}", r.a, r.b),
+            _ => format!(": grok {}, hermes {}", name_safe(&r.a), name_safe(&r.b)),
         };
-        // a name is the bot's text: control characters are shown escaped, never sent to the terminal
-        let name: String = r
-            .name
-            .chars()
-            .flat_map(|c| {
-                if c.is_control() {
-                    c.escape_default().collect::<Vec<_>>()
-                } else {
-                    vec![c]
-                }
-            })
-            .collect();
-        format!("  {} {name}{detail}", word(r.status))
+        // a name is the bot's text: control, newline and bidi/format characters are shown escaped, never sent to the
+        // terminal
+        format!("  {} {}{detail}", word(r.status), name_safe(&r.name))
     };
     let mut lines = vec![head];
     // differences first, so the 10-line cap never hides one behind a `same`
@@ -1464,14 +1477,9 @@ fn digest_inject(a: &Args) -> Res<Option<String>> {
     let Ok(v) = serde_json::from_str::<Value>(&input) else {
         return Ok(None);
     };
-    // fields at the top level or under `extra`
-    let field = |k: &str| {
-        [&v[k], &v["extra"][k]]
-            .into_iter()
-            .find(|x| !x.is_null())
-            .cloned()
-            .unwrap_or(Value::Null)
-    };
+    // the hook's fields, under `extra` as Hermes sends them
+    // (https://github.com/NousResearch/hermes-agent/blob/c314285f077e91937c995d419b9fa40af9eb4981/website/docs/user-guide/features/hooks.md#L1932-L1952)
+    let field = |k: &str| v["extra"][k].clone();
     if field("is_first_turn") != Value::Bool(true) {
         return Ok(None);
     }
@@ -1485,7 +1493,8 @@ fn digest_inject(a: &Args) -> Res<Option<String>> {
         Value::Number(n) => n.to_string(),
         _ => String::new(),
     };
-    let local = LOCAL_SOURCES.contains(&platform.as_str());
+    // a local surface with a sender id is someone signed in through `hermes serve`, not the owner at the machine
+    let local = LOCAL_SOURCES.contains(&platform.as_str()) && sender.is_empty();
     let listed = !sender.is_empty() && a.all("owner-user").contains(&sender);
     if platform == "cron" || !(local || listed) {
         return Ok(None);

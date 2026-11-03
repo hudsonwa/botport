@@ -142,6 +142,34 @@ pub fn items_of(m: &BotModel) -> GrokItems {
             ),
         );
     }
+    // apps with no url: a public connector maps through the table; anything else is carried as is (private)
+    let apps = m
+        .extras
+        .get(super::ID)
+        .and_then(|x| x.get("apps_without_url"))
+        .and_then(|v| v.as_array());
+    for name in apps.into_iter().flatten().filter_map(|v| v.as_str()) {
+        use crate::adapters::connectors::{from_grok, Mapping};
+        let mut f = BTreeMap::new();
+        let id = match from_grok(&json!({"name": name}), &Default::default()) {
+            Mapping::Mapped { row } => {
+                f.insert("id".to_string(), json!(row.id));
+                f.insert("kind".to_string(), json!("mcp-http"));
+                if let Some(u) = row.mcp_url() {
+                    f.insert("url".to_string(), json!(u));
+                }
+                row.id.clone()
+            }
+            _ => {
+                let id = super::export_json::slug(name);
+                f.insert("id".to_string(), json!(id));
+                f.insert("name".to_string(), json!(name));
+                f.insert("kind".to_string(), json!("app"));
+                id
+            }
+        };
+        add(&mut out, format!("connector:{id}"), Content::Connector(f));
+    }
     out
 }
 
@@ -366,7 +394,10 @@ pub fn apply_pack(
         let cur = now
             .get(&it.item)
             .map_or(ABSENT.to_string(), |(_, n)| n.clone());
-        let step = if cur == it.want {
+        // an unsigned pack is never applied, logged or counted, whatever the live item is: held
+        let step = if key.is_none() {
+            Step::Held
+        } else if cur == it.want {
             if !log
                 .iter()
                 .chain(added.iter())
@@ -382,8 +413,6 @@ pub fn apply_pack(
             Step::Done
         } else if cur != it.expect {
             Step::Refused
-        } else if key.is_none() {
-            Step::Held
         } else if it.action == PackAction::Retire {
             Step::Remove
         } else {
@@ -560,6 +589,30 @@ mod tests {
             enabled: true,
         });
         m
+    }
+
+    #[test]
+    fn apps_without_a_url_map_through_the_public_table_or_are_carried_as_is() {
+        let mut m = model("Example prompt.");
+        m.extras.insert(
+            super::super::ID.into(),
+            json!({"apps_without_url": ["GitHub", "Example Internal Tool"]}),
+        );
+        let items = items_of(&m);
+        let Content::Connector(gh) = &items.content[&ItemId::parse("connector:github").unwrap()]
+        else {
+            panic!()
+        };
+        assert_eq!(gh["url"], "https://api.githubcopilot.com/mcp/");
+        let opaque = items
+            .content
+            .iter()
+            .find(|(k, _)| k.as_str().starts_with("connector:example"))
+            .unwrap();
+        let Content::Connector(o) = opaque.1 else {
+            panic!()
+        };
+        assert_eq!((o["kind"].as_str(), o.get("url")), (Some("app"), None));
     }
 
     #[test]
@@ -761,6 +814,34 @@ mod tests {
                 .unwrap_err()
                 .contains("not signed"));
         }
+    }
+
+    #[test]
+    fn an_unsigned_pack_that_already_matches_is_held_and_logs_nothing() {
+        let d = tmp("unsigned-match");
+        let stage = d.join("stage");
+        let live = items_of(&model("Example prompt."));
+        let r = ItemId::parse("routine:demo-routine").unwrap();
+        let c = &live.content[&r];
+        let b = c.to_blob(&r);
+        let sha = sha256_hex(&b);
+        write_private(&d, &format!("to-grok/blobs/{sha}"), &b).unwrap();
+        let now = c.neutral_digest(&r);
+        let pi = PackItem {
+            item: r.clone(),
+            action: PackAction::Put,
+            expect: now.clone(),
+            want: now,
+            blob: Some(sha),
+        };
+        // a high generation from anyone who can write the folder: never logged, so it can never raise the floor
+        let mut p = Pack::new("demo-bot", 9, &random_id(), "a1", "t", vec![pi]).unwrap();
+        let bytes = p.seal();
+        write_private(&d, &format!("to-grok/{}", p.file_name()), &bytes).unwrap();
+        write_private(&d, "HEAD", p.head().to_line().as_bytes()).unwrap();
+        let run = apply_pack(&d, "demo-bot", &live, &stage, &[], None).unwrap();
+        assert_eq!(run.steps, vec![(r, Step::Held)]);
+        assert!(run.added.is_empty(), "nothing logged without the pair key");
     }
 
     #[test]

@@ -247,6 +247,10 @@ pub fn normalize_schedule(s: &str) -> String {
     one
 }
 
+/// The timezone a routine without one counts as in mirror digests (the owner's own zone is a per-pair setting of
+/// the parity check; digests must agree on both sides without it).
+pub const DEFAULT_TZ: &str = "UTC";
+
 /// Spellings of UTC (case-insensitive) that all compare as `UTC`.
 const UTC: [&str; 9] = [
     "utc",

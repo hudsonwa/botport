@@ -45,7 +45,7 @@ fn sql(db: &Path, script: &str) {
 const SCHEMA: &str = "CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, user_id TEXT, model TEXT, \
     started_at REAL, ended_at REAL, message_count INTEGER, title TEXT, extra_col TEXT);
     CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL, \
-    tool_calls TEXT);";
+    tool_calls TEXT, active INTEGER DEFAULT 1, compacted INTEGER DEFAULT 0);";
 
 /// One session row and its messages (role, content), a minute apart from `start`.
 fn session(
@@ -194,6 +194,16 @@ fn profile(t: &Path) -> PathBuf {
         Some("deploy token=Zq7Wv3Xk9Lm2Np8Rt4Yb"),
         &[("user", "x")],
     );
+    // a desktop session opened through an authenticated `hermes serve`: someone else's, never read
+    script += &session(
+        "s9",
+        "desktop",
+        "github:someone",
+        n - 19000,
+        true,
+        Some("A signed-in visitor"),
+        &[("user", "x")],
+    );
     sql(&p.join("state.db"), &script);
     p
 }
@@ -257,6 +267,7 @@ fn write_builds_a_clean_capped_private_digest_and_does_not_rewrite_it() {
     let head = text.lines().next().unwrap();
     assert!(head.starts_with("<!-- botport-digest/1 side=hermes pair=demo-bot written="));
     assert!(head.ends_with(&format!(" window=7d bytes={} -->", text.len())));
+    assert!(!text.contains("signed-in visitor"), "{text}");
     let recent = section(&text, "Recent activity");
     let labels: Vec<&str> = recent.iter().map(|l| &l[14..]).collect();
     assert_eq!(
@@ -543,27 +554,40 @@ fn inject_only_on_a_first_non_cron_turn_with_a_fresh_peer_digest() {
     );
     assert!(ctx.contains("<<<TWIN NOTES "));
     assert!(ctx.contains("## Key facts\n- 1 skill, 0 routines (0 enabled)"));
-    // top-level fields work too
-    assert!(!inject(&[], r#"{"is_first_turn": true, "platform": "tui"}"#).is_empty());
+    // Hermes sends the fields under `extra`: top-level ones are not read
+    assert_eq!(
+        inject(&[], r#"{"is_first_turn": true, "platform": "tui"}"#),
+        ""
+    );
+    assert!(!inject(
+        &[],
+        r#"{"extra": {"is_first_turn": true, "platform": "tui"}}"#
+    )
+    .is_empty());
+    // a local surface with a sender id is someone signed in through `hermes serve`, not the owner
+    let served = r#"{"extra": {"is_first_turn": true, "platform": "desktop", "sender_id": "github:someone"}}"#;
+    assert_eq!(inject(&[], served), "");
+    assert!(!inject(&["--owner-user", "github:someone"], served).is_empty());
     // owner sessions only: a gateway sender must be listed with --owner-user
     let gateway =
         r#"{"extra": {"is_first_turn": true, "platform": "telegram", "sender_id": "owner-1"}}"#;
     assert_eq!(inject(&[], gateway), "");
     assert_eq!(inject(&["--owner-user", "someone-else"], gateway), "");
     assert!(!inject(&["--owner-user", "owner-1"], gateway).is_empty());
-    let numeric = r#"{"is_first_turn": true, "platform": "telegram", "sender_id": 12345}"#;
+    let numeric =
+        r#"{"extra": {"is_first_turn": true, "platform": "telegram", "sender_id": 12345}}"#;
     assert!(!inject(&["--owner-user", "12345"], numeric).is_empty());
     // missing platform: nothing unless the sender is listed; cron never, even for a listed sender
-    let no_platform = r#"{"is_first_turn": true, "sender_id": "owner-1"}"#;
+    let no_platform = r#"{"extra": {"is_first_turn": true, "sender_id": "owner-1"}}"#;
     assert_eq!(inject(&[], no_platform), "");
-    assert_eq!(inject(&[], r#"{"is_first_turn": true}"#), "");
+    assert_eq!(inject(&[], r#"{"extra": {"is_first_turn": true}}"#), "");
     assert!(!inject(&["--owner-user", "owner-1"], no_platform).is_empty());
-    let cron = r#"{"is_first_turn": true, "platform": "cron", "sender_id": "owner-1"}"#;
+    let cron = r#"{"extra": {"is_first_turn": true, "platform": "cron", "sender_id": "owner-1"}}"#;
     assert_eq!(inject(&["--owner-user", "owner-1"], cron), "");
     assert_eq!(
         inject(
             &["--owner-user", "owner-1"],
-            r#"{"is_first_turn": true, "platform": "telegram", "sender_id": ""}"#
+            r#"{"extra": {"is_first_turn": true, "platform": "telegram", "sender_id": ""}}"#
         ),
         ""
     );

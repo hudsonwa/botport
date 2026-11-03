@@ -286,7 +286,7 @@ fn read_schedules(src: &Path) -> Res<Vec<Schedule>> {
                 cron: (!expr.is_empty()).then_some(expr),
                 tz: "local".into(),
                 action: j["prompt"].as_str().unwrap_or("").to_string(),
-                enabled: j["enabled"] != json!(false),
+                enabled: mirror::job_runnable(j),
             }
         })
         .collect())
@@ -294,8 +294,9 @@ fn read_schedules(src: &Path) -> Res<Vec<Schedule>> {
 
 /// The profile's cron jobs as the routine-parity check compares them (docs/design/MIRROR.md section 9), from the
 /// model [`HermesProfile`] read (`h`): the `<Bot>: ` prefix botport gives the jobs it imports from the bot `g` is
-/// dropped, so a job matches its routine by name; the timezone is left empty (Hermes cron has no per-job zone: the
-/// owner's default applies). Also the names of jobs botport paused on import, awaiting the owner.
+/// dropped, so a job matches its routine by name; the timezone is left out of the comparison (a job without its own
+/// `timezone` follows the profile's, which the export does not show). Also the names of jobs botport paused on import,
+/// awaiting the owner.
 pub fn parity_view(
     h: &BotModel,
     g: &BotModel,
@@ -316,7 +317,7 @@ pub fn parity_view(
         .into_iter()
         .flatten()
         .filter(|j| {
-            j["enabled"] == json!(false)
+            !mirror::job_runnable(j)
                 && j["paused_reason"].as_str().is_some_and(|r| {
                     r.starts_with(sync::IMPORT_PAUSED) || r == mirror::PAUSED_REASON
                 })

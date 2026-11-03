@@ -5,6 +5,12 @@
 //! and session titles (with `--titles`), only the last message's role and whether it ends in a question mark, never its
 //! text; never memories or user facts (`memories/` is never read); routine names as written. A script, never a model
 //! call; no network; no operation lock (it writes only its own digest file, atomically).
+//!
+//! Hermes' formats, as published (hermes-agent at c314285): the `state.db` sessions and messages tables
+//! (https://github.com/NousResearch/hermes-agent/blob/c314285f077e91937c995d419b9fa40af9eb4981/website/docs/developer-guide/session-storage.md#L182-L253), session sources
+//! (https://github.com/NousResearch/hermes-agent/blob/c314285f077e91937c995d419b9fa40af9eb4981/website/docs/user-guide/sessions.md#L113-L118), cron job records
+//! (https://github.com/NousResearch/hermes-agent/blob/c314285f077e91937c995d419b9fa40af9eb4981/cron/jobs.py#L1896-L1940), skill folders
+//! (https://github.com/NousResearch/hermes-agent/blob/c314285f077e91937c995d419b9fa40af9eb4981/website/docs/user-guide/features/skills.md#L336-L356).
 use super::sync;
 use crate::core::digest::{self, Digest, FACTS, OPEN, RECENT, ROUTINES};
 use crate::core::util::*;
@@ -158,7 +164,12 @@ pub fn owner_id_ok(s: &str) -> bool {
 fn query(o: &Opts) -> String {
     let since = o.now - i64::from(o.window_days) * 86400;
     let local: Vec<String> = LOCAL_SOURCES.iter().map(|s| sql_str(s)).collect();
-    let mut owner = format!("lower(coalesce(s.source, '')) IN ({})", local.join(", "));
+    // a local surface is the owner only without a user id: a desktop session opened through an authenticated
+    // `hermes serve` stores that person's login as user_id (https://github.com/NousResearch/hermes-agent/blob/c314285f077e91937c995d419b9fa40af9eb4981/website/docs/developer-guide/session-storage.md#L221-L226)
+    let mut owner = format!(
+        "(lower(coalesce(s.source, '')) IN ({}) AND coalesce(s.user_id, '') = '')",
+        local.join(", ")
+    );
     let users: Vec<String> = o
         .owner_users
         .iter()
@@ -168,8 +179,11 @@ fn query(o: &Opts) -> String {
     if !users.is_empty() {
         owner = format!("({owner} OR s.user_id IN ({}))", users.join(", "));
     }
+    // the rows a session still shows: active messages and compaction summaries (inactive rows are skipped)
+    let shown =
+        "m.session_id = s.id AND (coalesce(m.active, 1) = 1 OR coalesce(m.compacted, 0) = 1)";
     let last =
-        "FROM messages m WHERE m.session_id = s.id ORDER BY m.timestamp DESC, m.id DESC LIMIT 1";
+        format!("FROM messages m WHERE {shown} ORDER BY m.timestamp DESC, m.id DESC LIMIT 1");
     // a session's title is read only when the owner asked for titles (`--titles`)
     let title = if o.no_titles {
         "''"
@@ -178,7 +192,7 @@ fn query(o: &Opts) -> String {
     };
     format!(
         "SELECT s.started_at AS started, s.ended_at AS ended, \
-         coalesce(s.message_count, (SELECT count(*) FROM messages m WHERE m.session_id = s.id)) AS messages, \
+         coalesce(s.message_count, (SELECT count(*) FROM messages m WHERE {shown})) AS messages, \
          {title} AS title, \
          (SELECT m.role {last}) AS last_role, \
          (SELECT CASE WHEN substr(rtrim(coalesce(m.content, ''), ' ' || char(9, 10, 13)), -1) = '?' THEN '?' ELSE '' END {last}) AS last_char \
@@ -312,19 +326,16 @@ fn routine_lines(jobs: &[Value]) -> Vec<String> {
                     None => "no schedule".into(),
                 };
             }
-            let tz = ["timezone", "tz"]
-                .iter()
-                .find_map(|k| j[k].as_str().or(j["schedule"][k].as_str()))
+            let tz = j["timezone"]
+                .as_str()
+                .filter(|t| !t.is_empty())
                 .unwrap_or("local");
             let mut l = format!("{}: {} ({})", cut(name, 80), cut(&sched, 40), cut(tz, 20));
             if !job_enabled(j) {
                 l += ", paused";
             }
             let last = &j["last_run_at"];
-            let ran = last
-                .as_str()
-                .and_then(parse_iso)
-                .or_else(|| last.as_f64().map(|f| f as i64));
+            let ran = last.as_str().and_then(parse_iso);
             if let Some(t) = ran {
                 let status = j["last_status"]
                     .as_str()
@@ -363,7 +374,7 @@ fn fact_lines(profile: &Path, jobs: &[Value]) -> Vec<String> {
 }
 
 fn job_enabled(j: &Value) -> bool {
-    j["enabled"] != Value::Bool(false) && j["state"] != "paused"
+    super::mirror::job_runnable(j)
 }
 
 fn is_dir(p: &Path) -> bool {

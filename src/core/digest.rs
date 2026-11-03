@@ -107,6 +107,82 @@ impl Digest {
     }
 }
 
+/// A side's digest from its local records (names, times, counts and flags only), for `side` and `pair`,
+/// written at `now` ("YYYY-MM-DDTHH:MM:SSZ"). Recent activity: entries per day, newest first; open threads: asks not answered;
+/// regular routines: the routines that exist now; key facts: counts and the last activity.
+pub fn from_records(
+    r: &super::local_records::BotRecords,
+    side: &str,
+    pair: &str,
+    now: &str,
+) -> Digest {
+    use super::local_records::Speaker;
+    let mut d = Digest {
+        side: side.into(),
+        pair: pair.into(),
+        written: now.into(),
+        window_days: 7,
+        sections: Default::default(),
+    };
+    // only what happened within the window the header names
+    let from = super::util::parse_utc_iso(now).map(|n| n.saturating_sub(7 * 86400));
+    let recent = |time: &str| match (from, super::util::parse_utc_iso(time)) {
+        (Some(f), Some(x)) => x >= f,
+        _ => false,
+    };
+    let day = |t: &str| t.get(5..10).unwrap_or("").to_string();
+    let hm = |t: &str| t.get(5..16).unwrap_or("").replace('T', " ");
+    let mut days: std::collections::BTreeMap<String, [usize; 3]> = Default::default();
+    for e in r.entries.iter().filter(|e| recent(&e.time)) {
+        let c = days.entry(day(&e.time)).or_default();
+        match e.speaker {
+            Speaker::User => c[0] += 1,
+            Speaker::Bot | Speaker::System => c[1] += 1,
+            Speaker::PeerToBot | Speaker::BotToPeer => c[2] += 1,
+        }
+    }
+    for (dd, [u, b, p]) in days.iter().rev() {
+        let mut l = format!("{dd} {} entries: {u} from you, {b} from the bot", u + b + p);
+        if *p > 0 {
+            l.push_str(&format!(", {p} between bots"));
+        }
+        d.sections[RECENT].push(l);
+    }
+    for e in r
+        .open_asks()
+        .filter(|e| recent(&e.time))
+        .collect::<Vec<_>>()
+        .iter()
+        .rev()
+    {
+        d.sections[OPEN].push(format!(
+            "{} the bot asked you something, not answered yet",
+            hm(&e.time)
+        ));
+    }
+    let names = r.routine_names();
+    for (n, paused) in &names {
+        d.sections[ROUTINES].push(if *paused {
+            format!("{n} (paused)")
+        } else {
+            n.clone()
+        });
+    }
+    let paused = names.iter().filter(|(_, p)| *p).count();
+    d.sections[FACTS].push(format!("{} routines ({} paused)", names.len(), paused));
+    if let Some(a) = &r.activity {
+        let mut l = format!("last activity {}", hm(&a.last_activity));
+        if a.unread > 0 {
+            l.push_str(&format!(", {} unread", a.unread));
+        }
+        if a.awaiting_reply {
+            l.push_str(", waiting for your reply");
+        }
+        d.sections[FACTS].push(l);
+    }
+    d
+}
+
 /// A header value: `[A-Za-z0-9._:-]`, anything else `_`, at most 64 characters.
 fn token(s: &str) -> String {
     let t: String = s
@@ -317,6 +393,62 @@ pub fn render_inject_context(peer_digest_text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn digest_from_local_records_has_no_text() {
+        use crate::core::local_records::{
+            Activity, BotRecords, Entry, RoutineAction, RoutineEvent, Speaker,
+        };
+        let e = |time: &str, speaker, open_ask, answered| Entry {
+            time: time.into(),
+            speaker,
+            open_ask,
+            answered,
+        };
+        let r = BotRecords {
+            activity: Some(Activity {
+                schema: "botport-local/1".into(),
+                id: "x".into(),
+                name: "Demo Bot".into(),
+                last_activity: "2000-01-03T05:00:00Z".into(),
+                unread: 2,
+                awaiting_reply: true,
+            }),
+            entries: vec![
+                // outside the 7-day window: left out
+                e("1999-12-01T09:00:00Z", Speaker::Bot, true, false),
+                e("2000-01-02T09:00:00Z", Speaker::User, false, false),
+                e("2000-01-03T04:00:00Z", Speaker::User, false, false),
+                e("2000-01-03T05:00:00Z", Speaker::Bot, true, false),
+                e("2000-01-03T05:01:00Z", Speaker::PeerToBot, false, false),
+            ],
+            routines: vec![RoutineEvent {
+                id: "r1".into(),
+                name: "demo-routine".into(),
+                action: RoutineAction::Disabled,
+                time: "2000-01-01T00:00:00Z".into(),
+            }],
+            skipped: 0,
+        };
+        let text = from_records(&r, "remote", "demo-bot", "2000-01-03T06:00:00Z").render();
+        let d = parse(&text).unwrap();
+        assert_eq!(d.side, "remote");
+        assert_eq!(
+            d.sections[RECENT][0],
+            "01-03 3 entries: 1 from you, 1 from the bot, 1 between bots"
+        );
+        assert_eq!(
+            d.sections[RECENT][1],
+            "01-02 1 entries: 1 from you, 0 from the bot"
+        );
+        assert_eq!(
+            d.sections[OPEN],
+            ["01-03 05:00 the bot asked you something, not answered yet"]
+        );
+        assert_eq!(d.sections[ROUTINES], ["demo-routine (paused)"]);
+        assert!(d.sections[FACTS][1].contains("2 unread, waiting for your reply"));
+        assert!(text.len() <= CAP);
+    }
 
     fn demo() -> Digest {
         Digest {
