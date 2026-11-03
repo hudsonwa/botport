@@ -11,7 +11,8 @@ with one **adapter** per platform. Adding a platform means adding an adapter; th
   (export bundle, verify, legacy dirs)   │ core               │   (profile, spec, plan/apply,
                                 ◀─write─ │  model::BotModel   │ ─write─▶   sync, twoway, drift)
                                          │  adapter::Adapter  │
-                                         │  util, yaml11      │
+                                         │  util, yaml11,     │
+                                         │  package           │
                                          └────────────────────┘
 ```
 

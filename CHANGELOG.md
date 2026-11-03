@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `core::package`: opaque skill/tool packages (`botport-package/1`) for mirror mode. A package is carried byte for
+  byte with its executable bits; its digest covers every path, byte and executable bit; a generated manifest lets a
+  receiver check it. Symlinks, special files, setuid/setgid/sticky bits, unsafe paths, paths that collide by case or
+  Unicode normalisation, and packages over the size limits are refused. Writes go to a temp dir, are read back and
+  checked, then swapped in (files `0600`, executables `0700`, in a `0700` folder); a crash in the middle of the
+  swap is recovered by the next write or read. Design: [docs/design/MIRROR.md](docs/design/MIRROR.md) section 11.
+
 ## [0.1.2] - 2026-11-03
 
 ### Security
