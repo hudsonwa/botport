@@ -176,7 +176,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn write_probe_never_truncates_through_a_planted_symlink() {
-        let d = std::env::temp_dir().join(format!("botport-doctor-probe-{}", std::process::id()));
+        let d = crate::core::util::test_dir("doctor-probe");
         std::fs::create_dir_all(&d).unwrap();
         let outside = d.join("outside.txt");
         std::fs::write(&outside, "keep").unwrap();

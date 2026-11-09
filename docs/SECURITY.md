@@ -59,6 +59,15 @@ commands as you.
   shell as the owner's user. Both bots run as that user, so such a bot can edit `config.toml`, change the approver,
   restart g2hd or act without g2h. The approval code is only as strong as the approver channel's separation from the
   bots. Use `auto` only for read-only ops (export, battery). The opt-in separate-user mode ([G2H-SEPARATE-USER.md](G2H-SEPARATE-USER.md)) puts the config, the approver and `approve` out of the bots' uid's reach, if the recipe's conditions hold (root-owned paths, and the whole setup and every approve done from a separate admin account's own login session).
+- **botport mirror, staged copies in a shared box:** `apply-pack --precheck ITEM --install-to DIR` reads the staged
+  skill once, checks it against the pack and writes exactly the copy it checked into the box's skills folder, so a
+  staged file swapped after the check is never installed. The destination is checked by path (it must resolve to
+  `<agent data>/workflows`, every folder from the agent data folder down a real folder, and only the system's own links
+  above it), then written under a temporary name and renamed into place; the write is not bound to the folder that was
+  checked, so a folder swapped and restored in that moment is not caught. Doing so needs write access to the box's
+  workspace during an install. The box is one trust domain: every bot in
+  it can write the box's skills folder itself, and is trusted as much as the Mirror bot ([design](design/MIRROR.md),
+  residual risks).
 
 Waking an idle bot is capped separately by `max_wakes_per_day` (configurable,
 default 10). `g2h status` shows today's op count per tier, e.g.
@@ -154,3 +163,37 @@ export → describe → plan → apply → export-hermes. It passes as shipped a
 - Keyword-free secrets. A random string with no keyword, no known prefix and no value position (`use Zq7Wv3…
   here`, `/v1/<random>/mcp`) is not detected.
 - Encoding. Base64, rot13, a value split across lines or fields, or other obfuscation is not decoded.
+
+**Path checks are check-then-open (accepted residual).** These checks run on paths, not on one held directory handle:
+- Confined reads (`read_confined`: bundle files, local records, every `FolderStore` read of a mirror folder) lstat the
+  file, check that its resolved path stays under the root, then open it and require the same inode as a regular file
+  (and decide on the mode of the file actually opened). A swap of the file itself is caught; a directory *above* it
+  swapped for a link to somewhere else in the moment between the check and the open is not, and the mirror folder's
+  root is held as a path, not an open handle. Doing so needs write access to that folder, i.e. the owner's own account
+  (or a sync client acting for it), which is outside this model.
+- Program checks (`program`/`tool`: `curl`, `sqlite3`, `hermes`, token commands) check every folder on the way, follow
+  only root-owned links (read by path after the lstat), then run the program by path. Folders and files must be owned
+  by root or the user and writable by no one else, so a swap between the check and the exec needs root or the owner's
+  account; macOS has no exec-by-handle to close it.
+
+## botport twin (the Hermes plugin interface)
+
+What it touches (docs/TWIN.md): reads the Grok desktop app's cache (roster and transcript-replica slices of one
+account, only the selected bots' transcripts, within a file and byte budget; never login files), the twin's Hermes
+profile and the state folder the caller names; writes only the profile, the state folder and, with `twin mirror`, the
+pair folder. No network calls.
+
+- **Untrusted input.** Names, descriptions and routine names from the cache are cleaned (control and direction
+  characters dropped) and capped; ids must be plain identifiers; names from the twin index are checked on every load
+  before they become part of a path.
+- **Suspected secrets.** An item that looks like it holds a secret is held back whole and reported by location; text
+  shown for preview or conflicts has such lines masked first. A check, not a guarantee (see the porter section above).
+- **Deletes.** `twin remove` checks that every target resolves inside the state folder or the profile, with no link
+  on the way; a link at the target itself is removed, never followed.
+- **The pair key and the Mirror bot (accepted residual).** One pair key (HMAC, 0600) authenticates both directions. The
+  owner gives it to their Mirror bot as an attached file (never pasted text), and the bot keeps it in the pair's work
+  folder. The platform keeps chat attachments, so the key also exists there; run `botport twin mirror --rotate-key`
+  after setup if that matters to you (the Mirror bot then needs the new file). `twin mirror --off` replaces the key, and
+  `twin remove` deletes it. Separate per-side signing keys are planned (ROADMAP).
+- **Non-Unix systems.** No-follow opens (`O_NOFOLLOW`) are Unix only; elsewhere botport checks with `symlink_metadata`
+  before it opens a file, a check-then-open residual like the one above.

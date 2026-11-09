@@ -3,6 +3,13 @@
 **botport connects a bot in xAI's [Grok Bot](https://grok.com) with a bot in open-source Nous Research's
 [Hermes Agent](https://github.com/NousResearch/hermes-agent).**
 
+## Use it from Hermes: Grok Bot Twin
+A Hermes plugin, `grok-bot-twin`, keeps a Grok Bot and its Hermes twin in step by calling `botport twin ... --json`.
+botport reads the Grok desktop app's local cache on your machine (each bot's name, description and routine names),
+makes no network calls, and holds back any item that looks like it holds a secret (a check, not a guarantee).
+Instructions and skills travel through your Mirror bot in Grok, or a one-time export. Reference:
+[docs/TWIN.md](docs/TWIN.md). Try it without Grok: `botport twin demo --hermes-home "$(mktemp -d)" --state-dir "$(mktemp -d)"`.
+
 ## What works today, between a Grok Bot and a Hermes bot
 1. **Export and import, both directions.** The Grok Bot exports itself into a bundle and `botport apply` turns it
    into a Hermes profile; `botport export-hermes` sends what the Hermes bot learned back as a bundle the Grok Bot
@@ -93,8 +100,10 @@ message it should send you, and how to keep secrets out of the chat.
 For a Grok Bot exporting itself, use [docs/AGENT-EXPORT.md](docs/AGENT-EXPORT.md).
 
 ## Manual quickstart (about 5 minutes)
-1. Install: see [docs/INSTALL.md](docs/INSTALL.md) (curl script, or `pipx install botport` once it is on PyPI), or build from source with `cargo build --release` and add
-   `target/release` to your `PATH` (`export PATH="$PWD/target/release:$PATH"`).
+1. Install: see [docs/INSTALL.md](docs/INSTALL.md) (a release archive for a pinned tag, checked against its checksum and
+   build attestation, or `pipx install botport` once it is on PyPI), or build from source with `cargo build --release` and add
+   `target/release` to your `PATH` (`export PATH="$PWD/target/release:$PATH"`). To check that a release binary was
+   built by this repository, see [Verify a download](docs/INSTALL.md#verify-a-download) (GitHub build attestations).
 2. Try it on the example bot. Nothing here touches your real Hermes setup:
    ```sh
    export HOME="$(mktemp -d)"         # throwaway home
@@ -143,22 +152,19 @@ detector, not a guarantee (see [the security model](docs/SECURITY.md)).
 - **g2h needs both bots running.** `g2h selftest` needs a live Hermes gateway (`g2h selftest --wake-only` does not;
   see [trying the bridge locally](docs/INSTALL.md#try-the-bridge-locally-no-service-installed)), and waking the Grok
   side needs a Grok routine webhook. It runs on macOS and Linux only; there is no Windows support yet.
+- **Grok to Hermes, only a bot's name and description sync in seconds.** botport reads the Grok desktop app's local
+  files: the bot list (id, name, description) and, to find routine names, the selected bots' whole local transcript
+  files (capped; only routine-change events are used, nothing else is kept). Instructions, skills made in Grok,
+  routines and connectors reach the twin by hand or through a one-time export. See [docs/TWIN.md](docs/TWIN.md).
 - Only Grok Bot ↔ Hermes works today. OpenClaw and OpenBot are planned; their mappings exist only on paper, in
   [docs/MODEL.md](docs/MODEL.md).
 
 ## Status
-**v0.1, early, one maintainer.** Tried end to end on a real Grok Bot and Hermes bot (see above). The file formats
-are versioned (`bot-model/1`), but expect rough edges. Bug reports with the `--json` output attached are very
-welcome. The project is looking for a co-maintainer who runs Grok Bots daily; see [CONTRIBUTING.md](CONTRIBUTING.md),
+**v0.2, early, one maintainer.** Tried end to end on a real Grok Bot and Hermes bot (see above). The file formats
+are versioned (`bot-model/1`), but expect rough edges. For a bug report, attach `botport twin doctor --json`: it
+holds versions and checks only, no bot names or content. Never post other `--json` output publicly: it can hold your
+bots' names and setup. The project is looking for a co-maintainer who runs Grok Bots daily; see [CONTRIBUTING.md](CONTRIBUTING.md),
 the [roadmap](ROADMAP.md) and the [changelog](CHANGELOG.md).
-
-> **Looking for collaborators.** botport has one maintainer so far. Wanted:
-> - **A Grok-side co-maintainer** who uses Grok Bots and Hermes every day and will notice when either platform changes.
-> - **Rust help on adapters**: the Hermes writer, the `serde_yaml` replacement, and new platforms later.
-> - **Linux and Windows testers** for the build and the g2hd service.
-> - **People with their own bots** to add parity-battery cases.
->
-> To get started, look at the [good first issues](https://github.com/hudsonwa/botport/labels/good%20first%20issue) or open an issue to say hello.
 
 ## How this was built
 The code and docs were written by Claude agents, directed by Josh, the maintainer. Each change was checked by a
@@ -170,8 +176,8 @@ reviewed commits.
 ## Docs and contributing
 - [docs/README.md](docs/README.md): every guide, in one list.
 - [CONTRIBUTING.md](CONTRIBUTING.md): build, test, and send a pull request. Good first contributions: a
-  [PLATFORM-CHANGES](docs/PLATFORM-CHANGES.md) entry from a bot you run, or any
-  [good first issue](https://github.com/hudsonwa/botport/labels/good%20first%20issue).
+  [PLATFORM-CHANGES](docs/PLATFORM-CHANGES.md) entry from a bot you run,
+  [#16](https://github.com/hudsonwa/botport/issues/16), [#5](https://github.com/hudsonwa/botport/issues/5).
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License and credits

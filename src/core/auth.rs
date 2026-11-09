@@ -79,9 +79,7 @@ pub fn digest_mac_ok(key: &[u8], pair: &str, name: &str, text: &[u8], sig: &[u8]
 /// A new pair key's text (from the OS random source).
 pub fn new_key() -> Res<String> {
     let mut b = [0u8; 32];
-    std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut b))
-        .map_err(|_| "no random source for a pair key".to_string())?;
+    super::util::os_random(&mut b).map_err(|_| "no random source for a pair key".to_string())?;
     Ok(hex(&b))
 }
 

@@ -104,3 +104,88 @@ fn github_actions_are_pinned_by_commit_sha() {
         }
     }
 }
+
+/// install.sh against invented archives in a temp folder (HOME and the bin folder inside it): a plain archive
+/// installs; one holding a link or a member outside botport-<target>/ is refused before anything is unpacked.
+#[cfg(unix)]
+#[test]
+fn install_sh_refuses_links_and_unexpected_members() {
+    use std::os::unix::fs::{symlink, DirBuilderExt, PermissionsExt};
+    use std::process::Command;
+    let t = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", a) => format!("{a}-apple-darwin"),
+        ("linux", a) => format!("{a}-unknown-linux-musl"),
+        _ => return,
+    };
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .subsec_nanos();
+    let root = std::env::temp_dir().join(format!("botport-install-{}-{nanos}", std::process::id()));
+    fs::DirBuilder::new().mode(0o700).create(&root).unwrap();
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("install.sh");
+    let run = |case: &str| -> (bool, String, bool) {
+        let w = root.join(case);
+        let stage = w.join(format!("src/botport-{t}"));
+        fs::create_dir_all(stage.join("LICENSES")).unwrap();
+        fs::create_dir_all(w.join("srv")).unwrap();
+        for b in ["botport", "grok2hermes", "g2h", "g2hd"] {
+            fs::write(stage.join(b), "#!/bin/sh\necho demo\n").unwrap();
+            fs::set_permissions(stage.join(b), fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        fs::write(stage.join("LICENSES/demo.MIT"), "demo\n").unwrap();
+        let mut members = vec![format!("botport-{t}")];
+        match case {
+            "link" => symlink("/etc/hosts", stage.join("hosts")).unwrap(),
+            "other" => {
+                fs::write(w.join("src/other.txt"), "demo\n").unwrap();
+                members.push("other.txt".into());
+            }
+            _ => {}
+        }
+        let archive = format!("botport-{t}.tar.gz");
+        assert!(Command::new("tar")
+            .arg("-czf")
+            .arg(w.join("srv").join(&archive))
+            .args(&members)
+            .current_dir(w.join("src"))
+            .status()
+            .unwrap()
+            .success());
+        let sum = Command::new("sh")
+            .arg("-c")
+            .arg("shasum -a 256 \"$1\" 2>/dev/null || sha256sum \"$1\"")
+            .arg("sh")
+            .arg(&archive)
+            .current_dir(w.join("srv"))
+            .output()
+            .unwrap();
+        fs::write(w.join("srv").join(format!("{archive}.sha256")), &sum.stdout).unwrap();
+        let o = Command::new("sh")
+            .arg(&script)
+            .env("HOME", w.join("home"))
+            .env("BOTPORT_BIN_DIR", w.join("home/bin"))
+            .env(
+                "BOTPORT_BASE_URL",
+                format!("file://{}", w.join("srv").display()),
+            )
+            .output()
+            .unwrap();
+        let installed = w.join("home/bin/botport").exists();
+        (
+            o.status.success(),
+            String::from_utf8_lossy(&o.stderr).into_owned(),
+            installed,
+        )
+    };
+    let (ok, e, installed) = run("plain");
+    assert!(ok && installed, "{e}");
+    let (ok, e, installed) = run("link");
+    assert!(!ok && !installed && e.contains("holds a link"), "{e}");
+    let (ok, e, installed) = run("other");
+    assert!(
+        !ok && !installed && e.contains("unexpected member: other.txt"),
+        "{e}"
+    );
+    fs::remove_dir_all(&root).ok();
+}

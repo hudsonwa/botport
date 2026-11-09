@@ -27,6 +27,29 @@ pub const KEEP: usize = 3;
 /// A peer digest larger than this is ignored.
 pub const DIGEST_MAX: u64 = 64 * 1024;
 
+/// Why the pack `HEAD` names cannot be used, typed so a caller never decides on an error's text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PackRead {
+    /// Intact and (with a pair key) signed, but written by a release with another neutral form.
+    OtherForm(String),
+    /// Missing, damaged, forged or not the pack `HEAD` names.
+    Bad(String),
+}
+
+impl From<String> for PackRead {
+    fn from(e: String) -> PackRead {
+        PackRead::Bad(e)
+    }
+}
+
+impl From<PackRead> for String {
+    fn from(e: PackRead) -> String {
+        match e {
+            PackRead::OtherForm(e) | PackRead::Bad(e) => e,
+        }
+    }
+}
+
 /// `pack-<gen>-<id>.json` (id: 1-32 of `[0-9a-f]`) -> gen.
 pub fn pack_gen(name: &str) -> Option<u64> {
     let rest = name.strip_prefix("pack-")?.strip_suffix(".json")?;
@@ -89,17 +112,25 @@ impl<S: Store> DriveTransport<S> {
     }
 
     /// The pack `HEAD` names, checked against `HEAD`'s sha256.
-    pub fn head_pack(&mut self) -> Res<Option<Pack>> {
+    pub fn head_pack(&mut self) -> Result<Option<Pack>, PackRead> {
         let Some(h) = self.head()? else {
             return Ok(None);
         };
         let b = self
             .store()
             .get(&format!("to-grok/{}", h.pack))?
-            .ok_or("HEAD names a pack that is missing")?;
-        let p = Pack::parse_with(&b, &self.pair.clone(), self.key.as_deref())?;
+            .ok_or_else(|| PackRead::Bad("HEAD names a pack that is missing".into()))?;
+        let p = Pack::parse_with(&b, &self.pair, self.key.as_deref()).map_err(|e| {
+            if Pack::other_form(&b, &self.pair, self.key.as_deref()) {
+                PackRead::OtherForm(e)
+            } else {
+                PackRead::Bad(e)
+            }
+        })?;
         if p.sha256 != h.sha || p.gen != h.gen {
-            return err("HEAD does not match the pack it names");
+            return Err(PackRead::Bad(
+                "HEAD does not match the pack it names".into(),
+            ));
         }
         Ok(Some(p))
     }
@@ -193,6 +224,10 @@ impl<S: Store> DriveTransport<S> {
     /// Keep the pack `head` names and the newest [`KEEP`] packs below it; remove older packs (only files named
     /// exactly `pack-<gen>-<id>.json` with a lower gen) and blobs no kept pack refers to. If a kept pack cannot be read,
     /// no blob is removed.
+    ///
+    /// Only packs that verify (with the pair key when there is one; a keyless pair has only their own sha256) count:
+    /// a planted file with a high generation never takes a kept slot and pushes a real pack out, and a file that does
+    /// not verify is never deleted (not ours to judge). Each older pack is read once per prune; pruning keeps them few.
     fn prune_packs(&mut self, head: &Head) -> Res<()> {
         let mut packs: Vec<(u64, String)> = self
             .store()
@@ -202,22 +237,33 @@ impl<S: Store> DriveTransport<S> {
             .filter(|(g, name)| *g < head.gen && *name != head.pack)
             .collect();
         packs.sort();
-        let keep_from = packs.len().saturating_sub(KEEP - 1);
-        let mut kept: Vec<String> = packs[keep_from..].iter().map(|(_, n)| n.clone()).collect();
-        kept.push(head.pack.clone());
-        let mut referenced = BTreeSet::new();
-        let mut all_read = true;
-        for name in &kept {
-            match self
-                .store()
-                .get(&format!("to-grok/{name}"))?
-                .map(|b| Pack::parse_with(&b, &self.pair.clone(), self.key.as_deref()))
+        let mut verified: Vec<(String, Pack)> = vec![];
+        for (gen, name) in packs {
+            let b = self.store().get(&format!("to-grok/{name}"))?;
+            if let Some(Ok(p)) =
+                b.map(|b| Pack::parse_with(&b, &self.pair.clone(), self.key.as_deref()))
             {
-                Some(Ok(p)) => referenced.extend(p.items.into_iter().filter_map(|i| i.blob)),
-                _ => all_read = false,
+                // the name's gen and id must be the pack's own, or one pack could stand in for another
+                if p.gen == gen && p.file_name() == name {
+                    verified.push((name, p));
+                }
             }
         }
-        for (_, name) in &packs[..keep_from] {
+        let keep_from = verified.len().saturating_sub(KEEP - 1);
+        let mut referenced = BTreeSet::new();
+        for (_, p) in &verified[keep_from..] {
+            referenced.extend(p.items.iter().filter_map(|i| i.blob.clone()));
+        }
+        let mut all_read = true;
+        match self
+            .store()
+            .get(&format!("to-grok/{}", head.pack))?
+            .map(|b| Pack::parse_with(&b, &self.pair.clone(), self.key.as_deref()))
+        {
+            Some(Ok(p)) => referenced.extend(p.items.into_iter().filter_map(|i| i.blob)),
+            _ => all_read = false,
+        }
+        for (name, _) in &verified[..keep_from] {
             self.store().delete(&format!("to-grok/{name}"))?;
         }
         if all_read {
@@ -432,6 +478,17 @@ mod tests {
         p.seal_with(Some(&key));
         t.send_pack(&p, &b, None).unwrap();
         assert_eq!(t.head_pack().unwrap().unwrap().mac, p.mac);
+        // a signed pack from a release with another neutral form is said so, typed; a forged one is only bad
+        p.neutral_form = crate::core::package::NEUTRAL_FORM + 1;
+        let other = p.seal_with(Some(&key));
+        FolderStore::open(&d)
+            .unwrap()
+            .put(&format!("to-grok/{}", p.file_name()), &other)
+            .unwrap();
+        assert!(matches!(t.head_pack(), Err(PackRead::OtherForm(_))));
+        let mut t = DriveTransport::new(FolderStore::open(&d).unwrap(), "demo-bot", None)
+            .with_key(Some(vec![6u8; 32]));
+        assert!(matches!(t.head_pack(), Err(PackRead::Bad(_))));
         std::fs::remove_dir_all(&d).ok();
     }
 
@@ -499,6 +556,46 @@ mod tests {
             .iter()
             .all(|n| !n.starts_with("pack-1-") && !n.starts_with("pack-2-")));
         assert_eq!(s.list("to-grok/blobs").unwrap().len(), KEEP);
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn the_prune_keeps_and_deletes_only_packs_that_verify() {
+        let d = tmp("drive-prune-verified");
+        let key = vec![5u8; 32];
+        let mut t = DriveTransport::new(FolderStore::open(&d).unwrap(), "demo-bot", None)
+            .with_key(Some(key.clone()));
+        let mut s = FolderStore::open(&d).unwrap();
+        let send = |t: &mut DriveTransport<FolderStore>, g: u64, prev: Option<&Head>| {
+            let (mut p, b) = pack(g, format!("blob {g}").as_bytes());
+            p.seal_with(Some(&key));
+            t.send_pack(&p, &b, prev).unwrap();
+            p
+        };
+        let p1 = send(&mut t, 1, None);
+        let p2 = send(&mut t, 2, Some(&p1.head()));
+        // unsigned packs between the real ones: a valid sha256, no mac
+        let mut planted = vec![];
+        for g in [3, 4, 5] {
+            let (mut p, _) = pack(g, b"planted");
+            let b = p.seal();
+            s.put(&format!("to-grok/{}", p.file_name()), &b).unwrap();
+            planted.push(p.file_name());
+        }
+        let p9 = send(&mut t, 9, Some(&p2.head()));
+        let names: Vec<String> = s
+            .list("to-grok")
+            .unwrap()
+            .into_iter()
+            .map(|e| e.name)
+            .collect();
+        // the planted files took no kept slot (both real packs below HEAD are kept) and were not deleted
+        for n in [p1.file_name(), p2.file_name(), p9.file_name()]
+            .iter()
+            .chain(&planted)
+        {
+            assert!(names.contains(n), "{n} in {names:?}");
+        }
         std::fs::remove_dir_all(&d).ok();
     }
 

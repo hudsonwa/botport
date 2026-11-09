@@ -29,7 +29,7 @@ for l in (bundle / "memory" / "memory.jsonl").read_text().splitlines():
         known += 1
         continue
     have.add(norm(r["fact"]))
-    rows.append({"date": "2026-10-30", "tier": r["tier"], "scope": "hermes", "source": "hermes",
+    rows.append({"date": "2000-01-30", "tier": r["tier"], "scope": "hermes", "source": "hermes",
                  "fact": "(from Hermes) " + r["fact"]})
     saved += 1
 mem.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in rows))

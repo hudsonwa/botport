@@ -86,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "botport"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "regex",
  "rustix",
@@ -303,7 +303,7 @@ dependencies = [
 
 [[package]]
 name = "g2h"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "futures-util",

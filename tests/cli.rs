@@ -163,7 +163,7 @@ fn memory_drop_and_freshness_gate() {
     w(&ad.join("workflows/alpha/SKILL.md"), "a\n");
     w(&ad.join("workflows/managed-skills/x/SKILL.md"), "managed\n");
     let md = t.0.join("drop");
-    w(&md.join(format!("agents/{id}/memory-agent.jsonl")), "{\"tier\":\"profile\",\"fact\":\"z\",\"date\":\"2026-10-30\"}\n{\"fact\":\"a\",\"date\":\"2026-10-01\",\"tier\":\"note\"}\n");
+    w(&md.join(format!("agents/{id}/memory-agent.jsonl")), "{\"tier\":\"profile\",\"fact\":\"z\",\"date\":\"2000-01-30\"}\n{\"fact\":\"a\",\"date\":\"2000-01-01\",\"tier\":\"note\"}\n");
     let out = t.0.join("b");
     let (rc, o) = run(&[
         "export",
@@ -178,7 +178,7 @@ fn memory_drop_and_freshness_gate() {
     assert!(o.contains("memory 2 rows"), "{o}");
     let jl = fs::read_to_string(out.join("memory/memory.jsonl")).unwrap();
     assert!(
-        jl.lines().next().unwrap().contains("2026-10-01"),
+        jl.lines().next().unwrap().contains("2000-01-01"),
         "sorted by date"
     );
     assert!(!out.join("raw/skills/managed-skills/x/SKILL.md").exists());
@@ -777,6 +777,31 @@ esac
         "{stdout}"
     );
     assert!(stdout.contains("FAIL memory-1"), "{stdout}");
+    // results 0600, each run's work folder new, random and 0700; an --out that is a link is refused
+    for e in fs::read_dir(t.0.join("out")).unwrap().flatten() {
+        let mode = fs::symlink_metadata(e.path()).unwrap().permissions().mode() & 0o777;
+        let n = e.file_name().to_string_lossy().into_owned();
+        let want = if n.starts_with("workdir-") {
+            0o700
+        } else {
+            0o600
+        };
+        assert_eq!(mode, want, "{n}");
+    }
+    std::os::unix::fs::symlink(t.0.join("out"), t.0.join("out-link")).unwrap();
+    let (rc, o) = run(&[
+        "test",
+        "--profile",
+        "anybot",
+        "--battery",
+        s(&bat),
+        "--hermes-bin",
+        s(&fake),
+        "--out",
+        s(&t.0.join("out-link")),
+    ]);
+    assert_ne!(rc, 0, "{o}");
+    assert!(o.contains("is a link"), "{o}");
 }
 
 #[test]
@@ -819,7 +844,7 @@ fn prose_mentions_of_secrets_survive_export_and_verify() {
     let drop = g.join("memory-drop");
     w(
         &drop.join("memory-agent.jsonl"),
-        "{\"date\":\"2026-11-01\",\"tier\":\"core\",\"scope\":\"user\",\"source\":\"chat\",\"fact\":\"the user keeps the router password and the api secret in the vault app\"}\n",
+        "{\"date\":\"2000-02-01\",\"tier\":\"core\",\"scope\":\"user\",\"source\":\"chat\",\"fact\":\"the user keeps the router password and the api secret in the vault app\"}\n",
     );
     let o = t.0.join("b");
     let (rc, out) = run(&[

@@ -48,6 +48,29 @@ else
 fi
 [ -n "$want" ] && [ "$want" = "$got" ] || die "checksum mismatch for $archive (want $want, got $got)"
 
+# only plain files and folders under botport-<target>/ with plain names: no absolute path, '..', link or device
+member_ok() {
+  rest=${1#"botport-$target"}
+  [ "$rest" != "$1" ] || return 1
+  case $rest in "" | /) return 0 ;; /*) ;; *) return 1 ;; esac
+  rest=${rest#/}
+  rest=${rest%/}
+  case $rest in LICENSES/*) rest=${rest#LICENSES/} ;; esac
+  case $rest in "" | . | .. | *[!A-Za-z0-9._-]*) return 1 ;; esac
+}
+tar -tzf "$tmp/$archive" > "$tmp/members" || die "cannot list $archive"
+tar -tvzf "$tmp/$archive" > "$tmp/members-v" || die "cannot list $archive"
+[ -s "$tmp/members" ] || die "$archive is empty"
+while IFS= read -r m; do
+  member_ok "$m" || die "$archive holds an unexpected member: $m"
+done < "$tmp/members"
+while IFS= read -r l; do
+  case $l in
+    *" -> "* | *" link to "*) die "$archive holds a link: $l" ;;
+    -* | d*) ;;
+    *) die "$archive holds something other than a file or folder: $l" ;;
+  esac
+done < "$tmp/members-v"
 tar -xzf "$tmp/$archive" -C "$tmp"
 mkdir -p "$bin_dir"
 for b in botport g2h g2hd; do

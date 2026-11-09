@@ -598,8 +598,7 @@ mod tests {
 
     #[test]
     fn write_if_changed_ignores_the_stamp_and_writes_0600() {
-        let d = std::env::temp_dir().join(format!("botport-digest-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::core::util::test_dir("digest");
         let root = d.join("botport");
         let t = demo().render();
         assert!(write_if_changed(&root, "digest-a.md", &t).unwrap());

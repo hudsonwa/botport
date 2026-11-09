@@ -885,7 +885,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn verify_rejects_symlinks_out_of_the_bundle() {
-        let d = std::env::temp_dir().join(format!("botport-verify-link-{}", std::process::id()));
+        let d = crate::core::util::test_dir("verify-link");
         let b = d.join("bundle");
         fs::create_dir_all(b.join("sub")).unwrap();
         let outside = d.join("outside.txt");
@@ -953,8 +953,7 @@ mod tests {
 
     #[test]
     fn retain_skills_drops_files_from_the_digest() {
-        let d = std::env::temp_dir().join(format!("g2h-retain-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&d);
+        let d = crate::core::util::test_dir("retain");
         for (n, body) in [("keep", "k"), ("drop", "d1")] {
             fs::create_dir_all(d.join("skills").join(n)).unwrap();
             fs::write(d.join("skills").join(n).join("SKILL.md"), body).unwrap();
@@ -981,8 +980,8 @@ mod tests {
     #[test]
     fn memory_render_groups_and_handles_bad_lines() {
         let mut rows = parse_jsonl(
-            "{\"tier\":\"note\",\"fact\":\"b\",\"date\":\"2026-10-02\"}\nnot json\n\
-{\"tier\":\"profile\",\"fact\":\"a\",\"date\":\"2026-10-01\"}\n",
+            "{\"tier\":\"note\",\"fact\":\"b\",\"date\":\"2000-01-02\"}\nnot json\n\
+{\"tier\":\"profile\",\"fact\":\"a\",\"date\":\"2000-01-01\"}\n",
         );
         sort_rows(&mut rows);
         let md = render_memory(&rows);

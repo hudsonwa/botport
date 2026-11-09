@@ -50,7 +50,7 @@ pub fn default_dir() -> Option<PathBuf> {
 }
 
 /// RFC 4648 base32 (any case, no padding) to text; None when it isn't base32.
-fn base32(s: &str) -> Option<String> {
+pub(crate) fn base32(s: &str) -> Option<String> {
     let (mut bits, mut acc, mut out) = (0u32, 0u32, vec![]);
     for c in s.trim_end_matches('=').chars() {
         let v = match c.to_ascii_uppercase() {
@@ -118,13 +118,14 @@ fn deleted(o: &serde_json::Map<String, Value>) -> bool {
 }
 
 /// Walk one document; apply automation-changed events in order (slug -> display name).
-fn collect(v: &Value, names: &mut BTreeMap<String, String>) {
+pub(crate) fn collect(v: &Value, names: &mut BTreeMap<String, String>) {
     match v {
         Value::Object(o) => {
             if is_event(o) {
                 let name = [&o.get("automation"), &o.get("payload")]
                     .iter()
                     .filter_map(|x| x.and_then(|x| x.get("name")))
+                    .chain(o.get("automationName"))
                     .chain(o.get("name"))
                     .find_map(Value::as_str)
                     .map(str::trim)
@@ -239,8 +240,7 @@ mod tests {
     const MALFORMED: &str = "tests/fixtures/routines-cache/onqw4zbomnwgszlooqxhg3djmnss4yldmnxxk3tufztgs6duovzgkltuojqw443dojuxa5boojsxa3djmnqxgltsgi.blob";
 
     fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("botport-rc-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::core::util::test_dir(&format!("rc-{tag}"));
         std::fs::create_dir_all(&d).unwrap();
         d
     }

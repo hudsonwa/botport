@@ -54,7 +54,7 @@ impl World {
             "---\nname: alpha\n---\nalpha v1\n",
         );
         w(&r.join(format!("box/drop/agents/{ID}/memory-agent.jsonl")),
-          "{\"date\":\"2026-10-01\",\"tier\":\"profile\",\"scope\":\"\",\"source\":\"self\",\"fact\":\"The Demo MCP listens on port 12345.\"}\n");
+          "{\"date\":\"2000-01-01\",\"tier\":\"profile\",\"scope\":\"\",\"source\":\"self\",\"fact\":\"The Demo MCP listens on port 12345.\"}\n");
         // repo templates + spec
         w(&r.join("repo/tpl/SOUL.md"), "You are Demo.\n");
         w(
@@ -136,7 +136,7 @@ impl World {
             let v: Value = serde_json::from_str(l).unwrap();
             let f = v["fact"].as_str().unwrap();
             if !have.contains(&norm(f)) {
-                text += &(serde_json::to_string(&json!({"date": "2026-10-30", "tier": v["tier"], "scope": "hermes",
+                text += &(serde_json::to_string(&json!({"date": "2000-01-30", "tier": v["tier"], "scope": "hermes",
                                                        "source": "hermes", "fact": format!("(from Hermes) {f}")})).unwrap() + "\n");
                 facts += 1;
             }

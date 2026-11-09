@@ -9,8 +9,7 @@ fn root() -> PathBuf {
 }
 
 fn scratch(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("g2h-adapter-{tag}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&d);
+    let d = crate::core::util::test_dir(&format!("adapter-{tag}"));
     std::fs::create_dir_all(&d).unwrap();
     d
 }

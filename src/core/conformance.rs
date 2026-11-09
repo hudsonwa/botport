@@ -13,9 +13,13 @@ fn scratch<A: Adapter>(a: &A, tag: &str) -> PathBuf {
     static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let pid = std::process::id();
-    let d = std::env::temp_dir().join(format!("conformance-{}-{tag}-{pid}-{n}", a.id()));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
+    // a random name, made new and private (0700): no other process can predict it or have made it first
+    let r = crate::adapters::mirror::pack::random_id();
+    let d = std::env::temp_dir().join(format!("conformance-{}-{tag}-{pid}-{n}-{r}", a.id()));
+    let mut b = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+    b.create(&d).unwrap();
     d
 }
 

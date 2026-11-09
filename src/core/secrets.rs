@@ -492,6 +492,7 @@ fn value_entropy(t: &str) -> Option<Reason> {
 fn token(t: &str) -> Option<Reason> {
     static P: OnceLock<Regex> = OnceLock::new();
     static AK: OnceLock<Regex> = OnceLock::new();
+    static MORE: OnceLock<Regex> = OnceLock::new();
     static B: OnceLock<Regex> = OnceLock::new();
     static J: OnceLock<Regex> = OnceLock::new();
     if t.contains("-----BEGIN") && t.contains("PRIVATE KEY") {
@@ -503,6 +504,11 @@ fn token(t: &str) -> Option<Reason> {
     )
     .is_match(t)
         || re(&AK, r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b").is_match(t)
+        || re(
+            &MORE,
+            r"\b(?:AIza[0-9A-Za-z_\-]{35}|(?:sk|rk)_(?:live|test)_[0-9A-Za-z]{16,}|hf_[A-Za-z0-9]{30,}|npm_[A-Za-z0-9]{36})\b",
+        )
+        .is_match(t)
     {
         return Some(Reason("token-shaped value (sk-/xai-/gh*_/xox*-/AKIA...)"));
     }
@@ -766,16 +772,19 @@ pub fn unchecked_reason(err: &str) -> Option<&str> {
     )
 }
 
-/// The first YAML text that looks like it holds a secret, with where it is: every string, every key (every entry
+/// The first YAML (or JSON) text that looks like it holds a secret, with where it is (by position, in document
+/// order): every string, every key (every entry
 /// of a mapping, duplicate keys included, so none is dropped) and every tag's text, in every document.
 fn walk_nodes(
     docs: &[crate::core::yaml11::Node],
     check: fn(&str) -> Option<Reason>,
 ) -> Option<(String, Reason)> {
     use crate::core::yaml11::Node;
+    // a stack: everything is pushed last first, so it is walked (and the first hit named) in document order
     let mut stack: Vec<(String, &Node)> = docs
         .iter()
         .enumerate()
+        .rev()
         .map(|(i, d)| (format!("$[{i}]"), d))
         .collect();
     while let Some((at, n)) = stack.pop() {
@@ -785,9 +794,12 @@ fn walk_nodes(
                     return Some((at, r));
                 }
             }
-            Node::Seq(q) => {
-                stack.extend(q.iter().enumerate().map(|(i, x)| (format!("{at}[{i}]"), x)))
-            }
+            Node::Seq(q) => stack.extend(
+                q.iter()
+                    .enumerate()
+                    .rev()
+                    .map(|(i, x)| (format!("{at}[{i}]"), x)),
+            ),
             Node::Map(m) => {
                 // locations name entries by position, never by key text; each key is checked before its value
                 // (pushed after it, so popped first)
@@ -818,24 +830,25 @@ fn guard_with(what: &str, data: &[u8], check: fn(&str) -> Option<Reason>) -> Res
         return Ok(());
     };
     let hit = |at: String, r: Reason| Err(format!("{at} looks like it holds a secret ({r})"));
+    use crate::core::yaml11::{json_nodes, Node};
+    // JSONL: each non-blank line is one document, as a YAML stream's documents are
     let jsonl = || {
-        let v: Option<Vec<serde_json::Value>> = text
+        let v: Option<Vec<Node>> = text
             .lines()
             .filter(|l| !l.trim().is_empty())
-            .map(|l| serde_json::from_str(l).ok())
+            .map(json_nodes)
             .collect();
-        v.filter(|v| !v.is_empty()).map(serde_json::Value::Array)
+        v.filter(|v| !v.is_empty())
     };
     let lower = what.to_ascii_lowercase();
     let is_yaml = [".yaml", ".yml"].iter().any(|e| lower.ends_with(e));
-    // a YAML-named file is always read as YAML (JSON is YAML too): the JSON reader keeps only the last of
-    // duplicate keys, the YAML node reader keeps every entry
+    // a YAML-named file is always read as YAML (JSON is YAML too); JSON and JSONL are read as node trees that keep
+    // every entry of an object, duplicate keys included, so a later duplicate cannot hide an earlier value, and
+    // walked as YAML is: locations by position, never by key text
     let tree = if is_yaml {
         None
     } else {
-        serde_json::from_str::<serde_json::Value>(text)
-            .ok()
-            .or_else(jsonl)
+        json_nodes(text).map(|n| vec![n]).or_else(jsonl)
     };
     let mut yaml_text = false;
     if tree.is_none() && is_yaml {
@@ -853,28 +866,9 @@ fn guard_with(what: &str, data: &[u8], check: fn(&str) -> Option<Reason>) -> Res
         }
     }
     match tree {
-        Some(v) => {
-            let mut stack = vec![("$".to_string(), &v)];
-            while let Some((at, v)) = stack.pop() {
-                match v {
-                    serde_json::Value::String(t) => {
-                        if let Some(r) = check(t) {
-                            return hit(at, r);
-                        }
-                    }
-                    serde_json::Value::Array(a) => {
-                        stack.extend(a.iter().enumerate().map(|(i, x)| (format!("{at}[{i}]"), x)))
-                    }
-                    serde_json::Value::Object(m) => {
-                        for (k, x) in m {
-                            if let Some(r) = check(k) {
-                                return hit(format!("a key under {at}"), r);
-                            }
-                            stack.push((format!("{at}.{k}"), x));
-                        }
-                    }
-                    _ => {}
-                }
+        Some(docs) => {
+            if let Some((at, r)) = walk_nodes(&docs, check) {
+                return hit(at, r);
             }
         }
         None if yaml_text => {}
@@ -1418,7 +1412,10 @@ mod tests {
                 format!("{{\"a\":{{\"b\":[\"use {x} now\"]}}}}").as_bytes(),
             )
             .unwrap_err();
-            assert!(e.contains("$.a.b[0]") && !e.contains(x), "{e}");
+            assert!(
+                e.contains("$[0]{entry 0}{entry 0}[0] ") && !e.contains(x),
+                "{e}"
+            );
             assert!(
                 guard("f.yaml", format!("a: [\"{x}\"]\n").as_bytes()).is_err(),
                 "{x}"
@@ -1986,7 +1983,68 @@ mod tests {
             assert_eq!(guard_str(t), None, "{t:?}");
         }
         let e = guard("f.json", br#"{"a":"api_key=abc123def456"}"#).unwrap_err();
-        assert!(e.contains("$.a") && !e.contains("abc123"), "{e}");
+        assert!(
+            e.starts_with("refusing to write f.json: $[0]{entry 0} looks") && !e.contains("abc123"),
+            "{e}"
+        );
+        // a duplicate key in JSON or JSONL cannot hide an earlier value: every entry is checked, in either order
+        for (doc, at) in [
+            (
+                r#"{"demo":"api_key=abc123def456ghi789","demo":"x"}"#,
+                "{entry 0}",
+            ),
+            (
+                r#"{"demo":"x","demo":"api_key=abc123def456ghi789"}"#,
+                "{entry 1}",
+            ),
+            (
+                r#"{"demo":{"inner":["api_key=abc123def456ghi789"]},"demo":{}}"#,
+                "{entry 0}{entry 0}[0]",
+            ),
+        ] {
+            // JSONL lines are documents, as in a YAML stream
+            for (name, text, at) in [
+                ("demo.json", doc.to_string(), format!("$[0]{at} ")),
+                (
+                    "demo.jsonl",
+                    format!("{{\"n\":1}}\n\n{doc}\n"),
+                    format!("$[1]{at} "),
+                ),
+            ] {
+                let e = guard(name, text.as_bytes()).unwrap_err();
+                assert!(e.contains(&at) && !e.contains("abc123"), "{name}: {e}");
+            }
+        }
+        // locations are by position, never by key text, and the first hit in document order is named
+        let e = guard(
+            "demo.json",
+            br#"{"zz-demo":["x","api_key=abc123def456ghi789"],"aa-demo":"api_key=abc123def456ghi789"}"#,
+        )
+        .unwrap_err();
+        assert!(
+            e.contains("$[0]{entry 0}[1] ") && !e.contains("zz-") && !e.contains("aa-"),
+            "{e}"
+        );
+        let e = guard("demo.json", br#"{"x":1,"api_key=abc123def456ghi789":1}"#).unwrap_err();
+        assert!(
+            e.contains("the key of entry 1 under $[0] ") && !e.contains("abc123"),
+            "{e}"
+        );
+        assert_eq!(guard("demo.json", br#"{"demo":"x","demo":"y"}"#), Ok(()));
+        assert_eq!(
+            crate::core::yaml11::json_nodes(r#"{"demo":1,"demo":2}"#),
+            Some(crate::core::yaml11::Node::Map(vec![
+                (
+                    crate::core::yaml11::Node::Str("demo".into()),
+                    crate::core::yaml11::Node::Number("1".into())
+                ),
+                (
+                    crate::core::yaml11::Node::Str("demo".into()),
+                    crate::core::yaml11::Node::Number("2".into())
+                ),
+            ]))
+        );
+        assert_eq!(crate::core::yaml11::json_nodes("{} x"), None);
         assert_eq!(guard("f.json", br#"{"a":"token zqlower"}"#), Ok(()));
         assert_eq!(guard("f.md", b"rotate the API token weekly\n"), Ok(()));
         let e = guard("f.md", b"x\napi_key=abc123def456\n").unwrap_err();

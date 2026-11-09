@@ -7,6 +7,7 @@ Start with the [main README](../README.md) for what botport is and a quick try-o
 - [USER-GUIDE.md](USER-GUIDE.md): export, import, sync, test and undo, step by step.
 - [examples/daily-wisdom.md](examples/daily-wisdom.md): a worked example, from a real template to a passing battery.
 - [REFERENCE.md](REFERENCE.md): every command, the bundle layout, the port spec and its ownership rules.
+- [TWIN.md](TWIN.md): `botport grok list` and `botport twin`, the JSON interface the Grok Bot Twin plugin for Hermes calls.
 
 ## Briefs for agents
 Hand these to an agent and it can do the job for you.

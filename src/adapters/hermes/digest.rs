@@ -504,8 +504,7 @@ mod tests {
 
     #[test]
     fn facts_are_setup_counts_and_mirror_times_never_memories() {
-        let d = std::env::temp_dir().join(format!("botport-hfacts-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::core::util::test_dir("hfacts");
         for s in [
             "skills/demo-cat/demo-skill",
             "skills/demo-cat/demo-skill-two",

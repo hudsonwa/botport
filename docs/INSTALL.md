@@ -19,10 +19,22 @@ import, sync, drift-check and test a bot; install the bridge only if you want th
 
 ## Prebuilt binaries (recommended)
 
-    curl -fsSL https://raw.githubusercontent.com/hudsonwa/botport/main/install.sh | sh
+Pin a release tag and check what you download before you run it:
+
+    TAG=v0.2.0 T=aarch64-apple-darwin   # or x86_64-apple-darwin, x86_64-unknown-linux-musl, aarch64-unknown-linux-musl
+    curl -fsSLO "https://github.com/hudsonwa/botport/releases/download/$TAG/botport-$T.tar.gz"
+    curl -fsSLO "https://github.com/hudsonwa/botport/releases/download/$TAG/SHA256SUMS"
+    shasum -a 256 -c SHA256SUMS --ignore-missing
+    gh attestation verify "botport-$T.tar.gz" --repo hudsonwa/botport \
+      --signer-workflow hudsonwa/botport/.github/workflows/release.yml --source-ref "refs/tags/$TAG"
+    tar -xzf "botport-$T.tar.gz" && mkdir -p ~/.local/bin && cp "botport-$T/botport" ~/.local/bin/
+
+Or use the installer script **from the same tag** (read it first; never run a script from `main`):
+
+    curl -fsSLO "https://raw.githubusercontent.com/hudsonwa/botport/$TAG/install.sh" && BOTPORT_VERSION="$TAG" sh install.sh
 
 The script downloads `botport-<target>.tar.gz` for your platform from the latest GitHub Release, verifies its
-SHA-256 checksum, installs `botport`, `g2h` and `g2hd` into `~/.local/bin` and links `grok2hermes -> botport`. The bridge binaries
+SHA-256 checksum, refuses an archive holding a link, an absolute or `..` path or any name it does not expect, installs `botport`, `g2h` and `g2hd` into `~/.local/bin` and links `grok2hermes -> botport`. The bridge binaries
 do nothing until you run `g2h setup`; if you don't want them, delete `g2h` and `g2hd` or use cargo below.
 Options (environment variables):
 
@@ -37,6 +49,20 @@ Prefer to read before you run? Download `install.sh`, read it, then `sh install.
 the archive and `SHA256SUMS` from the Releases page, `shasum -a 256 -c SHA256SUMS --ignore-missing` (supported by macOS
 `shasum` and GNU `sha256sum -c --ignore-missing`; it skips the archives you did not download), unpack, and
 copy the binaries onto your `PATH`.
+
+### Verify a download
+
+Each release archive and each binary in it carries a GitHub build attestation: proof that the repository's own
+release workflow built it from source. With the [GitHub CLI](https://cli.github.com/):
+
+    TAG=v0.2.0    # the release you downloaded
+    gh attestation verify botport-<target>.tar.gz --repo hudsonwa/botport \
+      --source-ref "refs/tags/$TAG" --signer-workflow hudsonwa/botport/.github/workflows/release.yml
+    gh attestation verify "$(command -v botport)" --repo hudsonwa/botport \
+      --source-ref "refs/tags/$TAG" --signer-workflow hudsonwa/botport/.github/workflows/release.yml
+
+`--source-ref` requires that tag's build and `--signer-workflow` the release workflow; add `--source-digest <commit sha>`
+to require a given commit. Binaries from pipx or cargo are not attested.
 
 ## With pipx (no Rust needed)
 

@@ -79,11 +79,6 @@ impl Pack {
         written: &str,
         items: Vec<PackItem>,
     ) -> Res<Pack> {
-        let token = |s: &str| {
-            (1..=32).contains(&s.len())
-                && s.bytes()
-                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-        };
         if !token(id) || !token(machine) {
             return err("pack id and machine must be 1-32 lowercase hex characters");
         }
@@ -144,6 +139,20 @@ impl Pack {
         json_sorted(self).into_bytes()
     }
 
+    /// Whether `b`, a manifest that failed [`Pack::parse_with`], is this pair's, intact and (with a key) signed, and
+    /// written in another neutral form. Decided on the file's fields, after it verified, never on an error's text.
+    pub fn other_form(b: &[u8], pair: &str, key: Option<&[u8]>) -> bool {
+        let Ok(raw) = serde_json::from_slice::<serde_json::Value>(b) else {
+            return false;
+        };
+        let v = raw
+            .get("neutral_form")
+            .map_or(Some(1), |v| v.as_u64().and_then(|v| u32::try_from(v).ok()));
+        raw["schema"] == SCHEMA
+            && raw["pair"] == pair
+            && v.is_some_and(|v| crate::core::package::verified_other_form(b, v, key))
+    }
+
     /// [`Pack::parse`], and with a pair key the manifest must carry a valid `mac`.
     pub fn parse_with(b: &[u8], pair: &str, key: Option<&[u8]>) -> Res<Pack> {
         let p = Pack::parse_keyed(b, pair, key)?;
@@ -161,7 +170,7 @@ impl Pack {
     /// [`Pack::parse`]; a file in another neutral form is reported only when it verifies with `key`.
     fn parse_keyed(b: &[u8], pair: &str, key: Option<&[u8]>) -> Res<Pack> {
         let mut p: Pack =
-            serde_json::from_slice(b).map_err(|e| format!("pack is not valid: {e}"))?;
+            serde_json::from_slice(b).map_err(|e| crate::core::util::json_invalid("pack", &e))?;
         if p.schema != SCHEMA || p.pair != pair {
             return err("pack is for another pair or schema");
         }
@@ -240,25 +249,33 @@ impl Head {
         if h.pack.is_empty() || h.sha.is_empty() || h.machine.is_empty() || h.pack.contains('/') {
             return err("HEAD is incomplete");
         }
+        // the machine is printed (a second writer is named in an error): held to the pack's form, never free text
+        if !token(&h.machine) {
+            return err("HEAD has an invalid machine id");
+        }
         Ok(h)
     }
 }
 
-/// 48 random bits as hex, for pack ids and machine ids.
-pub fn random_id() -> String {
+/// A pack id or machine id: 1-32 lowercase hex characters.
+fn token(s: &str) -> bool {
+    (1..=32).contains(&s.len())
+        && s.bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+/// 48 random bits as hex, for pack ids and machine ids; an error without a random source (never the time or pid,
+/// which another writer could repeat or guess).
+pub fn try_random_id() -> Res<String> {
     let mut b = [0u8; 6];
-    if std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut b))
-        .is_err()
-    {
-        let t = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let h = sha256_hex(format!("{t}:{}", std::process::id()).as_bytes());
-        return h[..12].to_string();
-    }
-    crate::core::util::hex(&b)
+    crate::core::util::os_random(&mut b)?;
+    Ok(crate::core::util::hex(&b))
+}
+
+/// [`try_random_id`] for callers that cannot return an error: without a random source it panics rather than make
+/// a guessable id.
+pub fn random_id() -> String {
+    try_random_id().expect("no random source for an id")
 }
 
 #[cfg(test)]
@@ -304,6 +321,12 @@ mod tests {
         assert!(Head::parse(b"gen=1 pack=../x sha=s machine=m").is_err());
         assert!(Head::parse(b"gen=x pack=p sha=s machine=m").is_err());
         assert!(Head::parse(b"gen=1 pack=p sha=s machine=m extra=1").is_err());
+        // the machine id is held to the pack's form: no free text to print
+        assert!(Head::parse(b"gen=1 pack=p sha=s machine=a1").is_ok());
+        for m in ["m", "A1", "a1\u{202e}", &"a".repeat(33)] {
+            let line = format!("gen=1 pack=p sha=s machine={m}");
+            assert!(Head::parse(line.as_bytes()).is_err(), "{m}");
+        }
     }
 
     #[test]
@@ -326,6 +349,53 @@ mod tests {
         assert!(Pack::parse_with(&ub, "demo-bot", Some(&key)).is_err());
         assert!(Pack::parse_with(&ub, "demo-bot", None).is_ok());
         assert_eq!(u.sha256, p.sha256, "the mac is not part of the sha256");
+    }
+
+    #[test]
+    fn parse_errors_never_quote_the_file() {
+        let mut p = Pack::new(
+            "demo-bot",
+            1,
+            "ab",
+            "cd",
+            "t",
+            vec![item("skill:demo-skill", PackAction::Put)],
+        )
+        .unwrap();
+        let t = String::from_utf8(p.seal()).unwrap();
+        let bad = t.replace("\"put\"", "\"example-secret-word\"");
+        let e = Pack::parse(bad.as_bytes(), "demo-bot").unwrap_err();
+        assert!(
+            e.contains("line") && !e.contains("example-secret-word"),
+            "{e}"
+        );
+        let e = crate::adapters::mirror::state::StateFile::parse(
+            b"{\"schema\": [\"example-secret-word\"]}",
+            "demo-bot",
+        )
+        .unwrap_err();
+        assert!(!e.contains("example-secret-word"), "{e}");
+    }
+
+    #[test]
+    fn a_pack_in_another_neutral_form_stops_only_when_signed() {
+        let key = [3u8; 32];
+        let mut p = Pack::new(
+            "demo-bot",
+            2,
+            "ab",
+            "cd",
+            "t",
+            vec![item("skill:demo-skill", PackAction::Put)],
+        )
+        .unwrap();
+        p.neutral_form = 1;
+        let mismatch = crate::core::package::NEUTRAL_FORM_MISMATCH;
+        let e = Pack::parse_with(&p.seal_with(Some(&key)), "demo-bot", Some(&key)).unwrap_err();
+        assert!(e.contains(mismatch), "{e}");
+        // keyless: only its own sha256 vouches for it, so it is an unreadable pack, not a reason to republish
+        let e = Pack::parse_with(&p.seal(), "demo-bot", None).unwrap_err();
+        assert!(!e.contains(mismatch), "{e}");
     }
 
     #[test]

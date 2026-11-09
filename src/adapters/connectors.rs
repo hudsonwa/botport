@@ -734,7 +734,7 @@ source = "https://example.com"
             assert!(check_url(u, &none()).is_err(), "{u}");
         }
         // public addresses in those forms are still addresses, and public
-        assert!(check_url("https://8.8.8.8/mcp", &none()).is_ok());
+        assert!(check_url("https://203.0.113.8/mcp", &none()).is_ok());
         assert!(check_url("https://mcp.example.com/mcp", &none()).is_ok());
     }
 

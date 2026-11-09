@@ -92,7 +92,9 @@ botport release attached.
    `probe/<round>/ack-2.txt`. Never delete or edit the owner's probe files. If you cannot create files there, or
    cannot see the owner's files, say so: the owner needs a connection that can create and read files in that folder.
    Only if the owner asks you in chat to mirror the box's skills for this pair (they are shared by every bot in the
-   box, so the owner picks one pair for them), put an empty file `with-skills` in its `.work/<pair>/` folder.
+   box, so the owner picks one pair for them), put an empty file `with-skills` in its `.work/<pair>/` folder. If the
+   owner says the pair is a twin (set up with `botport twin mirror`), put an empty file `pair-skills` there instead:
+   then only the skills this pair installed are read back, never another bot's.
 5. **First state.** Record (step 6) and upload (step 7) for the new pair, and write its `last-run` as
    `gen=0 check=0 full=<today's UTC date>`. Then tell the owner the pair is ready for them to run `botport mirror init`
    again on their machine.
@@ -144,9 +146,10 @@ full run); each folder 0700, each file 0600. `uploaded` and `last-run` are writt
    (`with-skills`); never anything of another bot's own setup (`apply-pack` refuses it). Right before each item,
    download that pair's `HEAD` again into the local copy; if its `gen=` is no longer `<gen>`, stop installing for that
    pair and start it over at step 2. Then run
-   `/workspace/.botport/bin/botport mirror apply-pack --root /workspace/botport-mirror --pair '<pair>' --precheck '<item>' --gen '<gen>'`;
-   only if it succeeds (it prints `<pair>: ok: install <item>`), copy the staged skill folder into the box's skills,
-   unchanged; otherwise skip it and report it. Packs only add new items: an install marked `(new: only if you have
+   `/workspace/.botport/bin/botport mirror apply-pack --root /workspace/botport-mirror --pair '<pair>' --precheck '<item>' --gen '<gen>' --install-to /home/box/agent-data/workflows`;
+   it checks the staged copy against the pack and installs exactly the copy it checked into the box's skills in the
+   same step (it prints `<pair>: installed <item>`). Never copy a staged skill yourself. If it fails, skip the item and
+   report it. Packs only add new items: an install marked `(new: only if you have
    nothing by this name)` is skipped and reported when the box already has a skill of that name, and changing or
    removing one is left to the owner.
 5. **Check.**

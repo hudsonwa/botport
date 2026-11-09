@@ -149,8 +149,7 @@ fn the_grok_adapter_dropping_credential_names_fails_too() {
 fn adapter_write_refuses_unsafe_skill_names_and_paths() {
     let adapters: [(&dyn Adapter, &str); 2] = [(&GrokBot, "grok-bot"), (&HermesProfile, "hermes")];
     for (a, id) in adapters {
-        let base =
-            std::env::temp_dir().join(format!("botport-unsafe-write-{id}-{}", std::process::id()));
+        let base = crate::core::util::test_dir(&format!("unsafe-write-{id}"));
         let good = a.read(&fixture(id)).unwrap();
         let mut by_name = good.clone();
         let mut s = good.skills[0].clone();

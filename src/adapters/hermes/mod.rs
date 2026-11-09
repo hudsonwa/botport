@@ -331,13 +331,11 @@ pub fn parity_view(
 /// config.yaml `mcp_servers` -> connectors (url and `tools.include`; header and auth values are never read).
 fn read_connectors(src: &Path) -> Res<Vec<Connector>> {
     let cfg = src.join("config.yaml");
-    if !cfg.is_file() {
+    let Some(t) = crate::core::yaml11::read_config_yaml(&cfg)? else {
         return Ok(vec![]);
-    }
-    let y: Y = crate::core::yaml11::parse(&crate::core::yaml11::read(
-        &crate::core::yaml11::read_yaml_file(&cfg)?,
-    ))
-    .map_err(|e| format!("{}: {e}", cfg.display()))?;
+    };
+    let y: Y = crate::core::yaml11::parse(&crate::core::yaml11::read(&t))
+        .map_err(|e| format!("{}: {e}", cfg.display()))?;
     let servers = y.get("mcp_servers").and_then(Y::as_mapping);
     Ok(servers
         .into_iter()
@@ -455,11 +453,9 @@ fn unmapped(src: &Path) -> Res<Option<serde_json::Value>> {
     }
     let mut x = serde_json::Map::new();
     let cfg = src.join("config.yaml");
-    if cfg.is_file() {
-        let y: serde_yaml::Value = crate::core::yaml11::parse(&crate::core::yaml11::read(
-            &crate::core::yaml11::read_yaml_file(&cfg)?,
-        ))
-        .map_err(|e| format!("{}: {e}", cfg.display()))?;
+    if let Some(t) = crate::core::yaml11::read_config_yaml(&cfg)? {
+        let y: serde_yaml::Value = crate::core::yaml11::parse(&crate::core::yaml11::read(&t))
+            .map_err(|e| format!("{}: {e}", cfg.display()))?;
         let mut j = serde_json::to_value(y).map_err(|e| format!("config.yaml: {e}"))?;
         scrub(&mut j);
         x.insert("config".into(), j);

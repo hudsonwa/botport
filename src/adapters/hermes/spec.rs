@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn builtin_vars_and_normalize() {
         assert_eq!(normalize("/a/b/../c/./d/.."), "/a/c");
-        let d = std::env::temp_dir().join(format!("g2h-spec-{}", std::process::id()));
+        let d = crate::core::util::test_dir("spec");
         std::fs::create_dir_all(d.join("x/y")).unwrap();
         std::fs::write(d.join("x/y/s.toml"), "[vars]\nREPO = \"{{SPEC_DIR}}/../..\"\n[config]\ntemplate = \"c.yaml\"\ninherit = { web = \"{{HERMES_HOME}}/r.yaml\" }\n").unwrap();
         let s = Spec::load(&d.join("x/y/s.toml"), Path::new("/hh")).unwrap();

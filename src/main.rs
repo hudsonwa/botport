@@ -43,14 +43,16 @@ const USAGE: &str = "botport <command> [options]   (v{V}; --version prints it)
   mirror doctor --pair P   can you chat with the Hermes twin (its gateway, its model)? exit 1 when not
   mirror recent (--root R | --pair P --dir PAIRDIR --key F)   (in the Grok box) each pair's newest signed Hermes digest
           to <pair>/from-hermes/digest, for the mirror-recent skill
-  mirror digest-items --pair P (--agent-id ID [--agent-data DIR] [--with-skills] | --from EXPORT) --out DIR [--log F]
+  mirror digest-items --pair P (--agent-id ID [--agent-data DIR] [--with-skills | --pair-skills] | --from EXPORT) --out DIR [--log F]
                           [--all] [--key F]
                           [--coverage partial|complete] [--without instructions] [--uploaded N]
                           (or --root R [--pair P]... [--agent-data DIR]: the Mirror bot serving every pair)
           (in the Grok box; --agent-id reads the bot's setup from the box files, never asking the bot; partial, the
           default: nothing missing from the read is taken as removed)
   mirror apply-pack --pair P --dir PAIRDIR (--agent-id ID [--agent-data DIR] | --from EXPORT) --stage DIR [--log F]
-                        [--check] [--precheck ITEM --gen N] [--key F] [--without instructions]
+                        [--check] [--precheck ITEM --gen N [--install-to SKILLSDIR]] [--key F] [--without instructions]
+  grok list | twin create|adopt|check|sync|status|conflicts|resolve|restore-points|restore|recent|doctor|demo
+          the twin interface for a Hermes plugin: JSON with --json (botport twin --help; docs/TWIN.md)
   mirror routines --bundle DIR (--profile NAME | --profile-dir DIR) [--tz UTC]   routine parity, Grok vs Hermes, by
           name (schedule, timezone, prompt digest, paused); exit 1 on a difference. --tz: the owner's timezone
   --check-routines PATH|auto  (verify/plan/apply/sync/drift; EXPERIMENTAL) warn about routines the Grok desktop
@@ -125,6 +127,7 @@ const VALUED: &[&str] = &[
     "without",
     "root",
     "uploaded",
+    "install-to",
 ];
 const FLAGS: &[&str] = &[
     "strict",
@@ -154,6 +157,7 @@ const FLAGS: &[&str] = &[
     "print-charter",
     "print-skill",
     "with-skills",
+    "pair-skills",
 ];
 
 struct Report {
@@ -172,6 +176,13 @@ fn main() -> ExitCode {
             _ => s,
         })
         .collect();
+    // the twin interface parses its own options and always answers in its own envelope (src/twin.rs)
+    let first = raw.first().map(String::as_str);
+    if matches!(first, Some("twin" | "grok"))
+        || (first == Some("version") && raw.iter().any(|s| s == "--json"))
+    {
+        return ExitCode::from(botport::twin::main(&raw));
+    }
     let a = match Args::parse(&raw, VALUED, FLAGS) {
         Ok(a) => a,
         Err(e) => return fail(&e),
@@ -430,6 +441,10 @@ fn emit(a: &Args, cmd: &str, r: Report) -> ExitCode {
                 .filter(|v| !v.is_empty())
                 .map(PathBuf::from)
         };
+        // a box run under --root keeps its report there, never in the box user's home
+        if let Some(root) = a.path("root") {
+            return root.join(".work").join(name);
+        }
         let dir = env("XDG_STATE_HOME")
             .or_else(|| env("HOME").map(|h| h.join(".local/state")))
             .unwrap_or_else(std::env::temp_dir);
@@ -1063,11 +1078,31 @@ fn cmd_test(a: &Args) -> Res<Report> {
                 .collect()
         })
         .unwrap_or_default();
-    let out = a
-        .path("out")
-        .unwrap_or_else(|| std::env::temp_dir().join(format!("botport-battery-{profile}")));
-    let wd = out.join("workdir");
-    std::fs::create_dir_all(&wd).map_err(|e| e.to_string())?;
+    // a new randomly named 0700 work folder (made, never reused, so no link is followed), results 0600
+    let new_private = |p: &std::path::Path| -> Res<()> {
+        let mut b = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+        b.create(p)
+            .map_err(|e| format!("mkdir {}: {e}", p.display()))
+    };
+    let rand = adapters::mirror::pack::random_id;
+    let out = match a.path("out") {
+        Some(o) => {
+            std::fs::create_dir_all(&o).map_err(|e| format!("mkdir {}: {e}", o.display()))?;
+            if !std::fs::symlink_metadata(&o).is_ok_and(|m| m.is_dir()) {
+                return err(format!("{} is not a folder (or is a link)", o.display()));
+            }
+            o
+        }
+        None => {
+            let o = std::env::temp_dir().join(format!("botport-battery-{profile}-{}", rand()));
+            new_private(&o)?;
+            o
+        }
+    };
+    let wd = out.join(format!("workdir-{}", rand()));
+    new_private(&wd)?;
     let res = battery::run(
         a.get("hermes-bin").unwrap_or("hermes"),
         profile,
@@ -1078,7 +1113,7 @@ fn cmd_test(a: &Args) -> Res<Report> {
     let pass = res.iter().filter(|r| r["pass"] == json!(true)).count();
     let jl: String = res.iter().map(jsonl_line).collect();
     let file = out.join(format!("battery-{}.jsonl", utc_stamp()));
-    write_atomic(&file, jl.as_bytes(), Some(0o644))?;
+    write_atomic(&file, jl.as_bytes(), Some(0o600))?;
     let mut lines = vec![format!("test {profile}: {pass}/{} pass", res.len())];
     // A pass/fail table: failures first, then passes, cut to fit the 10-line budget.
     let mut rows: Vec<String> = res
@@ -1587,9 +1622,13 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("botport-main-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
+        // a random name, made new and private (0700), as the library's test dirs
+        let r = botport::adapters::mirror::pack::random_id();
+        let d = std::env::temp_dir().join(format!("botport-main-{tag}-{r}"));
+        let mut b = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+        b.create(&d).unwrap();
         d
     }
 

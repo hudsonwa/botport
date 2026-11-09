@@ -1,5 +1,6 @@
 //! Coexistence with `hermes migrate grok-bot`: a grok-bot-export.json as the source, and a Hermes profile that
 //! the upstream importer already filled (fixtures are synthetic look-alikes of its output).
+mod common;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -33,12 +34,11 @@ fn run(args: &[&str]) -> (i32, String) {
     )
 }
 
-fn home(tag: &str) -> PathBuf {
-    let t = std::env::temp_dir().join(format!("g2h-coexist-{tag}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&t);
+fn home(tag: &str) -> common::Tmp {
+    let t = common::Tmp::new(&format!("coexist-{tag}"));
     copy(
         &root().join("tests/fixtures/hermes-migrated/nova"),
-        &t.join("nova"),
+        &t.0.join("nova"),
     );
     t
 }
@@ -54,7 +54,8 @@ fn verify_accepts_a_grok_bot_export_file() {
 
 #[test]
 fn plan_on_migrated_home_adopts_and_reports_duplicate() {
-    let t = home("plan");
+    let tmp = home("plan");
+    let t = &tmp.0;
     let p = t.join("nova");
     let det = t.join("d.json");
     let (rc, out) = run(&[
@@ -138,13 +139,14 @@ fn plan_on_migrated_home_adopts_and_reports_duplicate() {
     assert_eq!(mem.matches("wiki.example.test").count(), 1);
     let jobs = fs::read_to_string(p.join("cron/jobs.json")).unwrap();
     assert_eq!(jobs.matches("Sample report").count(), 1);
-    fs::remove_dir_all(&t).unwrap();
+    fs::remove_dir_all(t).unwrap();
 }
 
 /// A suspicious v1 memory line goes to the checklist (reason, no text); the apply still succeeds.
 #[test]
 fn suspicious_v1_memory_line_is_routed_not_fatal() {
-    let t = home("mem");
+    let tmp = home("mem");
+    let t = &tmp.0;
     let p = t.join("nova");
     let src = fs::read_to_string(root().join(EXPORT)).unwrap();
     let ex = t.join("export.json");
@@ -186,13 +188,14 @@ fn suspicious_v1_memory_line_is_routed_not_fatal() {
             }
         }
     }
-    fs::remove_dir_all(&t).unwrap();
+    fs::remove_dir_all(t).unwrap();
 }
 
 /// A suspicious v1 skill body routes that skill to the checklist (name and reason, no text); the apply still succeeds.
 #[test]
 fn suspicious_v1_skill_body_is_routed_not_fatal() {
-    let t = home("skill");
+    let tmp = home("skill");
+    let t = &tmp.0;
     let p = t.join("nova");
     let src = fs::read_to_string(root().join(EXPORT)).unwrap();
     let ex = t.join("export.json");
@@ -236,7 +239,7 @@ fn suspicious_v1_skill_body_is_routed_not_fatal() {
             }
         }
     }
-    fs::remove_dir_all(&t).unwrap();
+    fs::remove_dir_all(t).unwrap();
 }
 
 /// A Hermes home and a details dir with a random-looking segment (`mktemp -d`, outside the system temp dir) are
@@ -274,5 +277,5 @@ fn random_looking_home_and_out_paths_are_not_secrets() {
             assert!(v["restore_point"].as_str().is_some(), "{v}");
         }
     }
-    fs::remove_dir_all(&t).unwrap();
+    fs::remove_dir_all(t).unwrap();
 }

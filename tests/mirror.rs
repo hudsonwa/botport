@@ -1105,6 +1105,60 @@ fn a_quiet_sync_of_a_large_bot_is_fast() {
 }
 
 #[test]
+fn a_mass_retire_writes_nothing_without_allow_retire_and_a_held_change_never_is_written() {
+    let p = Pair::new("mirror-mass-retire");
+    w(
+        &p.export,
+        &export_json("Example instructions.", "Example prompt.", 5, 0),
+    );
+    p.box_digest();
+    p.init();
+    let mut items = vec![
+        "persona.name",
+        "persona.instructions",
+        "routine:demo-routine",
+    ];
+    let skills: Vec<String> = (0..5).map(|i| format!("skill:demo-skill-{i}")).collect();
+    items.extend(skills.iter().map(String::as_str));
+    for it in items {
+        let (c, _, e) = p.bp(&["mirror", "pick", it, "--keep", "grok", "--yes"]);
+        assert_eq!(c, 0, "{it}: {e}");
+    }
+    let (c, _, e) = p.bp(&["mirror", "approve", "routine:demo-routine", "--yes"]);
+    assert_eq!(c, 0, "{e}");
+    let (c, v, e) = p.sync();
+    assert_eq!(c, 0, "{v} {e}");
+    let skill = |i: usize| {
+        p.hermes
+            .join(format!("skills/mirror/demo-skill-{i}/SKILL.md"))
+    };
+    assert!((0..5).all(|i| skill(i).is_file()));
+    // the Grok side drops all five skills (more than the guard allows) and changes the enabled routine's prompt
+    w(
+        &p.export,
+        &export_json("Example instructions.", "Changed prompt.", 0, 0),
+    );
+    p.box_digest();
+    let (c, v, e) = p.sync();
+    assert_eq!(c, 2, "{v} {e}");
+    assert!(e.contains("--allow-retire"), "{e}");
+    assert!((0..5).all(|i| skill(i).is_file()), "nothing retired");
+    assert_eq!(job(&jobs(&p), "demo-routine")["prompt"], "Example prompt.");
+    // allowed: the skills go, the routine change still waits for the owner and is not written
+    let (c, v, e) = p.bp(&["mirror", "sync", "--allow-retire"]);
+    assert_eq!(
+        (c, v["waiting_for_approval"].as_u64()),
+        (3, Some(1)),
+        "{v} {e}"
+    );
+    assert!((0..5).all(|i| !skill(i).exists()));
+    assert_eq!(job(&jobs(&p), "demo-routine")["prompt"], "Example prompt.");
+    let (c, v, e) = p.sync();
+    assert_eq!(c, 3, "{v} {e}");
+    assert_eq!(job(&jobs(&p), "demo-routine")["prompt"], "Example prompt.");
+}
+
+#[test]
 fn deletions_from_an_unsigned_read_wait_for_approval() {
     let p = Pair::new("mirror-retire");
     w(

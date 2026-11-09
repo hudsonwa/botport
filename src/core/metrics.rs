@@ -66,12 +66,12 @@ pub fn payload_tokens(bytes: u64) -> u64 {
     bytes.div_ceil(3)
 }
 
-/// A field safe to put in the CSV unquoted: commas, quotes and line breaks become `_`.
+/// A field safe to put in the CSV unquoted: commas, quotes and every control character become `_`.
 fn field(s: &str) -> String {
     let s: String = s
         .chars()
         .map(|c| {
-            if matches!(c, ',' | '"' | '\n' | '\r' | '\t') {
+            if matches!(c, ',' | '"') || c.is_control() {
                 '_'
             } else {
                 c
@@ -156,7 +156,8 @@ pub fn default_path() -> PathBuf {
     base.join("botport/metrics.csv")
 }
 
-/// Append one row (the header first when the file is new). File 0600, its directory 0700.
+/// Append one row (the header first when the file is new). File 0600, its directory 0700 and the user's (an existing
+/// one is tightened; a link, or a folder someone else owns, is refused).
 pub fn append(p: &Path, r: &Row) -> Res<()> {
     let dir = p.parent().ok_or("metrics file has no directory")?;
     let mut b = fs::DirBuilder::new();
@@ -168,6 +169,15 @@ pub fn append(p: &Path, r: &Row) -> Res<()> {
     }
     b.create(dir)
         .map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let m = fs::symlink_metadata(dir).map_err(|e| format!("stat {}: {e}", dir.display()))?;
+        if !m.is_dir() || super::util::my_uid().is_none_or(|u| u != m.uid()) {
+            return err(format!("{} is not your own folder", dir.display()));
+        }
+        super::util::ensure_private_dir(dir)?;
+    }
     let before = fs::symlink_metadata(p).ok();
     if before.as_ref().is_some_and(|m| !m.is_file()) {
         return err(format!("{} is not a regular file", p.display()));
@@ -184,7 +194,8 @@ pub fn append(p: &Path, r: &Row) -> Res<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        o.mode(0o600);
+        o.mode(0o600)
+            .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32);
     }
     let mut f = o
         .open(p)
@@ -343,6 +354,38 @@ pub fn render(groups: &[Group]) -> String {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn every_control_character_is_replaced() {
+        assert_eq!(super::field("a\u{1b}[31mb\u{7f}c\u{85}d\0"), "a_[31mb_c_d_");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_open_metrics_folder_is_tightened_and_a_linked_one_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = crate::core::util::test_dir("metrics-dir");
+        let m = d.join("m");
+        std::fs::create_dir(&m).unwrap();
+        std::fs::set_permissions(&m, std::fs::Permissions::from_mode(0o755)).unwrap();
+        append(
+            &m.join("metrics.csv"),
+            &row("2000-01-01T00:00:00Z", "x", 1, None),
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::metadata(&m).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        let l = d.join("l");
+        std::os::unix::fs::symlink(&m, &l).unwrap();
+        assert!(append(
+            &l.join("metrics.csv"),
+            &row("2000-01-01T00:00:00Z", "x", 1, None)
+        )
+        .is_err());
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
     fn cells_never_read_as_formulas() {
         assert_eq!(super::field("=cmd"), "'=cmd");
         assert_eq!(super::field("@x,y"), "'@x_y");
@@ -371,8 +414,7 @@ mod tests {
     use super::*;
 
     fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("botport-metrics-{tag}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&d);
+        let d = crate::core::util::test_dir(&format!("metrics-{tag}"));
         d
     }
 
