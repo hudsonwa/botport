@@ -1,5 +1,6 @@
 //! Grok Bot adapter (docs: `adapters/grok-bot`): export bundle read/write/verify, and the `Adapter` impl.
 pub mod bundle;
+pub mod cache;
 pub mod describe;
 pub mod export_json;
 pub mod mirror;
@@ -403,8 +404,7 @@ mod seeded_tests {
     /// #15: a hand export's profile.json instructions are the persona's (and so reach SOUL.md).
     #[test]
     fn hand_export_profile_instructions_are_the_persona() {
-        let t = std::env::temp_dir().join(format!("g2h-hand-instr-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&t);
+        let t = crate::core::util::test_dir("hand-instr");
         std::fs::create_dir_all(&t).unwrap();
         std::fs::write(
             t.join("profile.json"),
@@ -483,8 +483,7 @@ mod seeded_tests {
     /// The seeded fake secret (tests/describe_sync.rs) never reaches the model JSON or the NOT_CAPTURED.md written back.
     #[test]
     fn a_seeded_secret_reaches_neither_the_model_nor_not_captured() {
-        let t = std::env::temp_dir().join(format!("g2h-seeded-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&t);
+        let t = crate::core::util::test_dir("seeded");
         std::fs::create_dir_all(&t).unwrap();
         std::fs::write(t.join("profile.json"), r#"{"name":"Nova"}"#).unwrap();
         std::fs::write(t.join("MEMORY.md"), "# Nova memory\n").unwrap();

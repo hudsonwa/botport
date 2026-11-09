@@ -190,7 +190,8 @@ with `manifest.json` and the new content (skill packages byte for byte, instruct
   item from a pack that has since been replaced; the remaining window is the bot's own install step, a residual
   risk stated in section 7). `apply-pack` appends each install to an **applied log** (gen, item, neutral digest
   before and after), carried in the next state file; an item it skips because the live copy already equals the new
-  one is logged too (before = after), so a pack that only supersedes a stale one is seen as done. `apply-pack --check` reports what is still pending; the Grok
+  one is logged too (before = the expected digest), so a pack that only supersedes a stale one is seen as done; botport
+  takes in an entry only when its before digest is the one that send expected there. `apply-pack --check` reports what is still pending; the Grok
   routine's stop rule is "nothing pending and no digest moved", not "same gen", so a run that ran out of time
   finishes the pack on the next run. The state file records the applied `gen` (the bot does not keep it in memory).
 - **Expected digests, in neutral form.** The Grok bot re-enters instructions and routines with its own tools, so the
@@ -770,7 +771,8 @@ dry run, verify, a way back per profile).
   program that makes triggers needs the key; it lives in a 0600 file beside the pair config, never on Drive.
 - **Residual risks, stated.** (1) On the Grok side the last step of an install is the bot's own tool call, after the
   `--precheck`; an owner edit landing in that moment is overwritten (the previous copy is in the store only if it was
-  a recorded base). (2) The digest is text from the owner's own sessions and setup (routine names always, session titles
+  a recorded base); the same window lets anything else that can write the box's stage (another bot in a shared box)
+  swap a staged copy after its precheck: botport does not verify and copy in one step. (2) The digest is text from the owner's own sessions and setup (routine names always, session titles
   with `--titles`) placed in the peer's context; cleaning and
   framing reduce, but cannot remove, the chance that a model treats it as instructions; `digest inject --mode
   pointer` injects only a one-line pointer to the file instead. A digest read from the pair folder is used only when

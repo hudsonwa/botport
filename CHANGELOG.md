@@ -6,7 +6,15 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-10
+
+Mirror mode (equal-peer sync between a Grok Bot and its Hermes twin), the `botport twin` JSON interface for a Hermes
+plugin, the v0.2 hardening list and attested release builds.
+
 ### Changed
+- A mirror pair whose two reads of a kind are both partial (a hybrid pair, read locally and from the pair folder) joins
+  them: items from either read count, the newer snapshot wins an item both hold, and a fetch tries the other transport
+  when the first lacks the content. Nothing missing from a partial read is taken as removed.
 - `mirror recent` removes a stale copy through directory handles that refuse a link in the last part of each path (on
   Unix; elsewhere by path), and reports a copy it cannot remove. The digest pointer resolves the path before showing it
   and shows only a path inside the profile or a plain file name (else a fixed label). `mirror init` notes
@@ -69,6 +77,27 @@ All notable changes to this project are documented here. The format is based on
   the box's next state file continues the numbering and carries every blob again.
 
 ### Added
+- `botport grok list` and `botport twin create|adopt|check|sync|status|conflicts|resolve|approve|restore-points|restore|recent|parity|doctor|demo`:
+  the stable JSON interface (`botport.twin.v1`, one JSON line with `--json`, errors included) that the Grok Bot Twin
+  plugin for Hermes calls. A twin's files all live under `--state-dir`; its Grok side is composed on the owner's machine
+  from the Grok desktop app's local files (the bot list: id, name, description; plus the selected bots' transcript files,
+  capped, parsed only for routine-change events; never login files) laid over the bot's screened export items, and
+  written as a signed state file. No network calls. `twin demo` runs the whole flow on invented bots with no Grok account. See
+  [docs/TWIN.md](docs/TWIN.md).
+- `twin remove --pair ID [--dry-run]`: stops twinning, removing the pair, its snapshots, kept copies and restore points;
+  the Hermes profile stays as a normal profile.
+- `twin mirror --pair ID (--pair-folder DIR | --off)`: connects a twin to the owner's Mirror bot through a synced folder,
+  so skills travel both ways.
+- `persona.description`: the short text the Grok app shows for a bot is a mirror item of its own, kept in a
+  `persona-description` block of the twin's `SOUL.md` and owned by the Grok side.
+- Mirror: `digest-items --pair-skills` (or an empty `.work/<pair>/pair-skills` file in the box) reads back, of the box's
+  shared skills, only those the pair installed (named in its applied log), so a twin never receives another bot's
+  skills. The Mirror bot brief says when to use it.
+- Secrets guard: more key formats (`AIza…`, `sk_live_`/`rk_live_`/`sk_test_`/`rk_test_`, `hf_`, `npm_`). In a twin's
+  name, description and instructions, a word of 32 or more characters that looks random (long hex, or mixed letters
+  and digits with high entropy) is held back like a key. Previews and conflict copies hide lines that look like secrets
+  before display.
+- Release builds carry GitHub build attestations (`gh attestation verify`), #10.
 - Chatting with a twin: `mirror status`, `mirror init` and `mirror sync` start with a loud line when the Hermes twin
   cannot be chatted with yet (no gateway, parked, not served, no model) and say the fix; `mirror doctor --pair P`
   checks the gateway and the model. botport reads Hermes' own status files and never starts a gateway. A profile that

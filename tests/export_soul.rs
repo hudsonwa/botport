@@ -1,5 +1,6 @@
 //! A grok-bot-export file as the source: `persona.instructions` goes into an owned SOUL.md section and
 //! `user_facts` into USER.md. Fixtures are synthetic.
+mod common;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -58,8 +59,8 @@ fn soul_items(out: &str) -> Vec<(String, String)> {
 
 #[test]
 fn export_instructions_reach_soul_and_user_facts_reach_user_md() {
-    let t = std::env::temp_dir().join(format!("g2h-export-soul-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&t);
+    let tmp = common::Tmp::new("export-soul");
+    let t = &tmp.0;
     let p = t.join("nova");
     fs::create_dir_all(&p).unwrap();
     fs::write(p.join("SOUL.md"), "# Hermes-side notes\nKeep me.\n").unwrap();
@@ -123,5 +124,5 @@ fn export_instructions_reach_soul_and_user_facts_reach_user_md() {
             .any(|(n, st)| n == "soul:persona" && st != "in-sync"),
         "{s:?}"
     );
-    fs::remove_dir_all(&t).unwrap();
+    fs::remove_dir_all(t).unwrap();
 }

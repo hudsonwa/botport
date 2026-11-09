@@ -245,8 +245,8 @@ impl Package {
     }
 
     /// [`Package::write`], with the new copy assembled (and the old one set aside) in `stage` instead of beside it, so
-    /// nothing half-written ever sits in the live folder. `stage` must be on the same filesystem as `parent` and serve
-    /// only this `parent`; [`recover_into`] puts back what a crash left there.
+    /// nothing half-written ever sits in the live folder. `stage` must be on the same filesystem as `parent` (refused
+    /// otherwise) and serve only this `parent`; [`recover_into`] puts back what a crash left there.
     pub fn write_via(&self, parent: &Path, stage: &Path, manifest: bool) -> Res<()> {
         // the fields are public: check the paths again before any of them is joined to a directory
         Package::from_files(&self.name, self.files.clone())?;
@@ -256,12 +256,7 @@ impl Package {
             parent
         } else {
             super::util::ensure_private_dir(stage)?;
-            // a rename cannot cross filesystems: a stage elsewhere falls back to staging beside the live folder
-            if same_device(stage, parent) {
-                stage
-            } else {
-                parent
-            }
+            stage_on_device(stage, parent, same_device(stage, parent))?
         };
         recover_into(stage, parent)?;
         let dest = parent.join(&self.name);
@@ -345,9 +340,9 @@ pub fn neutral_form_v1() -> u32 {
 pub const NEUTRAL_FORM_MISMATCH: &str = "compares copies another way";
 
 /// Refuses a state file or pack (`b`, its bytes) written with another neutral form `v`, but only when the file is
-/// intact and, with a pair key, signed with it: a damaged or forged file is refused as such, so a reader skips it like
-/// any other bad file instead of stopping on it. The checks run on the raw JSON, so they hold for a file whose release
-/// had fields this one lacks or the other way round.
+/// intact and signed with the pair key: a damaged, forged or (keyless pair) unverifiable file is refused as such, so a
+/// reader skips it like any other bad file instead of stopping on it. The checks run on the raw JSON, so they hold for
+/// a file whose release had fields this one lacks or the other way round.
 pub fn check_form_of(
     b: &[u8],
     what: &str,
@@ -357,21 +352,28 @@ pub fn check_form_of(
     if v == NEUTRAL_FORM {
         return Ok(());
     }
-    intact_and_signed(b, what, key)?;
+    // without a key the only check is the file's own sha256, which anyone who can write the folder can make: such a
+    // file is no reason to stop a reader (or republish), only one more file to skip
+    let Some(k) = key else {
+        return Err(format!(
+            "{what} is in another neutral form ({v}) and the pair has no key to verify it"
+        ));
+    };
+    intact_and_signed(b, what, Some(k))?;
     check_neutral_form(what, v)
 }
 
 /// Whether `b`, a state file or pack written in neutral form `v`, is in another form than this release's and is
-/// intact and (with a pair key) signed with it: the one case a reader stops on instead of skipping the file. A
-/// typed answer, never read from an error's text (which can quote the file).
+/// intact and signed with the pair key: the one case a reader stops on instead of skipping the file (a keyless pair
+/// never stops: see [`check_form_of`]). A typed answer, never read from an error's text (which can quote the file).
 pub fn verified_other_form(b: &[u8], v: u32, key: Option<&[u8]>) -> bool {
-    v != NEUTRAL_FORM && intact_and_signed(b, "the file", key).is_ok()
+    v != NEUTRAL_FORM && key.is_some() && intact_and_signed(b, "the file", key).is_ok()
 }
 
 /// `b` matches its own sha256 (the field left empty, `mac` left out) and, with a pair key, carries a valid `mac`.
 fn intact_and_signed(b: &[u8], what: &str, key: Option<&[u8]>) -> crate::core::util::Res<()> {
     let raw: serde_json::Value =
-        serde_json::from_slice(b).map_err(|e| format!("{what} is not valid: {e}"))?;
+        serde_json::from_slice(b).map_err(|e| super::util::json_invalid(what, &e))?;
     let mut c = raw.clone();
     let o = c.as_object_mut().ok_or(format!("{what} is not valid"))?;
     let claimed = o.insert("sha256".into(), serde_json::json!(""));
@@ -500,21 +502,42 @@ pub fn read_verified(dir: &Path, name: &str, lim: &Limits) -> Res<Package> {
     let root = dir
         .canonicalize()
         .map_err(|e| format!("package {name}: {e}"))?;
-    let raw = super::util::read_confined(&root, &root, MANIFEST)
-        .map_err(|c| format!("package {name}: manifest: {c:?}"))?;
+    // one byte past the cap is enough to refuse: a huge manifest is never read whole
+    let raw = super::util::read_confined_capped(
+        &root,
+        &root,
+        MANIFEST,
+        |_| true,
+        MANIFEST_MAX as u64 + 1,
+    )
+    .map_err(|c| format!("package {name}: manifest: {c:?}"))?;
     if raw.len() > MANIFEST_MAX {
         return err(format!(
             "package {name}: manifest is larger than {MANIFEST_MAX} bytes"
         ));
     }
     let m: Manifest = serde_json::from_slice(&raw)
-        .map_err(|e| format!("package {name}: manifest is not valid: {e}"))?;
+        .map_err(|e| super::util::json_invalid(&format!("package {name}: manifest"), &e))?;
     p.check(&m)?;
     Ok(p)
 }
 
 /// The largest manifest read.
 pub const MANIFEST_MAX: usize = 4 << 20;
+
+/// A rename cannot cross filesystems, and falling back to staging beside the live folder would put half-written
+/// copies where a platform loads them: a stage on another filesystem is refused.
+fn stage_on_device<'a>(stage: &'a Path, parent: &Path, same: bool) -> Res<&'a Path> {
+    if same {
+        Ok(stage)
+    } else {
+        err(format!(
+            "the staging folder {} is not on the same filesystem as {}",
+            stage.display(),
+            parent.display()
+        ))
+    }
+}
 
 /// Whether two existing paths are on the same filesystem (always true where that cannot be told).
 fn same_device(a: &Path, b: &Path) -> bool {
@@ -590,10 +613,19 @@ fn walk(
     total: &mut u64,
     dirs: &mut usize,
 ) -> Res<()> {
+    // stop listing once the entries left could not all fit (each is a file, a folder, or the manifest): a folder of
+    // millions of entries is refused without being listed whole
+    let room = (lim.max_files - out.len().min(lim.max_files))
+        .saturating_add(lim.max_files - (*dirs).min(lim.max_files))
+        .saturating_add(1);
     let mut entries: Vec<_> = fs::read_dir(dir)
         .map_err(|e| format!("package {name}: {e}"))?
+        .take(room.saturating_add(1))
         .collect::<Result<_, _>>()
         .map_err(|e| format!("package {name}: {e}"))?;
+    if entries.len() > room {
+        return err(format!("package {name}: more than {} files", lim.max_files));
+    }
     entries.sort_by_key(|e| e.file_name());
     for e in entries {
         let p = e.path();
@@ -645,9 +677,15 @@ fn walk(
         if out.len() >= lim.max_files {
             return err(format!("package {name}: more than {} files", lim.max_files));
         }
-        let b = super::util::read_confined(base, dir, &e.file_name().to_string_lossy())
-            .map_err(|c| format!("package {name}: {rel}: {c:?}"))?;
-        // the file may have grown since it was measured
+        let b = super::util::read_confined_capped(
+            base,
+            dir,
+            &e.file_name().to_string_lossy(),
+            |_| true,
+            lim.max_file.saturating_add(1),
+        )
+        .map_err(|c| format!("package {name}: {rel}: {c:?}"))?;
+        // the file may have grown since it was measured (read up to one byte past the cap, never further)
         if b.len() as u64 > lim.max_file {
             return err(format!(
                 "package {name}: {rel} is larger than {} bytes",
@@ -750,8 +788,7 @@ mod tests {
     use super::*;
 
     fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("botport-pkg-{tag}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&d);
+        let d = crate::core::util::test_dir(&format!("pkg-{tag}"));
         fs::create_dir_all(&d).unwrap();
         d
     }
@@ -1035,6 +1072,38 @@ mod tests {
             .contains("more than 3"));
         assert!(Package::read(&src, "demo-skill", &small(1000, 1000, 4)).is_ok());
         fs::remove_dir_all(&w).ok();
+    }
+
+    #[test]
+    fn a_crowded_folder_and_a_huge_manifest_are_refused() {
+        let w = tmp("crowd");
+        let d = w.join("crowd");
+        for i in 0..40 {
+            put(&d.join(format!("f{i}.txt")), b"x");
+        }
+        let lim = Limits {
+            max_file: 1000,
+            max_total: 1 << 20,
+            max_files: 3,
+        };
+        assert!(Package::read(&d, "crowd", &lim)
+            .unwrap_err()
+            .contains("more than 3 files"));
+        let src = sample(&w);
+        put(&src.join(MANIFEST), &vec![b' '; MANIFEST_MAX + 10]);
+        assert!(read_verified(&src, "demo-skill", &Limits::default())
+            .unwrap_err()
+            .contains("manifest is larger than"));
+        fs::remove_dir_all(&w).ok();
+    }
+
+    #[test]
+    fn a_stage_on_another_filesystem_is_refused_not_swapped_for_the_live_folder() {
+        let (stage, live) = (Path::new("/stage"), Path::new("/live"));
+        assert_eq!(stage_on_device(stage, live, true).unwrap(), stage);
+        assert!(stage_on_device(stage, live, false)
+            .unwrap_err()
+            .contains("not on the same filesystem"));
     }
 
     #[test]

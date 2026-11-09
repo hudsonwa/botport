@@ -32,6 +32,10 @@ pub trait LocalLayout {
     fn floor(&self) -> Option<u64> {
         None
     }
+    /// The last read stopped on a file in another neutral form.
+    fn other_form(&self) -> bool {
+        false
+    }
     /// Figures since opened.
     fn io(&self) -> IoStats;
 }
@@ -77,13 +81,22 @@ impl LocalLayout for StateDirLayout {
         self.dir.peer()
     }
 
+    fn other_form(&self) -> bool {
+        self.dir.other_form
+    }
+
     fn fetch(&mut self, id: &ItemId, view: &View) -> Res<Content> {
         self.dir.fetch(id, view)
     }
 
     fn digest(&mut self) -> Res<Option<Vec<u8>>> {
-        use super::store::Store;
-        self.dir.store.get("digest-grok.md")
+        // with the records' owner and mode checks, and capped like a digest from Drive
+        local_records::read_digest(
+            &self.local_dir,
+            &self.bot_key,
+            "digest-grok.md",
+            super::drive::DIGEST_MAX,
+        )
     }
 
     fn records(&mut self) -> Res<Option<BotRecords>> {
@@ -110,6 +123,11 @@ impl LocalTransport {
     /// The highest state sequence the layout accepted, if it reads state files.
     pub fn floor(&self) -> Option<u64> {
         self.layout.floor()
+    }
+
+    /// The last read stopped on records in another neutral form (typed: never decided on an error's text).
+    pub fn other_form(&self) -> bool {
+        self.layout.other_form()
     }
 
     /// Which layout it reads.
@@ -172,7 +190,6 @@ mod tests {
         let v = r.side.items[&ins].clone();
         assert_eq!(v.neutral, f.items[&ins].neutral);
         assert!(matches!(t.fetch(&ins, &v).unwrap(), Content::Text(_)));
-        assert_eq!(t.read_peer_digest().unwrap(), None);
         assert!(t.send_digest(b"x").unwrap_err().contains("read-only"));
         assert!(t.io().read_bytes > 0);
         assert_eq!(t.io().written_bytes, 0);
@@ -187,6 +204,11 @@ mod tests {
             t.records().unwrap().unwrap().activity.unwrap().name,
             "Demo Bot"
         );
+        // and so does the Grok digest, read with the records' checks
+        assert_eq!(t.read_peer_digest().unwrap(), None);
+        std::fs::write(d.join("digest-grok.md"), "# Demo digest\n").unwrap();
+        crate::core::local_records::lock_down(&base);
+        assert_eq!(t.read_peer_digest().unwrap().unwrap(), b"# Demo digest\n");
         std::fs::remove_dir_all(&base).ok();
     }
 

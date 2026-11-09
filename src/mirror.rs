@@ -9,9 +9,9 @@ use crate::adapters::hermes::gateway;
 use crate::adapters::hermes::mirror::{HermesSide, LocalItems};
 use crate::adapters::hermes::sync;
 use crate::adapters::mirror::api::{ApiConfig, ApiStore};
-use crate::adapters::mirror::drive::DriveTransport;
+use crate::adapters::mirror::drive::{DriveTransport, PackRead};
 use crate::adapters::mirror::local::{LocalTransport, StateDirLayout};
-use crate::adapters::mirror::pack::{random_id, Blobs, Head, Pack, PackAction, PackItem};
+use crate::adapters::mirror::pack::{try_random_id, Blobs, Head, Pack, PackAction, PackItem};
 use crate::adapters::mirror::store::{FolderStore, Store};
 use crate::adapters::mirror::{IoStats, PeerRead, Transport};
 use crate::core::item::{canonical_text, Content};
@@ -38,6 +38,8 @@ pub const REPORT_FILE: &str = "botport-mirror-conflicts.md";
 pub const STORE_DIR: &str = "botport/mirror-store";
 /// An item in flight longer than this (seconds) makes `mirror status` warn and exit 1.
 pub const IN_FLIGHT_TIMEOUT: u64 = 7 * 86400;
+/// The Hermes base recorded when the owner keeps the Hermes copy of an item the Grok side takes only by hand.
+const KEPT_FOR_GROK: &str = "kept-hermes-copy-listed-for-grok";
 /// Instructions may drift this much (percent of changed lines) from the last approved text without an approval.
 pub const DRIFT_PCT: usize = 25;
 
@@ -295,7 +297,7 @@ impl Drive {
         }
     }
 
-    fn head_pack(&mut self) -> Res<Option<Pack>> {
+    fn head_pack(&mut self) -> Result<Option<Pack>, PackRead> {
         match self {
             Drive::Folder(t) => t.head_pack(),
             Drive::Api(t) => t.head_pack(),
@@ -332,7 +334,11 @@ pub struct Link {
 
 impl Link {
     fn open(c: &Config, st: Option<&State>) -> Res<Link> {
-        let floor = st.and_then(|s| s.remote_seq);
+        // each transport against its own floor: `remote_seq` counted Drive's files when the state was last written by a
+        // transport with Drive, else the local records'; `local_seq` always counts the local records'
+        let drive_before = st.is_some_and(|s| s.transport != "local");
+        let drive_floor = st.and_then(|s| s.remote_seq).filter(|_| drive_before);
+        let floor = st.and_then(|s| s.local_seq.or(s.remote_seq.filter(|_| !drive_before)));
         let local = match (&c.local_dir, c.transport.as_str()) {
             (Some(d), "local" | "hybrid") => {
                 Some(LocalTransport::new(Box::new(StateDirLayout::open(
@@ -346,7 +352,7 @@ impl Link {
             _ => None,
         };
         let drive = match c.transport.as_str() {
-            "drive" | "hybrid" => Drive::open(c, floor)?,
+            "drive" | "hybrid" => Drive::open(c, drive_floor)?,
             _ => None,
         };
         if local.is_none() && drive.is_none() {
@@ -367,12 +373,10 @@ impl Link {
         let l = match &mut self.local {
             Some(t) => match t.read_peer() {
                 // local records in another neutral form: whatever wrote them needs updating, and Drive carries the read
-                Err(e)
-                    if self.drive.is_some()
-                        && e.contains(crate::core::package::NEUTRAL_FORM_MISMATCH) =>
-                {
+                Err(e) if self.drive.is_some() && t.other_form() => {
                     eprintln!(
-                        "botport: warning: local records: {e}; reading the Grok side from Drive"
+                        "botport: warning: local records: {}; reading the Grok side from Drive",
+                        crate::core::util::name_safe(&e)
                     );
                     None
                 }
@@ -408,6 +412,30 @@ impl Link {
                 base.side.coverage.get(&k) == Some(&Coverage::Complete),
                 other.side.coverage.get(&k) == Some(&Coverage::Complete),
             );
+            // both read in part: each may hold items the other cannot see, so the reads are joined (the newer copy of
+            // an item both hold wins); a fetch then tries the other transport when the first lacks the content
+            if !bc && !oc {
+                let (older, newer, nname) = if base_newer {
+                    (&other, &base, bname)
+                } else {
+                    (&base, &other, oname)
+                };
+                self.from.insert(k, nname);
+                if let Some(cv) = newer.side.coverage.get(&k).or(older.side.coverage.get(&k)) {
+                    out.side.coverage.insert(k, *cv);
+                }
+                for src in [older, newer] {
+                    for (id, v) in src.side.items.iter().filter(|(id, _)| id.kind() == k) {
+                        out.side.items.insert(id.clone(), v.clone());
+                        out.side.unsupported.remove(id);
+                    }
+                    for (id, why) in src.side.unsupported.iter().filter(|(id, _)| id.kind() == k) {
+                        out.side.items.remove(id);
+                        out.side.unsupported.insert(id.clone(), why.clone());
+                    }
+                }
+                continue;
+            }
             let use_base = (bc && (!oc || base_newer)) || !oc;
             let src = if use_base { &base } else { &other };
             self.from.insert(k, if use_base { bname } else { oname });
@@ -435,7 +463,22 @@ impl Link {
     }
 
     fn fetch(&mut self, id: &ItemId, v: &View) -> Res<Content> {
-        match self.from.get(&id.kind()).copied() {
+        let first = self.fetch_from(self.from.get(&id.kind()).copied(), id, v);
+        // a joined read: the item may have come from the other transport (the content is checked against its digest)
+        match first {
+            Err(_) if self.local.is_some() && self.drive.is_some() => {
+                let other = match self.from.get(&id.kind()).copied() {
+                    Some("local") => Some("drive"),
+                    _ => Some("local"),
+                };
+                self.fetch_from(other, id, v).or(first)
+            }
+            r => r,
+        }
+    }
+
+    fn fetch_from(&mut self, from: Option<&str>, id: &ItemId, v: &View) -> Res<Content> {
+        match from {
             Some("local") => self
                 .local
                 .as_mut()
@@ -728,7 +771,7 @@ fn init(a: &Args) -> Res<Out> {
         hermes_bin: a.get("hermes-bin").unwrap_or("hermes").to_string(),
         cron,
         transport: transport.clone(),
-        machine: random_id(),
+        machine: try_random_id()?,
         categories,
         approve,
         local_dir: a.path("local-dir"),
@@ -795,6 +838,7 @@ fn init(a: &Args) -> Res<Out> {
     let local = side(&cfg).read()?;
     let mut st = State::new(&pair, "hermes", "grok", &transport);
     st.remote_seq = remote_seq(&link);
+    st.local_seq = link.local.as_ref().and_then(LocalTransport::floor);
     let now = utc_iso();
     let mut equal = 0;
     let copy_one_sided = a.has("copy-one-sided");
@@ -859,7 +903,10 @@ fn init(a: &Args) -> Res<Out> {
             shell_word(&pair)
         ));
     }
-    write_hook_manual(&cfg)?;
+    // a caller that installs the hooks itself (a Hermes plugin) gets no manual naming this binary's path
+    if !a.has("no-hook-manual") {
+        write_hook_manual(&cfg)?;
+    }
     // pairs served from one box share its workspace, where each pair's key file sits
     let others = cp
         .parent()
@@ -1101,6 +1148,39 @@ const BRIEFS: [(&str, &str); 2] = [
 /// No automated step of onboarding needs a bot's agreement (docs/design/MIRROR.md 6.6): the owner creates one Mirror bot per
 /// account and pastes its charter themselves, and the Mirror bot reads each bot's setup from the box files. Writes the
 /// brief and the charter next to the pair config and returns what the owner does next.
+/// For `botport twin mirror`: write the Grok-side briefs next to the pair's config; returns their folder.
+pub fn write_briefs(a: &Args, pair: &str) -> Res<PathBuf> {
+    let dir = config_path(a, pair).with_extension("brief");
+    for (name, text) in BRIEFS {
+        crate::core::util::write_private_fixed(&dir, name, text)?;
+    }
+    Ok(dir)
+}
+
+/// The Mirror bot's charter text.
+pub fn charter() -> &'static str {
+    CHARTER
+}
+
+/// For `botport twin mirror`: read a pair config file.
+pub fn read_config(p: &Path) -> Res<Config> {
+    let t = fs::read_to_string(p).map_err(|_| format!("no pair config at {}", p.display()))?;
+    toml::from_str(&t).map_err(|e| format!("{}: {e}", p.display()))
+}
+
+/// For `botport twin mirror`: write a pair config file (0600).
+pub fn write_config(p: &Path, c: &Config) -> Res<()> {
+    let t = toml::to_string(c).map_err(|e| e.to_string())?;
+    let dir = p.parent().ok_or("config path has no folder")?;
+    write_private(
+        dir,
+        &p.file_name()
+            .ok_or("config path has no name")?
+            .to_string_lossy(),
+        t.as_bytes(),
+    )
+}
+
 fn first_setup(a: &Args, pair: &str) -> Res<String> {
     let dir = config_path(a, pair).with_extension("brief");
     for (name, text) in BRIEFS {
@@ -1816,7 +1896,7 @@ fn sync_cmd(a: &Args) -> Res<Out> {
         if h.machine != c.machine && !a.has("take-over") {
             return err(format!(
                 "HEAD was written by another machine ({}); one writer per pair (see docs)",
-                h.machine
+                crate::core::util::name_safe(&h.machine)
             ));
         }
     }
@@ -1888,7 +1968,15 @@ fn sync_cmd(a: &Args) -> Res<Out> {
         }
     }
     // what was written is recorded before anything else can fail
-    st.remote_seq = remote_seq(&link).or(st.remote_seq);
+    // after a switch of transport the old number belongs to the other writer: only what this run read counts
+    let same = st.transport == c.transport;
+    st.remote_seq = remote_seq(&link).or(st.remote_seq.filter(|_| same));
+    st.local_seq = link
+        .local
+        .as_ref()
+        .and_then(LocalTransport::floor)
+        .or(st.local_seq);
+    st.transport = c.transport.clone();
     save_state(&c, &st)?;
     // the cumulative pack: every item in flight, plus this run's sends
     let sends: Vec<&Decision> = plan
@@ -1910,7 +1998,7 @@ fn sync_cmd(a: &Args) -> Res<Out> {
         let seen = fs::read_to_string(&checked).is_ok_and(|t| t.trim() == h.sha);
         if sends.is_empty() && !unpublished && !st.republish && !seen {
             match d.head_pack() {
-                Err(e) if e.contains(crate::core::package::NEUTRAL_FORM_MISMATCH) => {
+                Err(PackRead::OtherForm(_)) => {
                     st.republish = true;
                     // a send made under the old form (what it sends, or what it expects there) names a digest the
                     // box can never match: plan the item afresh. A removal in flight (sent ABSENT, no local copy)
@@ -1940,6 +2028,39 @@ fn sync_cmd(a: &Args) -> Res<Out> {
                 Err(_) => {}
             }
         }
+    }
+    // no transport can send any more (the pair went local-only): what was in flight is withdrawn and listed for the
+    // owner to apply in the Grok app, instead of failing every sync from now on
+    let (mut unpublished, sends) = (unpublished, sends);
+    if link.drive.is_none() && sends.is_empty() && (unpublished || st.republish) {
+        let now = utc_iso();
+        let ids: Vec<ItemId> = st
+            .items
+            .iter()
+            .filter(|(_, e)| !e.sent.is_empty())
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in ids {
+            let n = local
+                .read
+                .items
+                .get(&id)
+                .map_or(ABSENT.to_string(), |v| v.neutral.clone());
+            st.to_apply.insert(
+                id.clone(),
+                ToApply {
+                    neutral: n,
+                    since: now.clone(),
+                },
+            );
+            if let Some(e) = st.items.get_mut(&id) {
+                e.sent.clear();
+                e.gen = None;
+                e.base_local = None;
+            }
+        }
+        st.republish = false;
+        unpublished = false;
     }
     // a pick that kept the Grok copy withdrew an item from the pack in flight: publish one that supersedes it
     if !sends.is_empty() || unpublished || st.republish {
@@ -1972,7 +2093,15 @@ fn sync_cmd(a: &Args) -> Res<Out> {
     if let Err(e) = exchange_digests(&c, &mut link) {
         eprintln!("botport: note: digests not exchanged this run ({e})");
     }
-    st.remote_seq = remote_seq(&link).or(st.remote_seq);
+    // after a switch of transport the old number belongs to the other writer: only what this run read counts
+    let same = st.transport == c.transport;
+    st.remote_seq = remote_seq(&link).or(st.remote_seq.filter(|_| same));
+    st.local_seq = link
+        .local
+        .as_ref()
+        .and_then(LocalTransport::floor)
+        .or(st.local_seq);
+    st.transport = c.transport.clone();
     save_state(&c, &st)?;
     write_report(&c, &st, &plan)?;
     let in_flight = st.items.values().filter(|e| !e.sent.is_empty()).count() as u64;
@@ -2238,7 +2367,7 @@ fn check(a: &Args) -> Res<Out> {
     match tokens.as_slice() {
         // step 2: a new round with two new files from this machine
         [] => {
-            let (round, new, old) = (random_id(), random_id(), random_id());
+            let (round, new, old) = (try_random_id()?, try_random_id()?, try_random_id()?);
             let wrote = store
                 .put(
                     &format!("probe/{round}/host-new.txt"),
@@ -2278,7 +2407,7 @@ fn check(a: &Args) -> Res<Out> {
             if !has(&ack, old) {
                 return Ok(unread("host-old.txt"));
             }
-            let second = random_id();
+            let second = try_random_id()?;
             if let Err(e) = store.put(
                 &format!("probe/{round}/host-old.txt"),
                 format!("botport probe old {second}\n").as_bytes(),
@@ -2437,7 +2566,7 @@ const AGENT_DATA: &str = "/home/box/agent-data";
 /// The bot's setup: read from the box files (`--agent-id`), or from an export.
 fn read_source(bp: &BoxPair) -> Res<gmirror::GrokItems> {
     match &bp.agent {
-        Some((data, id)) => gmirror::read_box(data, id, bp.with_skills),
+        Some((data, id)) => gmirror::read_box(data, id, bp.with_skills || bp.pair_skills),
         None => gmirror::read_items(&bp.from),
     }
 }
@@ -2538,6 +2667,16 @@ fn write_local(
         }
     }
     let expect = d.local.as_ref().map(|v| v.digest.clone());
+    // the Hermes copy about to be replaced is kept first, so the owner can restore it item by item; without that
+    // restore point nothing is replaced
+    if let Some(old) = local.content.get(&d.item) {
+        keep(&c.profile_dir, &d.item, old).map_err(|e| {
+            format!(
+                "{}: the Hermes copy could not be kept before replacing it ({e}); nothing written",
+                d.item
+            )
+        })?;
+    }
     let was_running = d.item.kind() == Kind::Routine && hs.running(&d.item)?;
     let was_held = st.held_paused.get(&d.item).cloned();
     let paused = matches!(&cn, Content::Routine(s) if s.enabled) && !was_running;
@@ -2627,7 +2766,7 @@ fn build_pack(
         });
         blobs.push((sha, b));
     }
-    let mut p = Pack::new(&c.pair, gen, &random_id(), &c.machine, now, items)?;
+    let mut p = Pack::new(&c.pair, gen, &try_random_id()?, &c.machine, now, items)?;
     p.seal_with(pair_key(c)?.as_deref());
     Ok((p, blobs))
 }
@@ -3157,11 +3296,44 @@ fn pick(a: &Args) -> Res<Out> {
     if let Some(why) = remote.unread.get(&id.kind()) {
         return err(format!("{id}: not mirrored (Grok side: {why})"));
     }
+    // the Grok side of this kind is written by hand: keeping the Hermes copy settles the conflict here and lists the
+    // change for the owner to apply in the Grok app (the Grok copy becomes the base, so only the Hermes change shows)
     if keep_side == Side::Local {
-        if let Some(why) = remote.by_hand.get(&id.kind()) {
-            return err(format!(
-                "{id}: {why}; once both sides agree the conflict clears (or keep grok)"
-            ));
+        if let Some(why) = remote.by_hand.get(&id.kind()).cloned() {
+            if let Some(why) = local.content.get(&id).and_then(|cn| secret_in(&id, cn)) {
+                return err(format!("{id}: {why}; not listed"));
+            }
+            confirm(
+                a,
+                &format!("keep the hermes copy of {id} and list it to apply in the Grok app?"),
+            )?;
+            let mut d = engine::pick(&st, &id, keep_side, lv, rv, (&k.local, &k.remote))?;
+            if let Some(cn) = &grok_copy {
+                keep(&c.profile_dir, &id, cn)?;
+            }
+            d.action = Action::InSync;
+            // the Hermes base is a mark no real copy has: the kept Hermes copy then always reads as changed toward Grok
+            // (listed to apply by hand), and a Hermes copy removed later reads as a removal to apply there, never as
+            // "absent here, so take the Grok copy back"
+            d.local = Some(View::new(KEPT_FOR_GROK, KEPT_FOR_GROK));
+            let now = utc_iso();
+            st.record(&d, Outcome::Kept, &now);
+            st.to_apply.insert(
+                id.clone(),
+                ToApply {
+                    neutral: lv.map_or(ABSENT.to_string(), |v| v.neutral.clone()),
+                    since: now,
+                },
+            );
+            save_state(&c, &st)?;
+            write_report(&c, &st, &[])?;
+            return Ok(Out {
+                code: 0,
+                lines: vec![format!(
+                    "kept the hermes copy of {id}; listed to apply in the Grok app ({why})"
+                )],
+                json: json!({"item": id.as_str(), "keep": "hermes", "by_hand": true}),
+            });
         }
     }
     if keep_side == Side::Local {
@@ -3483,6 +3655,8 @@ struct BoxPair {
     agent: Option<(PathBuf, String)>,
     /// the owner's opt-in for this pair to the box's skills, which every bot in the box shares
     with_skills: bool,
+    /// read back only the skills this pair installed (its applied log), never the rest of the box's shared skills
+    pair_skills: bool,
     /// the local copy of the pair's Drive folder (`apply-pack`)
     dir: PathBuf,
     /// where `digest-items` writes the state file and blobs
@@ -3528,6 +3702,7 @@ fn one_pair(a: &Args, digest: bool) -> Res<BoxPair> {
         from,
         agent,
         with_skills: a.has("with-skills"),
+        pair_skills: a.has("pair-skills"),
         dir,
         out,
         stage: a.path("stage"),
@@ -3593,6 +3768,8 @@ fn root_pairs(a: &Args, root: &Path) -> Res<Vec<BoxPair>> {
                 agent,
                 // the owner's opt-in to the box's shared skills for this pair: an empty file `with-skills`
                 with_skills: w.join("with-skills").is_file(),
+                // an empty file `pair-skills`: only the skills this pair installed come back
+                pair_skills: w.join("pair-skills").is_file(),
                 from: w.join("export"),
                 dir: root.join(&pair),
                 out: root.join(&pair).join("from-grok"),
@@ -3765,15 +3942,19 @@ fn digest_one(a: &Args, bp: &BoxPair) -> Res<Out> {
     without(a, &mut items)?;
     // an export is written by the bot itself and may leave items out: partial unless a program read the live setup
     // (the box files never hold the whole setup, so a box read stays partial)
-    items.partial = match a.get("coverage") {
-        None | Some("partial") => true,
-        Some("complete") if bp.agent.is_some() => {
-            return err("--coverage complete: the box files do not hold the whole setup")
-        }
-        Some("complete") => false,
-        Some(_) => return err("--coverage must be partial or complete"),
-    };
+    items.partial = bp.pair_skills
+        || match a.get("coverage") {
+            None | Some("partial") => true,
+            Some("complete") if bp.agent.is_some() => {
+                return err("--coverage complete: the box files do not hold the whole setup")
+            }
+            Some("complete") => false,
+            Some(_) => return err("--coverage must be partial or complete"),
+        };
     let log = bp.log.as_deref().map(gmirror::read_log).unwrap_or_default();
+    if bp.pair_skills && !bp.with_skills {
+        only_pair_skills(&mut items, &log);
+    }
     let key = box_key(a, bp)?;
     let mut all = a.has("all");
     if let Some(u) = uploaded(a, bp)? {
@@ -3823,6 +4004,27 @@ fn digest_one(a: &Args, bp: &BoxPair) -> Res<Out> {
     })
 }
 
+/// `--pair-skills`: of the box's shared skills, keep only those this pair installed and that still hold exactly what
+/// it installed (the newest applied entry of each, by neutral digest): another bot's skill of the same name, or one
+/// changed in the box since, is not this pair's to read. The read stays partial, so nothing left out is a removal.
+fn only_pair_skills(items: &mut gmirror::GrokItems, log: &[engine::Applied]) {
+    let mut mine: BTreeMap<&str, &str> = BTreeMap::new();
+    for x in log.iter().filter(|x| x.item.kind() == Kind::Skill) {
+        // the log is in order: a later entry (a newer install, or a retire) replaces an earlier one
+        mine.insert(x.item.name(), x.after.as_str());
+    }
+    items.content.retain(|id, c| {
+        id.kind() != Kind::Skill
+            || mine
+                .get(id.name())
+                .is_some_and(|after| *after != ABSENT && *after == c.neutral_digest(id))
+    });
+    items
+        .unsupported
+        .retain(|k, _| k.strip_prefix("skill:").is_none());
+    items.partial = true;
+}
+
 /// Why a bot's instructions are not mirrored when it chose not to share them (`--without instructions`).
 const DECLINED: &str = "declined: the bot does not share its instructions";
 
@@ -3867,7 +4069,7 @@ fn apply_one(a: &Args, bp: &BoxPair) -> Res<Out> {
             .get("gen")
             .and_then(|g| g.parse().ok())
             .ok_or("--precheck needs --gen N")?;
-        gmirror::precheck(
+        let verified = gmirror::precheck(
             dir,
             pair,
             gen,
@@ -3876,6 +4078,55 @@ fn apply_one(a: &Args, bp: &BoxPair) -> Res<Out> {
             key.as_deref(),
             bp.stage.as_deref(),
         )?;
+        // --install-to: botport itself writes the copy it just verified into the box's skills folder, so nothing can
+        // change it between the check and the install
+        if let Some(to) = a.path("install-to") {
+            let pkg = verified.ok_or("--install-to installs a skill: this item is not one")?;
+            // only into the box's own skills folder: the flag names exactly <agent data>/workflows (compared as written,
+            // no link followed), every folder from the agent data folder down is a real folder, and above it only the
+            // system's own links (owned by root) are passed through
+            let data = a
+                .path("agent-data")
+                .unwrap_or_else(|| PathBuf::from(AGENT_DATA));
+            let skills = data.join("workflows");
+            if !to.components().eq(skills.components()) {
+                return err("--install-to must be the box's skills folder (<agent data>/workflows); nothing installed");
+            }
+            let mut q = PathBuf::new();
+            for c in skills.components() {
+                q.push(c);
+                let m = fs::symlink_metadata(&q).map_err(|_| {
+                    format!(
+                        "--install-to: {} is missing; nothing installed",
+                        q.display()
+                    )
+                })?;
+                if m.file_type().is_symlink() {
+                    #[cfg(unix)]
+                    let system = std::os::unix::fs::MetadataExt::uid(&m) == 0;
+                    #[cfg(not(unix))]
+                    let system = false;
+                    let above = q != data && data.starts_with(&q);
+                    if !(system && above) {
+                        return err(
+                            "--install-to: a folder on the way is a link; nothing installed",
+                        );
+                    }
+                } else if !m.is_dir() {
+                    return err(
+                        "--install-to: a part of the path is not a folder; nothing installed",
+                    );
+                }
+            }
+            // assembled under a temporary name inside the skills folder, then renamed into place (the folder is checked
+            // by path just before: a residual stated in docs/SECURITY.md)
+            pkg.write(&skills, false)?;
+            return Ok(Out {
+                code: 0,
+                lines: vec![format!("installed {item}")],
+                json: json!({"ok": true, "installed": item}),
+            });
+        }
         return Ok(Out {
             code: 0,
             lines: vec![format!("ok: install {item}")],
@@ -3968,6 +4219,102 @@ fn apply_one(a: &Args, bp: &BoxPair) -> Res<Out> {
         lines,
         json: json!({"gen": p.gen, "pending": pending}),
     })
+}
+
+// ---------------------------------------------------------------- read-only hooks for `botport twin` (src/twin.rs)
+
+/// One open conflict with both copies, for `botport twin conflicts`.
+pub struct ConflictCopies {
+    /// The item.
+    pub item: ItemId,
+    /// When the conflict was first seen.
+    pub since: String,
+    /// The Hermes copy: (digest, content), None when absent.
+    pub hermes: Option<(String, Content)>,
+    /// The Grok copy: (digest, content or None when it cannot be fetched), None when absent.
+    pub grok: Option<(String, Option<Content>)>,
+}
+
+/// The pair's open conflicts with both copies (reads only; `--pair` and `--mirror-config` as for every command).
+pub fn conflict_copies(a: &Args) -> Res<Vec<ConflictCopies>> {
+    let c = load_config(a)?;
+    let st = load_state(&c)?;
+    let mut link = Link::open(&c, Some(&st))?;
+    let remote = link.read()?;
+    let local = side(&c).read()?;
+    let mut out = vec![];
+    for cf in &st.conflicts {
+        let id = cf.item.clone();
+        let hermes = local.content.get(&id).and_then(|cn| {
+            local
+                .read
+                .items
+                .get(&id)
+                .map(|v| (v.digest.clone(), cn.clone()))
+        });
+        let grok = remote
+            .as_ref()
+            .and_then(|r| r.side.items.get(&id))
+            .map(|v| {
+                let v = v.clone();
+                (v.digest.clone(), link.fetch(&id, &v).ok())
+            });
+        out.push(ConflictCopies {
+            item: id,
+            since: cf.since.clone(),
+            hermes,
+            grok,
+        });
+    }
+    Ok(out)
+}
+
+/// A copy as display text (control characters escaped; binary files by size and hash).
+pub fn render_content(c: &Content) -> String {
+    render(c)
+}
+
+/// The stat signature `mirror watch` polls for this pair (times and sizes only; no content is read).
+pub fn signature(a: &Args) -> Res<String> {
+    Ok(watch_signature(&load_config(a)?))
+}
+
+/// Kept copies in a profile's mirror store: (item id, digest, modified unix secs), newest first.
+pub fn kept_copies(profile_dir: &Path) -> Vec<(ItemId, String, u64)> {
+    let mut out = vec![];
+    let root = profile_dir.join(STORE_DIR);
+    for d in fs::read_dir(&root).into_iter().flatten().flatten() {
+        let name = d.file_name().to_string_lossy().to_string();
+        let Some(id) = hex_decode(&name).and_then(|s| ItemId::parse(&s).ok()) else {
+            continue;
+        };
+        for f in fs::read_dir(d.path()).into_iter().flatten().flatten() {
+            let digest = f.file_name().to_string_lossy().to_string();
+            if digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit()) {
+                continue;
+            }
+            let t = f
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_secs());
+            out.push((id.clone(), digest, t));
+        }
+    }
+    out.sort_by(|a, b| b.2.cmp(&a.2).then(a.0.cmp(&b.0)));
+    out
+}
+
+fn hex_decode(s: &str) -> Option<String> {
+    if !s.len().is_multiple_of(2) {
+        return None;
+    }
+    let b: Option<Vec<u8>> = (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(s.get(i..i + 2)?, 16).ok())
+        .collect();
+    String::from_utf8(b?).ok()
 }
 
 #[cfg(test)]

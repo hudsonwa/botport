@@ -38,7 +38,7 @@ pub struct Model {
 }
 
 fn yaml(p: &Path) -> Option<Y> {
-    let t = crate::core::yaml11::read_yaml_file(p).ok()?;
+    let t = crate::core::yaml11::read_config_yaml(p).ok()??;
     crate::core::yaml11::parse(&crate::core::yaml11::read(&t)).ok()
 }
 
@@ -128,11 +128,7 @@ pub fn copy_default_model(profile_dir: &Path, hermes_home: &Path) -> Res<Option<
     };
     let p = profile_dir.join("config.yaml");
     // read with the YAML size cap; only a missing file starts empty (one that cannot be read stops the write)
-    let text = if fs::symlink_metadata(&p).is_ok() {
-        Some(crate::core::yaml11::read_yaml_file(&p)?)
-    } else {
-        None
-    };
+    let text = crate::core::yaml11::read_config_yaml(&p)?;
     let mut y = match &text {
         Some(t) => crate::core::yaml11::parse(&crate::core::yaml11::read(t))
             .map_err(|e| format!("{}: {e}", p.display()))?,

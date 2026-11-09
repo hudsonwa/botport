@@ -97,8 +97,8 @@ impl StateFile {
 
     /// [`StateFile::parse`]; a file in another neutral form is reported only when it verifies with `key`.
     fn parse_keyed(b: &[u8], pair: &str, key: Option<&[u8]>) -> Res<StateFile> {
-        let mut f: StateFile =
-            serde_json::from_slice(b).map_err(|e| format!("state file is not valid: {e}"))?;
+        let mut f: StateFile = serde_json::from_slice(b)
+            .map_err(|e| crate::core::util::json_invalid("state file", &e))?;
         if f.schema != SCHEMA {
             return err(format!(
                 "state file has schema {:?}, expected {SCHEMA}",
@@ -208,6 +208,8 @@ pub struct StateDir<S: Store> {
     /// The pair key: when set, only files with a valid `mac` are accepted.
     pub key: Option<Vec<u8>>,
     current: Option<StateFile>,
+    /// The last [`StateDir::read`] stopped on a file in another neutral form (typed, for a caller that falls back).
+    pub other_form: bool,
 }
 
 impl<S: Store> StateDir<S> {
@@ -220,6 +222,7 @@ impl<S: Store> StateDir<S> {
             floor,
             key: None,
             current: None,
+            other_form: false,
         }
     }
 
@@ -247,6 +250,7 @@ impl<S: Store> StateDir<S> {
             .filter_map(|e| state_seq(&e.name).map(|n| (n, e.name)))
             .collect();
         seqs.sort();
+        self.other_form = false;
         while let Some((n, name)) = seqs.pop() {
             let Some(b) = self.store.get(&self.path(&name))? else {
                 continue;
@@ -256,7 +260,10 @@ impl<S: Store> StateDir<S> {
                 Err(_) => match StateFile::other_form(&b, &self.pair, self.key.as_deref()) {
                     // the newest file verifies but is from a release that compares copies another way: say so,
                     // never fall back
-                    Some(why) => return err(crate::core::util::name_safe(&why)),
+                    Some(why) => {
+                        self.other_form = true;
+                        return err(crate::core::util::name_safe(&why));
+                    }
                     // damaged, forged or for another pair: skipped like any bad file
                     None => continue,
                 },
@@ -338,8 +345,7 @@ pub(crate) mod tests {
     use std::path::{Path, PathBuf};
 
     pub fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("botport-state-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
+        let d = crate::core::util::test_dir(&format!("state-{tag}"));
         std::fs::create_dir_all(&d).unwrap();
         d
     }
@@ -529,22 +535,58 @@ pub(crate) mod tests {
 
     #[test]
     fn a_newest_file_with_another_neutral_form_is_reported_not_skipped() {
+        let key = [9u8; 32];
         let d = tmp("form");
+        let mut s = FolderStore::open(&d).unwrap();
+        let (mut f1, _) = sample(1);
+        s.put("from-grok/state-1.json", &f1.seal_with(Some(&key)))
+            .unwrap();
+        let (mut f, _) = sample(2);
+        f.neutral_form = 1;
+        s.put("from-grok/state-2.json", &f.seal_with(Some(&key)))
+            .unwrap();
+        let mut r = StateDir::new(
+            FolderStore::open(&d).unwrap(),
+            "from-grok",
+            "demo-bot",
+            None,
+        )
+        .with_key(Some(key.to_vec()));
+        let e = r.read().unwrap_err();
+        assert!(
+            e.contains("run the same botport release on the host and in the box"),
+            "{e}"
+        );
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    /// A keyless pair: a file in another neutral form is checked only by its own sha256, which anyone who can write
+    /// the folder can make, so it is skipped, never a stop.
+    #[test]
+    fn a_keyless_pair_skips_a_file_in_another_neutral_form() {
+        let d = crate::core::util::test_dir("state-form-keyless");
         publish(&d, "from-grok", 1);
         let mut s = FolderStore::open(&d).unwrap();
         let (mut f, _) = sample(2);
         f.neutral_form = 1;
-        s.put("from-grok/state-2.json", &f.seal()).unwrap();
+        let b = f.seal();
+        s.put("from-grok/state-2.json", &b).unwrap();
+        assert!(StateFile::other_form(&b, "demo-bot", None).is_none());
+        let e = StateFile::parse(&b, "demo-bot").unwrap_err();
+        assert!(
+            !e.contains(crate::core::package::NEUTRAL_FORM_MISMATCH),
+            "{e}"
+        );
         let mut r = StateDir::new(
             FolderStore::open(&d).unwrap(),
             "from-grok",
             "demo-bot",
             None,
         );
-        let e = r.read().unwrap_err();
+        assert_eq!(r.read().unwrap().map(|f| f.n), Some(1));
         assert!(
-            e.contains("run the same botport release on the host and in the box"),
-            "{e}"
+            !r.other_form,
+            "a file nothing vouches for is skipped, not reported"
         );
         std::fs::remove_dir_all(&d).ok();
     }
@@ -590,6 +632,7 @@ pub(crate) mod tests {
             None,
         );
         assert_eq!(r2.read().unwrap().map(|f| f.n), Some(1));
+        assert!(!r.other_form && !r2.other_form);
         std::fs::remove_dir_all(&d).ok();
         std::fs::remove_dir_all(&d2).ok();
     }

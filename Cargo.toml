@@ -1,6 +1,6 @@
 [package]
 name = "botport"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 description = "Port, sync and bridge AI bots between Grok Bot and Hermes"
 repository = "https://github.com/hudsonwa/botport"
@@ -32,7 +32,7 @@ unicode-normalization = "0.1"
 
 [target.'cfg(unix)'.dependencies]
 # openat/unlinkat through directory handles with O_NOFOLLOW (already in the tree through g2h)
-rustix = { version = "1", default-features = false, features = ["std", "fs"] }
+rustix = { version = "1", default-features = false, features = ["std", "fs", "process"] }
 
 [profile.release]
 opt-level = 3

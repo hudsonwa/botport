@@ -10,9 +10,9 @@
 //! ```
 #![warn(missing_docs)]
 
-use super::util::{err, parse_utc_iso, read_confined_if, Confined, Res};
+use super::util::{err, parse_utc_iso, read_confined_capped, Confined, Res};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Schema of an activity row.
 pub const SCHEMA: &str = "botport-local/1";
@@ -186,7 +186,11 @@ fn private_dir(p: &Path) -> bool {
 }
 
 fn read_opt(root: &Path, dir: &Path, name: &str) -> Res<Option<Vec<u8>>> {
-    match read_confined_if(root, dir, name, private_md) {
+    read_opt_capped(root, dir, name, u64::MAX)
+}
+
+fn read_opt_capped(root: &Path, dir: &Path, name: &str, cap: u64) -> Res<Option<Vec<u8>>> {
+    match read_confined_capped(root, dir, name, private_md, cap) {
         Ok(b) => Ok(Some(b)),
         Err(Confined::Missing) => Ok(None),
         // never name the file: a reader's file names stay out of errors and logs
@@ -212,8 +216,8 @@ fn lines<T: serde::de::DeserializeOwned>(
     out
 }
 
-/// Read the records for `bot_key` under `local_dir` (missing files are empty).
-pub fn read(local_dir: &Path, bot_key: &str) -> Res<BotRecords> {
+/// The local dir and the bot's folder in it, checked: the running user's own and not writable by others.
+fn bot_dir(local_dir: &Path, bot_key: &str) -> Res<(PathBuf, PathBuf)> {
     valid_bot_key(bot_key)?;
     let root = local_dir
         .canonicalize()
@@ -226,6 +230,24 @@ pub fn read(local_dir: &Path, bot_key: &str) -> Res<BotRecords> {
             );
         }
     }
+    Ok((root, dir))
+}
+
+/// The other side's digest file `name` in the bot's folder, with the same checks as the records, or `None` when there
+/// is none; a file over `max` bytes is refused (nothing past `max` + 1 bytes is read).
+pub fn read_digest(local_dir: &Path, bot_key: &str, name: &str, max: u64) -> Res<Option<Vec<u8>>> {
+    let (root, dir) = bot_dir(local_dir, bot_key)?;
+    match read_opt_capped(&root, &dir, name, max.saturating_add(1))? {
+        Some(b) if b.len() as u64 > max => {
+            err("the local digest file is larger than a digest can be: refused")
+        }
+        b => Ok(b),
+    }
+}
+
+/// Read the records for `bot_key` under `local_dir` (missing files are empty).
+pub fn read(local_dir: &Path, bot_key: &str) -> Res<BotRecords> {
+    let (root, dir) = bot_dir(local_dir, bot_key)?;
     let mut r = BotRecords::default();
     if let Some(b) = read_opt(&root, &dir, "activity.json")? {
         match serde_json::from_slice::<Activity>(&b) {
@@ -349,6 +371,44 @@ mod tests {
         fs::set_permissions(&f, fs::Permissions::from_mode(0o600)).unwrap();
         fs::set_permissions(d.join("demo-bot"), fs::Permissions::from_mode(0o777)).unwrap();
         assert!(read(&d, "demo-bot").is_err());
+        fs::set_permissions(d.join("demo-bot"), fs::Permissions::from_mode(0o700)).unwrap();
+        fs::remove_dir_all(&d).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_digest_is_read_with_the_records_checks_and_a_cap() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tmp("digest");
+        fs::create_dir_all(d.join("demo-bot")).unwrap();
+        assert_eq!(
+            read_digest(&d, "demo-bot", "digest-peer.md", 16).unwrap(),
+            None
+        );
+        let f = d.join("demo-bot/digest-peer.md");
+        fs::write(&f, "# Demo digest\n").unwrap();
+        lock_down(&d);
+        assert_eq!(
+            read_digest(&d, "demo-bot", "digest-peer.md", 16)
+                .unwrap()
+                .unwrap(),
+            b"# Demo digest\n"
+        );
+        assert!(
+            read_digest(&d, "demo-bot", "digest-peer.md", 8).is_err(),
+            "over the cap"
+        );
+        fs::set_permissions(&f, fs::Permissions::from_mode(0o620)).unwrap();
+        assert!(
+            read_digest(&d, "demo-bot", "digest-peer.md", 16).is_err(),
+            "writable by others"
+        );
+        fs::set_permissions(&f, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::set_permissions(d.join("demo-bot"), fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(
+            read_digest(&d, "demo-bot", "digest-peer.md", 16).is_err(),
+            "folder writable by others"
+        );
         fs::set_permissions(d.join("demo-bot"), fs::Permissions::from_mode(0o700)).unwrap();
         fs::remove_dir_all(&d).ok();
     }

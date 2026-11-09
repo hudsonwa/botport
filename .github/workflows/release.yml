@@ -21,6 +21,10 @@ jobs:
           - os: ubuntu-latest
             targets: x86_64-unknown-linux-musl aarch64-unknown-linux-musl
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -30,6 +34,15 @@ jobs:
         run: rustup target add ${{ matrix.targets }}
       - name: build
         run: scripts/build-release.sh ${{ matrix.targets }}
+      # build provenance for each archive and each binary in it (check: gh attestation verify FILE --repo OWNER/REPO)
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: |
+            dist/release/*.tar.gz
+            dist/release/botport-*/botport
+            dist/release/botport-*/grok2hermes
+            dist/release/botport-*/g2h
+            dist/release/botport-*/g2hd
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dist-${{ matrix.os }}

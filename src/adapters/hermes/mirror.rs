@@ -27,6 +27,17 @@ use std::process::Command;
 pub const SOUL_NAME: &str = "persona-name";
 /// SOUL.md section that holds `persona.instructions`.
 pub const SOUL_INSTRUCTIONS: &str = "persona";
+/// SOUL.md section that holds `persona.description` (the short text the Grok app shows for the bot).
+pub const SOUL_DESCRIPTION: &str = "persona-description";
+
+/// The SOUL.md section a persona item lives in.
+pub fn soul_section(id: &ItemId) -> &'static str {
+    match id.as_str() {
+        "persona.name" => SOUL_NAME,
+        "persona.description" => SOUL_DESCRIPTION,
+        _ => SOUL_INSTRUCTIONS,
+    }
+}
 /// The paused reason botport sets on a routine it paused until the owner approves enabling it.
 pub const PAUSED_REASON: &str = "botport mirror: paused until the owner approves enabling it";
 
@@ -181,13 +192,11 @@ fn job_schedule(j: &Value) -> Schedule {
 
 fn load_config(dest: &Path) -> Res<Option<Y>> {
     let p = dest.join("config.yaml");
-    if !p.is_file() {
+    let Some(t) = crate::core::yaml11::read_config_yaml(&p)? else {
         return Ok(None);
-    }
-    let y: Y = crate::core::yaml11::parse(&crate::core::yaml11::read(
-        &crate::core::yaml11::read_yaml_file(&p)?,
-    ))
-    .map_err(|e| format!("{}: {e}", p.display()))?;
+    };
+    let y: Y = crate::core::yaml11::parse(&crate::core::yaml11::read(&t))
+        .map_err(|e| format!("{}: {e}", p.display()))?;
     Ok(Some(y))
 }
 
@@ -289,6 +298,7 @@ impl HermesSide {
         let soul = soul_marked(&self.dest);
         for (sec, id) in [
             (SOUL_NAME, "persona.name"),
+            (SOUL_DESCRIPTION, "persona.description"),
             (SOUL_INSTRUCTIONS, "persona.instructions"),
         ] {
             if let Some(t) = soul.get(sec) {
@@ -491,11 +501,7 @@ impl HermesSide {
                 ));
             }
             (Kind::Persona, Content::Text(t)) => {
-                let sec = if id.as_str() == "persona.name" {
-                    SOUL_NAME
-                } else {
-                    SOUL_INSTRUCTIONS
-                };
+                let sec = soul_section(id);
                 let p = self.dest.join("SOUL.md");
                 let live = sync::read_soul(&p).unwrap_or_default();
                 let text = if id.as_str() == "persona.name" {
@@ -532,11 +538,7 @@ impl HermesSide {
         }
         match id.kind() {
             Kind::Persona => {
-                let sec = if id.as_str() == "persona.name" {
-                    SOUL_NAME
-                } else {
-                    SOUL_INSTRUCTIONS
-                };
+                let sec = soul_section(id);
                 let p = self.dest.join("SOUL.md");
                 let live = sync::read_soul(&p).unwrap_or_default();
                 write_atomic(&p, soul_with(&live, sec, None).as_bytes(), Some(0o600))?;
@@ -637,11 +639,20 @@ impl HermesSide {
         Ok(())
     }
 
-    /// Whether this Hermes's `cron create` takes `--timezone` (read once per Hermes binary from its help; a help that
-    /// cannot be read counts as yes, and the create itself then says what went wrong).
+    /// Whether this Hermes's `cron create` takes `--timezone` (read once per Hermes binary, keyed by its path, size,
+    /// mtime and inode so an upgraded Hermes is asked again; a help that cannot be read counts as yes, and the create
+    /// itself then says what went wrong).
     fn cron_has_timezone(&self) -> bool {
-        static SEEN: std::sync::Mutex<Vec<(String, bool)>> = std::sync::Mutex::new(Vec::new());
-        let bin = self.hermes_bin.clone();
+        type Key = (String, Option<(u64, Option<std::time::SystemTime>, u64)>);
+        static SEEN: std::sync::Mutex<Vec<(Key, bool)>> = std::sync::Mutex::new(Vec::new());
+        let id = fs::metadata(&self.hermes_bin).ok().map(|m| {
+            #[cfg(unix)]
+            let ino = std::os::unix::fs::MetadataExt::ino(&m);
+            #[cfg(not(unix))]
+            let ino = 0;
+            (m.len(), m.modified().ok(), ino)
+        });
+        let bin = (self.hermes_bin.clone(), id);
         if let Some(v) = SEEN
             .lock()
             .ok()
@@ -821,7 +832,7 @@ impl HermesSide {
             }
         }
         // the same writer as v0.1's MCP entries: YAML 1.1-safe scalars, the file's leading comment lines kept
-        let head: String = crate::core::yaml11::read_yaml_file(&p)
+        let head: String = crate::core::yaml11::read_config_yaml(&p)?
             .unwrap_or_default()
             .lines()
             .take_while(|l| l.starts_with('#'))
@@ -901,8 +912,7 @@ mod tests {
     }
 
     fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("botport-hmirror-{tag}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&d);
+        let d = crate::core::util::test_dir(&format!("hmirror-{tag}"));
         fs::create_dir_all(&d).unwrap();
         d
     }
@@ -926,6 +936,28 @@ mod tests {
 
     fn id(s: &str) -> ItemId {
         ItemId::parse(s).unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn an_upgraded_hermes_is_asked_again_about_timezone() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = crate::core::util::test_dir("hermes-tz");
+        let bin = d.join("hermes");
+        let put_bin = |help: &str| {
+            let t = d.join("hermes.new");
+            fs::write(&t, format!("#!/bin/sh\necho '{help}'\n")).unwrap();
+            fs::set_permissions(&t, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::rename(&t, &bin).unwrap();
+        };
+        put_bin("usage: cron create --name");
+        let mut s = side(&d);
+        s.hermes_bin = bin.to_string_lossy().into_owned();
+        assert!(!s.cron_has_timezone());
+        assert!(!s.cron_has_timezone());
+        put_bin("usage: cron create --name --timezone ZONE");
+        assert!(s.cron_has_timezone());
+        fs::remove_dir_all(&d).ok();
     }
 
     /// An invented profile: SOUL with owner text and a marked persona, two skills, a job, a connector.
@@ -1127,6 +1159,27 @@ mod tests {
             cfg.contains("my-code-host") && !cfg.contains("github:"),
             "the owner's key is kept: {cfg}"
         );
+        // a config.yaml that is a symlink is neither read nor rewritten
+        #[cfg(unix)]
+        {
+            let real = d.join("elsewhere.yaml");
+            fs::rename(d.join("config.yaml"), &real).unwrap();
+            std::os::unix::fs::symlink(&real, d.join("config.yaml")).unwrap();
+            assert!(s.read().unwrap_err().contains("symlink"));
+            let e = s
+                .write(
+                    &gh,
+                    &Content::Connector(BTreeMap::new()),
+                    Some(&v.digest),
+                    false,
+                )
+                .unwrap_err();
+            assert!(e.contains("symlink"), "{e}");
+            assert_eq!(fs::read_to_string(&real).unwrap(), cfg);
+            assert!(fs::symlink_metadata(d.join("config.yaml"))
+                .unwrap()
+                .is_symlink());
+        }
         fs::remove_dir_all(&d).ok();
     }
 

@@ -3,6 +3,7 @@
 //! (so a field added to the types but not to the schema fails here, via `additionalProperties: false`). The reverse
 //! direction is checked per struct: the schema's `properties` and `required` must equal what the types serialise
 //! with every field set and with only the required ones.
+mod common;
 use botport::adapters::{grok_bot::GrokBot, hermes::HermesProfile};
 use botport::core::adapter::Adapter;
 use botport::core::model::*;
@@ -158,11 +159,11 @@ fn conformance(id: &str) -> PathBuf {
 fn read_and_write_back<A: Adapter>(a: &A, fixture: &Path) {
     let m = a.read(fixture).unwrap();
     check_model(&m, &format!("{} read", a.id()));
-    let t = std::env::temp_dir().join(format!("botport-schema-{}-{}", a.id(), std::process::id()));
-    std::fs::create_dir_all(&t).unwrap();
-    a.write(&m, &t).unwrap();
-    let back = a.read(&t);
-    std::fs::remove_dir_all(&t).unwrap();
+    let tmp = common::Tmp::new(&format!("schema-{}", a.id()));
+    let t = &tmp.0;
+    a.write(&m, t).unwrap();
+    let back = a.read(t);
+    std::fs::remove_dir_all(t).unwrap();
     check_model(&back.unwrap(), &format!("{} write -> read", a.id()));
 }
 
@@ -186,7 +187,7 @@ fn every_field() -> BotModel {
             tier: Some("core".into()),
             scope: Some("user".into()),
             source: Some("s".into()),
-            date: Some("2026-01-01".into()),
+            date: Some("2000-01-01".into()),
             origin_side: Some("a".into()),
         }],
         memory_text: Some("# m\n".into()),

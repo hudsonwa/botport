@@ -81,6 +81,16 @@ fn add(out: &mut GrokItems, raw: String, c: Content) {
     }
 }
 
+/// Set item `raw` to `c`, replacing whatever was there (for a source laid over another, e.g. the app's cache over an
+/// export). The same checks as every other item: a secret-looking text is not carried and is reported with its location.
+pub fn put(out: &mut GrokItems, raw: &str, c: Content) {
+    if let Ok(id) = ItemId::parse(raw) {
+        out.content.remove(&id);
+    }
+    out.unsupported.remove(raw);
+    add(out, raw.to_string(), c);
+}
+
 /// The items of a model read from an export.
 pub fn items_of(m: &BotModel) -> GrokItems {
     let mut out = GrokItems::default();
@@ -574,7 +584,9 @@ pub fn apply_pack(
     floor: Option<u64>,
 ) -> Res<PackRun> {
     let p = head_pack(pair_dir, pair, key)?;
-    // below the persisted floor (the newest generation applied in full): an older pack put back, refused
+    // below the persisted floor (the newest generation applied in full): an older pack put back, refused. A pack at
+    // the floor is not refused: it is that same pack read again, so the caller reports it done and stages nothing
+    // (refusing it would turn every run after a full apply into an error until botport publishes again)
     if let Some(f) = floor {
         if p.gen < f {
             return err(format!(
@@ -693,7 +705,7 @@ pub fn precheck(
     item: &ItemId,
     key: Option<&[u8]>,
     stage: Option<&Path>,
-) -> Res<()> {
+) -> Res<Option<Package>> {
     let p = head_pack(pair_dir, pair, key)?;
     if p.gen != gen {
         return err(format!(
@@ -770,13 +782,15 @@ pub fn precheck(
         .map_err(|e| {
             format!("{item}: the staged copy cannot be read ({e}); run apply-pack again")
         })?;
-        if Content::Package(staged).neutral_digest(item) != it.want {
+        if Content::Package(staged.clone()).neutral_digest(item) != it.want {
             return err(format!(
                 "{item}: the staged copy changed since it was staged; run apply-pack again"
             ));
         }
+        // the verified copy, held in memory: installing it writes exactly these bytes
+        return Ok(Some(staged));
     }
-    Ok(())
+    Ok(None)
 }
 
 /// Read a package from a directory with its executable bits (for a skill folder the bot keeps on disk).

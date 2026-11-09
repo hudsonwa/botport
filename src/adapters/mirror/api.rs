@@ -3,7 +3,9 @@
 //! - The access token comes from a command the owner configures, run as an argv (no shell, a 30 s limit) with its
 //!   stderr discarded; it must match `[A-Za-z0-9._~+/=-]+`. It reaches `curl` only as a config line on curl's stdin
 //!   (`-K -`), so it is never in an argv, the environment, a file, a log or an error. `-q` keeps a user `.curlrc`
-//!   (which could turn on tracing) out of it; an https base is called with `--proto =https`.
+//!   (which could turn on tracing) out of it; an https base is called with `--proto =https`. curl runs with no proxy:
+//!   `--proxy ""` and every `*_proxy` variable (any case) left out of its environment.
+//! - The token command runs in its own process group, killed as a group on timeout.
 //! - Only files inside the configured folder are listed or touched; paths map to subfolders by name.
 //! - Files whose last modifying user is not the owner (`lastModifyingUser.me` false) are ignored.
 //! - Every call has a time limit (`curl --max-time`); errors name the operation and HTTP status, never a response body
@@ -25,7 +27,21 @@ pub const MAX_DOWNLOAD: u64 = 64 << 20;
 /// At most this many result pages per listing.
 const MAX_PAGES: usize = 50;
 /// The token command's time limit.
+#[cfg(not(test))]
 const TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+#[cfg(test)]
+const TOKEN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// curl with no proxy from the environment: every `*_proxy` variable, in any case, left out.
+fn curl_command(prog: PathBuf) -> Command {
+    let mut c = Command::new(prog);
+    for (k, _) in std::env::vars_os() {
+        if k.to_string_lossy().to_ascii_lowercase().ends_with("_proxy") {
+            c.env_remove(k);
+        }
+    }
+    c
+}
 
 /// How to reach the folder.
 #[derive(Debug, Clone)]
@@ -120,6 +136,8 @@ pub fn curl_args(
         &cfg.timeout_s.to_string(),
         "--max-filesize",
         &MAX_DOWNLOAD.to_string(),
+        "--proxy",
+        "",
         "-K",
         "-",
         "-X",
@@ -221,7 +239,11 @@ impl ApiStore {
             .token_cmd
             .split_first()
             .ok_or("no token command configured")?;
-        let mut child = Command::new(crate::core::util::program(prog)?)
+        let mut cmd = Command::new(crate::core::util::program(prog)?);
+        // its own process group: a timeout kills whatever it started too
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        let mut child = cmd
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -241,6 +263,12 @@ impl ApiStore {
                 break st;
             }
             if t0.elapsed() > TOKEN_TIMEOUT {
+                #[cfg(unix)]
+                rustix::process::kill_process_group(
+                    rustix::process::Pid::from_child(&child),
+                    rustix::process::Signal::KILL,
+                )
+                .ok();
                 child.kill().ok();
                 child.wait().ok();
                 return err("token command timed out");
@@ -323,7 +351,7 @@ impl ApiStore {
         };
         let t0 = Instant::now();
         let out = (|| -> Res<std::process::Output> {
-            let mut child = Command::new(crate::core::util::tool(&self.cfg.curl)?)
+            let mut child = curl_command(crate::core::util::tool(&self.cfg.curl)?)
                 .args(&args)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
@@ -504,15 +532,22 @@ impl ApiStore {
         Ok(self.nodes.as_ref().expect("built above"))
     }
 
-    /// Drop cached files no listed file refers to any more.
+    /// Drop cached files no listed file refers to any more. A `files` folder that is a symlink is left alone: the
+    /// prune would delete in whatever folder it points to. Entries are removed only as regular files (a symlink
+    /// entry would be removed as the link, never what it points to, but is not ours either).
     fn prune_cache(&self, nodes: &[Node]) {
         let Some(d) = &self.cfg.cache_dir else { return };
+        let files = d.join("files");
+        if !fs::symlink_metadata(&files).is_ok_and(|m| m.is_dir()) {
+            return;
+        }
         let live: std::collections::BTreeSet<&str> =
             nodes.iter().filter_map(|n| n.md5.as_deref()).collect();
-        if let Ok(rd) = fs::read_dir(d.join("files")) {
+        if let Ok(rd) = fs::read_dir(&files) {
             for e in rd.flatten() {
                 let n = e.file_name().to_string_lossy().to_string();
-                if plain_md5(&n) && !live.contains(n.as_str()) {
+                let plain_file = fs::symlink_metadata(e.path()).is_ok_and(|m| m.is_file());
+                if plain_file && plain_md5(&n) && !live.contains(n.as_str()) {
                     let _ = fs::remove_file(e.path());
                 }
             }
@@ -1087,6 +1122,35 @@ mod tests {
         assert!(s.io().net_ms > 0 || s.io().read_bytes > 0);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn the_cache_prune_never_deletes_through_a_link() {
+        let d = crate::core::util::test_dir("api-cache-link");
+        let (cache, elsewhere) = (d.join("cache"), d.join("elsewhere"));
+        let stale = "0123456789abcdef0123456789abcdef";
+        fs::create_dir_all(&cache).unwrap();
+        fs::create_dir_all(&elsewhere).unwrap();
+        fs::write(elsewhere.join(stale), b"x").unwrap();
+        let mut cfg = ApiConfig::new("root", echo_token());
+        cfg.cache_dir = Some(cache.clone());
+        let s = ApiStore::new(cfg);
+        // a linked files/ folder: nothing in the folder it points to is touched
+        std::os::unix::fs::symlink(&elsewhere, cache.join("files")).unwrap();
+        s.prune_cache(&[]);
+        assert!(elsewhere.join(stale).exists());
+        // a real files/ folder: a stale regular file goes, a linked entry is left
+        fs::remove_file(cache.join("files")).unwrap();
+        fs::create_dir_all(cache.join("files")).unwrap();
+        fs::write(cache.join("files").join(stale), b"x").unwrap();
+        let other = "fedcba9876543210fedcba9876543210";
+        std::os::unix::fs::symlink(elsewhere.join(stale), cache.join("files").join(other)).unwrap();
+        s.prune_cache(&[]);
+        assert!(!cache.join("files").join(stale).exists());
+        assert!(fs::symlink_metadata(cache.join("files").join(other)).is_ok());
+        assert!(elsewhere.join(stale).exists());
+        fs::remove_dir_all(&d).ok();
+    }
+
     #[test]
     fn a_second_run_with_nothing_changed_makes_one_listing_per_level() {
         if Command::new("curl").arg("--version").output().is_err() {
@@ -1094,8 +1158,7 @@ mod tests {
         }
         let fake = Arc::new(Mutex::new(Fake::default()));
         let base = serve(fake.clone());
-        let cache = std::env::temp_dir().join(format!("botport-api-cache-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&cache);
+        let cache = crate::core::util::test_dir("api-cache");
         let mut cfg = ApiConfig::new("root", echo_token());
         cfg.base = base.clone();
         cfg.cache_dir = Some(cache.clone());
@@ -1147,8 +1210,7 @@ mod tests {
         }
         let fake = Arc::new(Mutex::new(Fake::default()));
         let base = serve(fake.clone());
-        let cache = std::env::temp_dir().join(format!("botport-api-cache2-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&cache);
+        let cache = crate::core::util::test_dir("api-cache2");
         let mut cfg = ApiConfig::new("root", echo_token());
         cfg.base = base.clone();
         cfg.cache_dir = Some(cache.clone());
@@ -1281,6 +1343,77 @@ mod tests {
         let base = serve(fake.clone());
         let mut s = store(&base, echo_token());
         assert!(s.get("HEAD").unwrap_err().contains("same name"));
+    }
+
+    #[test]
+    fn curl_never_takes_a_proxy_from_the_environment() {
+        let cfg = ApiConfig::new("root", echo_token());
+        let a = curl_args(&cfg, "GET", "https://x/y", None);
+        assert!(a.windows(2).any(|w| w == ["--proxy", ""]), "{a:?}");
+        // set on a child (never this process, which other tests share), so the parent's vars are what curl_command reads
+        let probe = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "adapters::mirror::api::tests::proxy_env_probe",
+                "--nocapture",
+                "--include-ignored",
+            ])
+            .env("HTTPS_PROXY", "http://proxy.example.test:1")
+            .env("http_proxy", "http://proxy.example.test:1")
+            .env("All_Proxy", "socks5://proxy.example.test:1")
+            .env("BOTPORT_PROXY_PROBE", "1")
+            .output()
+            .unwrap();
+        let out = String::from_utf8_lossy(&probe.stdout);
+        assert!(probe.status.success() && out.contains("1 passed"), "{out}");
+    }
+
+    #[test]
+    #[ignore = "run by curl_never_takes_a_proxy_from_the_environment"]
+    fn proxy_env_probe() {
+        if std::env::var_os("BOTPORT_PROXY_PROBE").is_none() {
+            return;
+        }
+        let c = curl_command(PathBuf::from("curl"));
+        let removed: Vec<String> = c
+            .get_envs()
+            .filter(|(_, v)| v.is_none())
+            .map(|(k, _)| k.to_string_lossy().into_owned())
+            .collect();
+        for k in ["HTTPS_PROXY", "http_proxy", "All_Proxy"] {
+            assert!(removed.iter().any(|r| r == k), "{k} {removed:?}");
+        }
+        assert!(!removed.iter().any(|r| r == "BOTPORT_PROXY_PROBE"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_token_command_that_hangs_is_killed_with_its_group() {
+        let d = crate::core::util::test_dir("token-group");
+        let pidf = d.join("pid");
+        let script = format!("sleep 60 & echo $! > '{}'; wait", pidf.display());
+        let mut s = store(
+            "https://x.example.test",
+            vec!["sh".into(), "-c".into(), script],
+        );
+        assert_eq!(s.token().unwrap_err(), "token command timed out");
+        let pid = fs::read_to_string(&pidf).unwrap().trim().to_string();
+        let alive = || {
+            Command::new("kill")
+                .args(["-0", &pid])
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success())
+        };
+        let t0 = Instant::now();
+        while alive() && t0.elapsed() < std::time::Duration::from_secs(5) {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(
+            !alive(),
+            "the background child of the token command was left running"
+        );
+        fs::remove_dir_all(&d).ok();
     }
 
     #[test]

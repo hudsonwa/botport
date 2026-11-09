@@ -41,7 +41,7 @@ step "fake Grok box from examples/acme/grok (agent tree + workflows), memory dro
 BOX=$OUT/box; mkdir -p "$BOX/agent-data/agents/$ID" "$BOX/agent-data/workflows" "$BOX/drop/agents/$ID"
 cp "$EX/grok/profile.json" "$EX/grok/settings.json" "$EX/grok/MEMORY.md" "$BOX/agent-data/agents/$ID/"
 cp -R "$EX/grok/skills/." "$BOX/agent-data/workflows/"
-echo '{"status":"none","date":"2026-10-30"}' > "$BOX/drop/agents/$ID/memory-status.json"
+echo '{"status":"none","date":"2000-01-30"}' > "$BOX/drop/agents/$ID/memory-status.json"
 export_box() { "$G" export --agent-data "$BOX/agent-data" --agent-id "$ID" --memory-drop "$BOX/drop" --out "$OUT/grok-bundle" --details "$OUT/export.json"; }
 export_box || exit 1
 SPEC=$OUT/spec.toml

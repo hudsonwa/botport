@@ -1021,6 +1021,16 @@ fn load_yaml(p: &Path) -> Res<Option<Y>> {
     .map_err(|e| format!("{}: {e}", p.display()))
 }
 
+/// The profile's config.yaml (read before every rewrite): a symlink is refused, never followed.
+fn load_config(p: &Path) -> Res<Option<Y>> {
+    let Some(t) = crate::core::yaml11::read_config_yaml(p)? else {
+        return Ok(None);
+    };
+    crate::core::yaml11::parse(&crate::core::yaml11::read(&t))
+        .map(Some)
+        .map_err(|e| format!("{}: {e}", p.display()))
+}
+
 /// cron/jobs.json: no file = no jobs; an unreadable or malformed file is an error (never read as "no jobs").
 pub fn live_jobs(dest: &Path) -> Res<Vec<serde_json::Value>> {
     let p = dest.join("cron/jobs.json");
@@ -1109,7 +1119,7 @@ pub fn plan(c: &Ctx) -> Res<Plan> {
     items.extend(plan_spec_cron(c, &w, &jobs));
     items.extend(plan_model_cron(c, &w.model_cron, &jobs, &rec));
     if !w.mcp.is_empty() {
-        let live = load_yaml(&c.dest.join("config.yaml"))?;
+        let live = load_config(&c.dest.join("config.yaml"))?;
         for (id, want) in &w.mcp {
             items.push(plan_mcp(live.as_ref(), id, want, &rec));
         }
@@ -1344,7 +1354,7 @@ fn plan_config(
 ) -> Res<ConfigPlan> {
     let mut items = vec![];
     let mut config_owned = BTreeMap::new();
-    let live = load_yaml(&c.dest.join("config.yaml"))?;
+    let live = load_config(&c.dest.join("config.yaml"))?;
     let mut new = live.clone().unwrap_or_else(|| tpl.clone());
     let mut owned = vec![];
     leaves(tpl, &mut vec![], &mut owned);
@@ -2042,7 +2052,7 @@ fn apply_config(
             if has_conflict {
                 // Rebuild without the conflicting paths: re-plan semantics, applied path by path.
                 let mut new =
-                    load_yaml(&c.dest.join("config.yaml"))?.unwrap_or(Y::Mapping(Mapping::new()));
+                    load_config(&c.dest.join("config.yaml"))?.unwrap_or(Y::Mapping(Mapping::new()));
                 let full: Y = crate::core::yaml11::parse(&crate::core::yaml11::read(text))
                     .map_err(|e| e.to_string())?;
                 for i in &cfg_todo {
@@ -2114,7 +2124,7 @@ fn apply_mcp(
             .take_while(|l| l.starts_with('#'))
             .map(|l| format!("{l}\n"))
             .collect();
-        let mut new = load_yaml(&cp)?.unwrap_or(Y::Mapping(Mapping::new()));
+        let mut new = load_config(&cp)?.unwrap_or(Y::Mapping(Mapping::new()));
         for i in &mcp_todo {
             let (id, want) = p
                 .want
@@ -2438,7 +2448,7 @@ mod tests {
             })
             .collect();
         let jobs = schedules_to_cron(&m, &[], &mut vec![]);
-        let d = std::env::temp_dir().join(format!("botport-tz-{}", std::process::id()));
+        let d = crate::core::util::test_dir("tz");
         let src = Source {
             path: d.clone(),
             id: "t".into(),
@@ -2466,7 +2476,7 @@ mod tests {
 
     #[test]
     fn unsafe_skill_names_and_paths_are_neither_read_nor_written() {
-        let d = std::env::temp_dir().join(format!("botport-skillpath-{}", std::process::id()));
+        let d = crate::core::util::test_dir("skillpath");
         let m: BotModel = serde_json::from_value(json!({
             "schema": "botport.model/v1",
             "persona": {"name": "Bot", "instructions": ""},
@@ -2504,7 +2514,7 @@ mod tests {
 
     #[test]
     fn restore_point_refuses_a_live_secret_and_writes_nothing() {
-        let d = std::env::temp_dir().join(format!("botport-rp-{}", std::process::id()));
+        let d = crate::core::util::test_dir("rp");
         fs::create_dir_all(d.join("skills/cat/s")).unwrap();
         fs::write(d.join("config.yaml"), "model: x\n").unwrap();
         fs::write(

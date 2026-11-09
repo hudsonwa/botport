@@ -187,8 +187,8 @@ botport mirror digest-items|apply-pack|recent --root R [--pair P]... [other flag
   and only the mass-retire guard and the approval rules stand in the way): an item missing from an export is then never taken as removed, and replacing
   or removing an item on the Grok side is left to the owner (add-only, listed with the reason);
   `apply-pack` checks the pack `HEAD` names (refusing one older than a pack it already applied, by the applied log and by
-  the floor it keeps beside it, `applied-floor`: the newest generation applied in full, at which nothing is staged
-  again; only when the owner confirms a pair was set up again from an empty folder does the box move its applied log
+  the floor it keeps beside it, `applied-floor`: the newest generation applied in full; a pack at the floor is not
+  refused, it is reported applied in full and nothing is staged again; only when the owner confirms a pair was set up again from an empty folder does the box move its applied log
   and floor aside), stages what may be installed, refuses an item changed since the pack was
   made, holds every item of a pack not signed with the pair key and reports it to the owner ("held": an unsigned pack is
   never applied),

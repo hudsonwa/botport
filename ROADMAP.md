@@ -1,6 +1,6 @@
 # Roadmap
 
-botport is an early v0.1 built by one maintainer. This page says what works, what is being built, and where help
+botport is an early v0.2 built by one maintainer. This page says what works, what is being built, and where help
 would matter most.
 
 ## Status
@@ -55,6 +55,10 @@ porting a template) at the auto tier, reading files only from one owner-chosen u
 - revocation by the owner at any time.
 
 Anything that can write to the updates directory could direct the bot, so this needs a careful design first.
+
+## Next for twins
+- Per-side signing keys for the Mirror bot (each side signs with its own key; the host pins the box's public key with a
+  fingerprint the owner compares), so no shared key ever passes through a chat.
 
 ## Not planned
 - Copying secrets or credentials between platforms. botport lists their names; you re-enter the values.

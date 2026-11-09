@@ -220,7 +220,7 @@ fn write_unguarded(p: &Path, data: &[u8], mode: Option<u32>) -> Res<()> {
     // Unpredictable temp name, created exclusively (O_EXCL): never opens or follows a file or symlink already there.
     p.file_name().ok_or("no file name")?;
     let (tmp, mut f) = loop {
-        let tmp = dir.join(format!(".botport-tmp.{}", random_hex()));
+        let tmp = dir.join(format!(".botport-tmp.{}", random_hex()?));
         let mut o = fs::OpenOptions::new();
         o.write(true).create_new(true);
         #[cfg(unix)]
@@ -256,23 +256,19 @@ fn write_unguarded(p: &Path, data: &[u8], mode: Option<u32>) -> Res<()> {
     Ok(())
 }
 
-/// 128 random bits as hex (the OS RNG; a time/pid/counter hash only if /dev/urandom is unreadable).
-fn random_hex() -> String {
+/// Fill `b` from the OS random source. No fallback: a name or id made from the time or pid can be guessed (and a
+/// guessed temp name planted), so without a random source the caller fails instead.
+pub fn os_random(b: &mut [u8]) -> Res<()> {
+    fs::File::open("/dev/urandom")
+        .and_then(|mut f| std::io::Read::read_exact(&mut f, b))
+        .map_err(|_| "no random source (/dev/urandom is unreadable)".to_string())
+}
+
+/// 128 random bits as hex, from [`os_random`].
+fn random_hex() -> Res<String> {
     let mut b = [0u8; 16];
-    let ok = fs::File::open("/dev/urandom")
-        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut b))
-        .is_ok();
-    if !ok {
-        static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let t = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let h = Sha256::digest(format!("{t}:{}:{n}:{:p}", std::process::id(), &b).as_bytes());
-        b.copy_from_slice(&h[..16]);
-    }
-    b.iter().map(|x| format!("{x:02x}")).collect()
+    os_random(&mut b)?;
+    Ok(hex(&b))
 }
 
 /// The per-profile operation lock file: commands that write into a profile hold it; plan/drift never touch it.
@@ -562,6 +558,16 @@ pub fn safe_rel(what: &str, rel: &str) -> Res<()> {
         ));
     }
     Ok(())
+}
+
+/// "`what` is not valid (line L, column C)": a serde message can quote the file (an unknown variant, a string's
+/// text), and a file from the other side is not ours to print.
+pub fn json_invalid(what: &str, e: &serde_json::Error) -> String {
+    format!(
+        "{what} is not valid (line {}, column {})",
+        e.line(),
+        e.column()
+    )
 }
 
 /// Pretty JSON with sorted keys (serde_json::Map is a BTreeMap here) and a trailing newline.
@@ -1296,8 +1302,16 @@ mod tests {
     }
 
     #[test]
+    fn random_names_come_from_the_os_random_source() {
+        let (a, b) = (random_hex().unwrap(), random_hex().unwrap());
+        assert!(a.len() == 32 && a.bytes().all(|c| c.is_ascii_hexdigit()) && a != b);
+        let id = crate::adapters::mirror::pack::try_random_id().unwrap();
+        assert_eq!(id.len(), 12);
+    }
+
+    #[test]
     fn write_atomic_handles_a_212_byte_file_name() {
-        let d = std::env::temp_dir().join(format!("botport-longname-{}", std::process::id()));
+        let d = crate::core::util::test_dir("longname");
         let p = d.join(format!("{}.md", "r".repeat(212)));
         super::write_atomic(&p, b"long", None).unwrap();
         assert_eq!(std::fs::read(&p).unwrap(), b"long");
@@ -1309,7 +1323,7 @@ mod tests {
     #[test]
     fn write_atomic_never_follows_a_planted_temp_symlink() {
         use std::os::unix::fs::PermissionsExt;
-        let d = std::env::temp_dir().join(format!("botport-atomic-{}", std::process::id()));
+        let d = crate::core::util::test_dir("atomic");
         std::fs::create_dir_all(&d).unwrap();
         let outside = d.join("outside.txt");
         std::fs::write(&outside, "keep").unwrap();

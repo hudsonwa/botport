@@ -1,6 +1,6 @@
 //! YAML 1.1 compatibility. Python consumers read config.yaml with PyYAML (YAML 1.1); serde_yaml speaks YAML 1.2.
 //! - `emit`: our own emitter instead of serde_yaml's: every string is double-quoted with JSON escapes (valid YAML
-//!   1.1 and 1.2, so PyYAML can never read "off" as false or "2026-10-30" as a date), floats always carry a dot and
+//!   1.1 and 1.2, so PyYAML can never read "off" as false or "2000-01-30" as a date), floats always carry a dot and
 //!   a signed exponent, and a key stays plain only when no YAML 1.1 resolver would type it.
 //! - `read`: in hand-written files, plain `off`/`yes`/`on`/`n`… are booleans to PyYAML; they become true/false
 //!   before serde_yaml parses, so comparisons mean what the reader means. A line scanner that never touches block
@@ -342,6 +342,26 @@ pub fn parse_all_nodes(text: &str) -> Result<Vec<Node>, String> {
         .collect()
 }
 
+/// One JSON value as a [`Node`] tree, every object entry kept in order (duplicate keys included, so none is
+/// dropped, where a JSON value keeps only the last). Node and text caps are the input's length (no aliases). `None`
+/// when the text is not exactly one JSON value.
+pub fn json_nodes(text: &str) -> Option<Node> {
+    use serde::de::DeserializeSeed as _;
+    let (count, bytes) = (std::cell::Cell::new(0usize), std::cell::Cell::new(0usize));
+    let mut de = serde_json::Deserializer::from_str(text);
+    let node = NodeSeed {
+        count: &count,
+        // JSON has no aliases: no value holds more nodes or text than the input has bytes (finite caps all the same)
+        cap: text.len().saturating_add(1),
+        bytes: &bytes,
+        text_cap: text.len().saturating_add(1),
+    }
+    .deserialize(&mut de)
+    .ok()?;
+    de.end().ok()?;
+    Some(node)
+}
+
 fn position_only(e: &serde_yaml::Error) -> String {
     match e.location() {
         Some(l) => format!("not valid YAML at line {}, column {}", l.line(), l.column()),
@@ -447,8 +467,23 @@ impl<'de> serde::de::Visitor<'de> for NodeSeed<'_> {
 /// A YAML file's text, read with the size cap applied while reading: at most [`MAX_YAML_BYTES`] + 1 bytes are
 /// ever read (and allocated); a longer file is refused before it is parsed.
 pub fn read_yaml_file(p: &std::path::Path) -> Result<String, String> {
-    let b =
-        read_capped(p, MAX_YAML_BYTES as u64 + 1).map_err(|e| format!("{}: {e}", p.display()))?;
+    read_yaml_at(p, false)
+}
+
+/// A bot config file such as a profile's `config.yaml` (read before every rewrite): `None` if there is none; a symlink is refused, and the file
+/// is opened with O_NOFOLLOW so one swapped in meanwhile is refused too.
+pub fn read_config_yaml(p: &std::path::Path) -> Result<Option<String>, String> {
+    match std::fs::symlink_metadata(p) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("{}: {e}", p.display())),
+        Ok(m) if m.file_type().is_symlink() => Err(format!("{}: a symlink (refused)", p.display())),
+        Ok(_) => read_yaml_at(p, true).map(Some),
+    }
+}
+
+fn read_yaml_at(p: &std::path::Path, nofollow: bool) -> Result<String, String> {
+    let b = read_capped(p, MAX_YAML_BYTES as u64 + 1, nofollow)
+        .map_err(|e| format!("{}: {e}", p.display()))?;
     if b.len() > MAX_YAML_BYTES {
         return Err(format!(
             "{}: YAML document too large (over {MAX_YAML_BYTES} bytes)",
@@ -462,7 +497,7 @@ pub fn read_yaml_file(p: &std::path::Path) -> Result<String, String> {
 /// Missing, unreadable, not a regular file, or not UTF-8: empty (a multi-byte character cut by the cap is
 /// dropped, not an error).
 pub fn read_yaml_prefix(p: &std::path::Path) -> String {
-    let Ok(mut b) = read_capped(p, MAX_YAML_BYTES as u64) else {
+    let Ok(mut b) = read_capped(p, MAX_YAML_BYTES as u64, false) else {
         return String::new();
     };
     match String::from_utf8(std::mem::take(&mut b)) {
@@ -516,14 +551,24 @@ const NONBLOCK: i32 = 0o4000;
 )))]
 const NONBLOCK: i32 = 0;
 
-/// At most `cap` bytes of the regular file `p`: opened without blocking on a FIFO, and refused unless the opened
-/// file is a regular file.
-fn read_capped(p: &std::path::Path, cap: u64) -> std::io::Result<Vec<u8>> {
+/// At most `cap` bytes of the regular file `p`: opened without blocking on a FIFO (and with `nofollow`, never
+/// through a symlink), and refused unless the opened file is a regular file.
+fn read_capped(p: &std::path::Path, cap: u64, nofollow: bool) -> std::io::Result<Vec<u8>> {
     use std::io::Read as _;
     let mut o = std::fs::OpenOptions::new();
     o.read(true);
     #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut o, NONBLOCK);
+    std::os::unix::fs::OpenOptionsExt::custom_flags(
+        &mut o,
+        NONBLOCK
+            | if nofollow {
+                rustix::fs::OFlags::NOFOLLOW.bits() as i32
+            } else {
+                0
+            },
+    );
+    #[cfg(not(unix))]
+    let _ = nofollow;
     let f = o.open(p)?;
     if !f.metadata()?.is_file() {
         return Err(std::io::Error::other("not a regular file"));
@@ -1040,6 +1085,19 @@ mod tests {
             .success());
         assert!(read_yaml_file(&fifo).is_err());
         assert_eq!(read_yaml_prefix(&fifo), "");
+        // a config.yaml: missing is None, a symlink (dangling or not) is refused
+        assert_eq!(read_config_yaml(&d.join("none.yaml")).unwrap(), None);
+        assert_eq!(read_config_yaml(&small).unwrap().unwrap(), "a: 1\n");
+        #[cfg(unix)]
+        for (link, to) in [
+            ("linked.yaml", small.clone()),
+            ("dangling.yaml", d.join("gone")),
+        ] {
+            std::os::unix::fs::symlink(&to, d.join(link)).unwrap();
+            assert!(read_config_yaml(&d.join(link))
+                .unwrap_err()
+                .contains("symlink"));
+        }
         std::fs::remove_dir_all(&d).unwrap();
     }
 
@@ -1192,7 +1250,7 @@ mod tests {
 
     #[test]
     fn emit_roundtrips_and_quotes_every_string() {
-        for t in ["a: 'off'\nb: false\nc: 'see #1'\ne: 3\nf: '2026-10-30'\ng: '1_000'\nh: '='\ni: x\n",
+        for t in ["a: 'off'\nb: false\nc: 'see #1'\ne: 3\nf: '2000-01-30'\ng: '1_000'\nh: '='\ni: x\n",
                   "- \"a\\nb\"\n- k: [\"x\\noff: y\"]\n  'off': 1\n  'yes': '<<'\n- []\n- {}\n- - 1\n  - 2.5\n",
                   "? \"a\\nb\"\n: [off]\nlong: 1.0e20\nneg: -1.5e-7\nn: ~\n"] {
             let v = y(t);
@@ -1246,7 +1304,7 @@ mod tests {
             "null",
             "=",
             "<<",
-            "2026-10-30",
+            "2000-01-30",
             "off",
             "",
         ] {
