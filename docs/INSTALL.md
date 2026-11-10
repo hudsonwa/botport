@@ -21,7 +21,7 @@ import, sync, drift-check and test a bot; install the bridge only if you want th
 
 Pin a release tag and check what you download before you run it:
 
-    TAG=v0.2.0 T=aarch64-apple-darwin   # or x86_64-apple-darwin, x86_64-unknown-linux-musl, aarch64-unknown-linux-musl
+    TAG=v0.2.1 T=aarch64-apple-darwin   # or x86_64-apple-darwin, x86_64-unknown-linux-musl, aarch64-unknown-linux-musl
     curl -fsSLO "https://github.com/hudsonwa/botport/releases/download/$TAG/botport-$T.tar.gz"
     curl -fsSLO "https://github.com/hudsonwa/botport/releases/download/$TAG/SHA256SUMS"
     shasum -a 256 -c SHA256SUMS --ignore-missing
@@ -55,7 +55,7 @@ copy the binaries onto your `PATH`.
 Each release archive and each binary in it carries a GitHub build attestation: proof that the repository's own
 release workflow built it from source. With the [GitHub CLI](https://cli.github.com/):
 
-    TAG=v0.2.0    # the release you downloaded
+    TAG=v0.2.1    # the release you downloaded
     gh attestation verify botport-<target>.tar.gz --repo hudsonwa/botport \
       --source-ref "refs/tags/$TAG" --signer-workflow hudsonwa/botport/.github/workflows/release.yml
     gh attestation verify "$(command -v botport)" --repo hudsonwa/botport \

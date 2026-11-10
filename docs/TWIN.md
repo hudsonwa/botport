@@ -93,7 +93,7 @@ Examples below come from `botport twin demo`, trimmed (`…`); times changed to 
 
 ### `botport version --json`
 ```json
-{"version":"0.2.0","schema":"botport.twin.v1","features":["grok-list","twin-create","twin-check","twin-sync","twin-status",
+{"version":"0.2.1","schema":"botport.twin.v1","features":["grok-list","twin-create","twin-check","twin-sync","twin-status",
  "twin-conflicts","twin-resolve","twin-approve","twin-restore","twin-recent","twin-remove","twin-mirror","twin-parity","twin-doctor","twin-demo"]}
 ```
 A feature is listed only when it is implemented; a plugin should check it.

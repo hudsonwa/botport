@@ -61,9 +61,9 @@ commands as you.
   bots. Use `auto` only for read-only ops (export, battery). The opt-in separate-user mode ([G2H-SEPARATE-USER.md](G2H-SEPARATE-USER.md)) puts the config, the approver and `approve` out of the bots' uid's reach, if the recipe's conditions hold (root-owned paths, and the whole setup and every approve done from a separate admin account's own login session).
 - **botport mirror, staged copies in a shared box:** `apply-pack --precheck ITEM --install-to DIR` reads the staged
   skill once, checks it against the pack and writes exactly the copy it checked into the box's skills folder, so a
-  staged file swapped after the check is never installed. The destination is checked by path (it must resolve to
-  `<agent data>/workflows`, every folder from the agent data folder down a real folder, and only the system's own links
-  above it), then written under a temporary name and renamed into place; the write is not bound to the folder that was
+  staged file swapped after the check is never installed. The destination is checked by path (the agent data folder is
+  resolved once, since in a box it is itself a link; the flag must resolve to `<resolved agent data>/workflows`, and
+  that skills folder must be a real folder, not a link), then written under a temporary name and renamed into place; the write is not bound to the folder that was
   checked, so a folder swapped and restored in that moment is not caught. Doing so needs write access to the box's
   workspace during an install. The box is one trust domain: every bot in
   it can write the box's skills folder itself, and is trusted as much as the Mirror bot ([design](design/MIRROR.md),

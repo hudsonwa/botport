@@ -12,7 +12,7 @@ The `build` job attests every archive and every binary in it with `actions/attes
 Sigstore-signed build provenance: repository, workflow, tag and commit). Check a release asset or an installed
 binary:
 
-    TAG=v0.2.0
+    TAG=v0.2.1
     gh attestation verify botport-<target>.tar.gz --repo hudsonwa/botport \
       --source-ref "refs/tags/$TAG" --signer-workflow hudsonwa/botport/.github/workflows/release.yml
     gh attestation verify "$(command -v botport)" --repo hudsonwa/botport \
@@ -35,7 +35,7 @@ step; it is not in `release.yml` and nothing is uploaded to PyPI yet.
     # check with: unzip -p dist/wheels/botport-*.whl '*/scripts/botport' | strings | grep -c "$HOME"   (must be 0)
     # Linux (manylinux/musllinux): run maturin in its Docker image, or add --zig
 
-Wheel names look like `botport-0.2.0-py3-none-macosx_11_0_arm64.whl`; the version comes from `Cargo.toml`.
+Wheel names look like `botport-0.2.1-py3-none-macosx_11_0_arm64.whl`; the version comes from `Cargo.toml`.
 Check one before uploading:
 
     python3 -m venv /tmp/wt && /tmp/wt/bin/pip install dist/wheels/botport-*.whl && /tmp/wt/bin/botport --version

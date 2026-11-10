@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-10
+
+### Fixed
+- `mirror apply-pack --install-to` and the box reads of `apply-pack` / `digest-items` accept an agent data folder that
+  is itself a link (as in a real Grok box): the folder is resolved once and every check uses the resolved path. The
+  flag must resolve to `<resolved agent data>/workflows`, which must be a real folder (a link there is refused, as is
+  any other destination).
+
 ## [0.2.0] - 2026-11-10
 
 Mirror mode (equal-peer sync between a Grok Bot and its Hermes twin), the `botport twin` JSON interface for a Hermes

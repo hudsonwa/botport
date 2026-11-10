@@ -400,7 +400,14 @@ fn mirror_bot_carries_a_hermes_skill_to_grok_and_only_the_pairs_skills_come_back
 
     // the Mirror bot's run inside the Grok box, on an invented box: another bot's skill sits in the shared skills
     let root = t.0.join("box/botport-mirror");
+    // as in a real box, the agent data folder is itself a link to the real folder
     let agent_data = t.0.join("box/agent-data");
+    let real_data = t.0.join("box/agent-data-real");
+    fs::create_dir_all(&real_data).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&real_data, &agent_data).unwrap();
+    #[cfg(not(unix))]
+    fs::create_dir_all(&agent_data).unwrap();
     let id = "00000000-0000-4000-8000-00000000ac3e";
     fs::create_dir_all(agent_data.join("agents").join(id)).unwrap();
     fs::write(
@@ -442,25 +449,53 @@ fn mirror_bot_carries_a_hermes_skill_to_grok_and_only_the_pairs_skills_come_back
         "{out}{}",
         String::from_utf8_lossy(&o.stderr)
     );
-    let o = botport(
-        &t.0,
-        &[
-            "mirror",
-            "apply-pack",
-            "--root",
-            r,
-            "--agent-data",
-            ad,
-            "--pair",
-            "acme-helper",
-            "--precheck",
-            "skill:greet-the-team",
-            "--gen",
-            "1",
-            "--install-to",
-            agent_data.join("workflows").to_str().unwrap(),
-        ],
-    );
+    let install = |to: &Path| {
+        botport(
+            &t.0,
+            &[
+                "mirror",
+                "apply-pack",
+                "--root",
+                r,
+                "--agent-data",
+                ad,
+                "--pair",
+                "acme-helper",
+                "--precheck",
+                "skill:greet-the-team",
+                "--gen",
+                "1",
+                "--install-to",
+                to.to_str().unwrap(),
+            ],
+        )
+    };
+    // anywhere but the box's skills folder is refused, and so is a skills folder that is a link
+    let elsewhere = t.0.join("box/elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    let o = install(&elsewhere);
+    assert!(!o.status.success());
+    assert!(!elsewhere.join("greet-the-team").exists());
+    #[cfg(unix)]
+    {
+        let skills = real_data.join("workflows");
+        let kept = real_data.join("workflows-kept");
+        fs::rename(&skills, &kept).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, &skills).unwrap();
+        let o = install(&agent_data.join("workflows"));
+        let e = String::from_utf8_lossy(&o.stdout).to_string();
+        assert!(!o.status.success() && e.contains("is a link"), "{e}");
+        assert!(!elsewhere.join("greet-the-team").exists());
+        fs::remove_file(&skills).unwrap();
+        fs::rename(&kept, &skills).unwrap();
+    }
+    // the resolved spelling is accepted as well as the link's
+    let o = install(&real_data.join("workflows"));
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let installed = real_data.join("workflows/greet-the-team");
+    assert!(installed.join("SKILL.md").is_file());
+    fs::remove_dir_all(&installed).unwrap();
+    let o = install(&agent_data.join("workflows"));
     // botport installs the copy it verified (no separate copy step for the bot to race)
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     assert!(agent_data

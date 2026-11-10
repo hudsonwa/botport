@@ -2563,6 +2563,16 @@ fn parse_ms(s: &str) -> Res<u64> {
 /// Where a bot's agent data is in its box.
 const AGENT_DATA: &str = "/home/box/agent-data";
 
+/// The box's agent data folder (`--agent-data`, default the box's own), resolved: in a real box the folder is itself a
+/// link. Called once per command; the pair keeps the result, so its reads and the `--install-to` check use one path. A folder that cannot be resolved
+/// (missing) is kept as given, so the error names it.
+fn agent_data(a: &Args) -> PathBuf {
+    let d = a
+        .path("agent-data")
+        .unwrap_or_else(|| PathBuf::from(AGENT_DATA));
+    fs::canonicalize(&d).unwrap_or(d)
+}
+
 /// The bot's setup: read from the box files (`--agent-id`), or from an export.
 fn read_source(bp: &BoxPair) -> Res<gmirror::GrokItems> {
     match &bp.agent {
@@ -3675,13 +3685,7 @@ fn one_pair(a: &Args, digest: bool) -> Res<BoxPair> {
         a.path("dir")
             .ok_or("--dir PAIRDIR (a copy of the pair's Drive folder) is required")?
     };
-    let agent = a.get("agent-id").map(|id| {
-        (
-            a.path("agent-data")
-                .unwrap_or_else(|| PathBuf::from(AGENT_DATA)),
-            id.to_string(),
-        )
-    });
+    let agent = a.get("agent-id").map(|id| (agent_data(a), id.to_string()));
     let from = match (a.path("from"), &agent) {
         (Some(_), Some(_)) => {
             return err("give --from EXPORT or --agent-id ID (box files), not both")
@@ -3750,6 +3754,8 @@ fn root_pairs(a: &Args, root: &Path) -> Res<Vec<BoxPair>> {
             root.display()
         ));
     }
+    // resolved once for the whole command: every pair reads, and installs into, this same folder
+    let data = agent_data(a);
     names
         .into_iter()
         .map(|pair| {
@@ -3757,11 +3763,7 @@ fn root_pairs(a: &Args, root: &Path) -> Res<Vec<BoxPair>> {
             let w = work.join(&pair);
             // the bot's agent id, one line: its setup is read from the box files
             let agent = match fs::read_to_string(w.join("agent-id")) {
-                Ok(id) => Some((
-                    a.path("agent-data")
-                        .unwrap_or_else(|| PathBuf::from(AGENT_DATA)),
-                    id.trim().to_string(),
-                )),
+                Ok(id) => Some((data.clone(), id.trim().to_string())),
                 Err(_) => None,
             };
             Ok(BoxPair {
@@ -4082,41 +4084,28 @@ fn apply_one(a: &Args, bp: &BoxPair) -> Res<Out> {
         // change it between the check and the install
         if let Some(to) = a.path("install-to") {
             let pkg = verified.ok_or("--install-to installs a skill: this item is not one")?;
-            // only into the box's own skills folder: the flag names exactly <agent data>/workflows (compared as written,
-            // no link followed), every folder from the agent data folder down is a real folder, and above it only the
-            // system's own links (owned by root) are passed through
-            let data = a
-                .path("agent-data")
-                .unwrap_or_else(|| PathBuf::from(AGENT_DATA));
-            let skills = data.join("workflows");
-            if !to.components().eq(skills.components()) {
-                return err("--install-to must be the box's skills folder (<agent data>/workflows); nothing installed");
+            // only into the box's own skills folder: the agent data folder is resolved once per command (in a real box
+            // it is itself a link) and the setup was read from that same resolved path; the flag must resolve to
+            // <resolved agent data>/workflows, and that folder must be a real folder (a link there is never followed)
+            let skills = bp
+                .agent
+                .as_ref()
+                .map_or_else(|| agent_data(a), |(d, _)| d.clone())
+                .join("workflows");
+            let m = fs::symlink_metadata(&skills).map_err(|_| {
+                format!(
+                    "--install-to: {} is missing; nothing installed",
+                    skills.display()
+                )
+            })?;
+            if m.file_type().is_symlink() {
+                return err("--install-to: the skills folder is a link; nothing installed");
             }
-            let mut q = PathBuf::new();
-            for c in skills.components() {
-                q.push(c);
-                let m = fs::symlink_metadata(&q).map_err(|_| {
-                    format!(
-                        "--install-to: {} is missing; nothing installed",
-                        q.display()
-                    )
-                })?;
-                if m.file_type().is_symlink() {
-                    #[cfg(unix)]
-                    let system = std::os::unix::fs::MetadataExt::uid(&m) == 0;
-                    #[cfg(not(unix))]
-                    let system = false;
-                    let above = q != data && data.starts_with(&q);
-                    if !(system && above) {
-                        return err(
-                            "--install-to: a folder on the way is a link; nothing installed",
-                        );
-                    }
-                } else if !m.is_dir() {
-                    return err(
-                        "--install-to: a part of the path is not a folder; nothing installed",
-                    );
-                }
+            if !m.is_dir() {
+                return err("--install-to: the skills folder is not a folder; nothing installed");
+            }
+            if fs::canonicalize(&to).ok().as_deref() != Some(skills.as_path()) {
+                return err("--install-to must be the box's skills folder (<agent data>/workflows); nothing installed");
             }
             // assembled under a temporary name inside the skills folder, then renamed into place (the folder is checked
             // by path just before: a residual stated in docs/SECURITY.md)
