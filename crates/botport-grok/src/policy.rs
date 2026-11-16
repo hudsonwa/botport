@@ -119,6 +119,22 @@ pub struct Policy {
     /// balanced: the owner answered "yes" once to an automatic launch.
     #[serde(default)]
     pub launch_remembered: bool,
+    /// Paid turns (ask, send) botport may spend in 7 days; None: no budget.
+    #[serde(default)]
+    pub usage_budget_week: Option<u64>,
+    /// Warn when this percent of `usage_budget_week` is spent.
+    #[serde(default = "default_warn_pct")]
+    pub usage_warn_pct: f64,
+    /// At the budget: refuse the paid call (exit 4) when on, warn when off.
+    #[serde(default = "default_hard_cap")]
+    pub usage_hard_cap: bool,
+}
+
+fn default_warn_pct() -> f64 {
+    80.0
+}
+fn default_hard_cap() -> bool {
+    true
 }
 
 impl Default for Policy {
@@ -333,6 +349,9 @@ impl Policy {
                 mcp_lifecycle_tools: false,
                 transports: all,
                 launch_remembered: false,
+                usage_budget_week: None,
+                usage_warn_pct: default_warn_pct(),
+                usage_hard_cap: default_hard_cap(),
             },
             Preset::Balanced => Policy {
                 preset: p,
@@ -349,6 +368,9 @@ impl Policy {
                 mcp_lifecycle_tools: true,
                 transports: all,
                 launch_remembered: false,
+                usage_budget_week: None,
+                usage_warn_pct: default_warn_pct(),
+                usage_hard_cap: default_hard_cap(),
             },
             Preset::Fast => Policy {
                 preset: p,
@@ -365,6 +387,9 @@ impl Policy {
                 mcp_lifecycle_tools: true,
                 transports: all,
                 launch_remembered: false,
+                usage_budget_week: None,
+                usage_warn_pct: default_warn_pct(),
+                usage_hard_cap: default_hard_cap(),
             },
         }
     }
@@ -528,6 +553,20 @@ impl Policy {
                     _ => return Err(bad()),
                 }
             }
+            "usage_budget_week" => {
+                self.usage_budget_week = match value {
+                    "off" | "none" => None,
+                    v => Some(v.parse().map_err(|_| bad())?),
+                }
+            }
+            "usage_warn_pct" => {
+                self.usage_warn_pct = value
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|p| (0.0..=100.0).contains(p))
+                    .ok_or_else(bad)?
+            }
+            "usage_hard_cap" => self.usage_hard_cap = onoff(value)?,
             "action_log" => self.action_log = onoff(value)?,
             "mcp_lifecycle_tools" => self.mcp_lifecycle_tools = onoff(value)?,
             "transports.debug-port" | "transports.debug_port" => {

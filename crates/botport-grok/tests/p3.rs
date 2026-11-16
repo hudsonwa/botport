@@ -510,3 +510,98 @@ fn fetch_with_a_bad_digest_leaves_no_file() {
     assert_eq!(e.file_fetch(MAIN, None, &s.0).exit, ExitCode::Other);
     assert_eq!(std::fs::read_dir(&s.0).unwrap().count(), 0);
 }
+
+// ------------------------------------------------------------------ turn ledger and weekly budget
+
+fn budget_engine(s: &Scratch, budget: Option<u64>, hard_cap: bool) -> Engine {
+    let c = clock();
+    let mut f = FakeTransport::load(&fx(), c.clone()).unwrap();
+    for _ in 0..4 {
+        f = f.with_turn("reply-ready");
+    }
+    let p = Policy {
+        usage_budget_week: budget,
+        usage_hard_cap: hard_cap,
+        ..Policy::default()
+    };
+    let mut e = engine_from(f, c, p, Caller::Cli { tty: false });
+    e.turns = botport_grok::log::TurnLedger::new(Some(s.0.join("grok-turns.jsonl")));
+    e.caller_tag = Some("demo-loop".into());
+    e
+}
+
+#[test]
+fn a_budget_of_3_refuses_the_4th_ask_with_exit_4() {
+    let s = Scratch::new("budget-3");
+    let mut e = budget_engine(&s, Some(3), true);
+    for i in 1..=3 {
+        let o = e.ask(MAIN, &format!("ping {i}"), &[], &opts());
+        assert_eq!(o.exit, ExitCode::Done, "ask {i}: {}", o.proof.line());
+    }
+    // reads, routine lists and usage are never counted
+    assert_eq!(e.read(MAIN, None, 0).exit, ExitCode::Done);
+    assert_eq!(e.routines(MAIN).exit, ExitCode::Done);
+    assert_eq!(e.usage().exit, ExitCode::Done);
+    assert_eq!(e.turns_this_week(), 3);
+    let o = e.ask(MAIN, "ping 4", &[], &opts());
+    assert_eq!(o.exit, ExitCode::Refused);
+    let line = o.proof.line();
+    assert!(
+        line.starts_with("FAIL:") && line.contains("usage_hard_cap"),
+        "{line}"
+    );
+    assert!(
+        line.contains("3 turns by botport this week, budget 3"),
+        "{line}"
+    );
+    assert_eq!(e.turns_this_week(), 3, "a refused ask spends no turn");
+    let log = std::fs::read_to_string(s.0.join("grok-turns.jsonl")).unwrap();
+    assert!(log
+        .lines()
+        .all(|l| l.contains("\"caller\":\"demo-loop\"") && l.contains("\"cmd\":\"send\"")));
+    assert!(!log.contains("ping"), "never message text");
+}
+
+#[test]
+fn hard_cap_off_warns_and_no_budget_never_refuses() {
+    let s = Scratch::new("budget-warn");
+    let mut e = budget_engine(&s, Some(1), false);
+    assert_eq!(e.ask(MAIN, "one", &[], &opts()).exit, ExitCode::Done);
+    let o = e.ask(MAIN, "two", &[], &opts());
+    assert_eq!(o.exit, ExitCode::Done);
+    assert!(
+        o.warnings
+            .iter()
+            .any(|w| w.contains("usage_budget_week reached")),
+        "{:?}",
+        o.warnings
+    );
+    let s2 = Scratch::new("budget-none");
+    let mut e = budget_engine(&s2, None, true);
+    for _ in 0..4 {
+        assert_eq!(e.send(MAIN, "hi", &[]).exit, ExitCode::Done);
+    }
+    assert_eq!(e.turns_this_week(), 4);
+}
+
+#[test]
+fn budget_policy_keys_parse() {
+    let mut p = Policy::default();
+    p.set("usage_budget_week", "3").unwrap();
+    p.set("usage_warn_pct", "50").unwrap();
+    p.set("usage_hard_cap", "off").unwrap();
+    assert_eq!(
+        (p.usage_budget_week, p.usage_warn_pct, p.usage_hard_cap),
+        (Some(3), 50.0, false)
+    );
+    p.set("usage_budget_week", "off").unwrap();
+    assert_eq!(p.usage_budget_week, None);
+    assert!(p.set("usage_warn_pct", "150").is_err());
+    // an older saved policy without the keys still loads, with no budget
+    let old = toml::to_string(&Policy::default())
+        .unwrap()
+        .replace("usage_hard_cap = true\n", "")
+        .replace("usage_warn_pct = 80.0\n", "");
+    let back: Policy = toml::from_str(&old).unwrap();
+    assert!(back.usage_hard_cap && back.usage_budget_week.is_none());
+}

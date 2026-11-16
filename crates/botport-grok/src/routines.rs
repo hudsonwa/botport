@@ -625,6 +625,43 @@ impl Engine {
     }
 }
 
+impl Engine {
+    /// Paid turns botport recorded in the last 7 days.
+    pub fn turns_this_week(&self) -> u64 {
+        self.turns.this_week(self.now())
+    }
+
+    /// The weekly turn budget before a paid call: a warning from `usage_warn_pct` of `usage_budget_week`; at the
+    /// budget, exit 4 naming `usage_hard_cap` (or a warning when it is off). No budget: no check.
+    pub(crate) fn budget_gate(&mut self, what: &str, warnings: &mut Vec<String>) -> R<()> {
+        let Some(budget) = self.policy.usage_budget_week else {
+            return Ok(());
+        };
+        let used = self.turns_this_week();
+        if used >= budget {
+            let msg = format!("{used} turns by botport this week, budget {budget}");
+            if self.policy.usage_hard_cap {
+                return Err(halt(
+                    ExitCode::Refused,
+                    what,
+                    format!("refused by usage_hard_cap: {msg}"),
+                    Some("botport grok usage; raise usage_budget_week, or botport grok policy set usage_hard_cap off (warns instead)"),
+                ));
+            }
+            warnings.push(format!("{msg} (usage_budget_week reached)"));
+        } else if budget > 0
+            && (used + 1) as f64 * 100.0 >= budget as f64 * self.policy.usage_warn_pct
+        {
+            warnings.push(format!(
+                "turn {} of a weekly budget of {budget} (usage_warn_pct at {}%)",
+                used + 1,
+                self.policy.usage_warn_pct
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

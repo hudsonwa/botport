@@ -41,3 +41,46 @@ impl ActionLog {
         let _ = crate::util::append_private(p, &line.to_string());
     }
 }
+
+/// The turn ledger: one JSON line per paid call botport made (`ask`, `send`, and the asks inside `routines add|run`)
+/// in `~/.botport/grok-turns.jsonl` (0600): when, which command, which caller tag and bot id. Never message text.
+/// Reads (`read`, `routines list`, `usage`, ...) are never recorded. The weekly budget counts these lines.
+#[derive(Default)]
+pub struct TurnLedger {
+    path: Option<PathBuf>,
+}
+
+/// One week in milliseconds: the budget counts the turns of the last 7 days.
+pub const WEEK_MS: u64 = 7 * 86_400_000;
+
+impl TurnLedger {
+    pub fn new(path: Option<PathBuf>) -> Self {
+        TurnLedger { path }
+    }
+    pub fn off() -> Self {
+        TurnLedger { path: None }
+    }
+    pub fn path(&self) -> Option<&PathBuf> {
+        self.path.as_ref()
+    }
+
+    pub fn record(&self, at_ms: u64, cmd: &str, caller: &str, bot_id: &str) {
+        let Some(p) = &self.path else { return };
+        let line = json!({"at_ms": at_ms, "cmd": cmd, "caller": scrub(caller), "bot_id": bot_id});
+        let _ = crate::util::append_private(p, &line.to_string());
+    }
+
+    /// Paid turns recorded in the 7 days up to `now_ms` (0 when off or unreadable).
+    pub fn this_week(&self, now_ms: u64) -> u64 {
+        let Some(p) = &self.path else { return 0 };
+        let Ok(s) = std::fs::read_to_string(p) else {
+            return 0;
+        };
+        let from = now_ms.saturating_sub(WEEK_MS);
+        s.lines()
+            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+            .filter_map(|v| v["at_ms"].as_u64())
+            .filter(|t| *t > from && *t <= now_ms)
+            .count() as u64
+    }
+}
