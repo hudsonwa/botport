@@ -97,6 +97,10 @@ pub struct FakeTransport {
     /// Review H2: what the app's own preview shows for a message key (the route taken when the attachment's
     /// path is not an app asset URL).
     previews: HashMap<String, Vec<u8>>,
+    /// Large-account fix: a virtualized sidebar (the pinned main bot plus a window over the rest); None: every row
+    /// is rendered. Shared counter of scroll steps taken by `open`.
+    sidebar: Option<super::sidebar::VirtualSidebar>,
+    sidebar_scrolls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
 fn read_json(p: &Path) -> TResult<Value> {
@@ -218,6 +222,8 @@ impl FakeTransport {
             bad_app_digest: false,
             no_app_digest: false,
             previews: HashMap::new(),
+            sidebar: None,
+            sidebar_scrolls: Default::default(),
         }
     }
 
@@ -227,6 +233,49 @@ impl FakeTransport {
             .and_then(|v| v.get("byAgent").and_then(Value::as_object).cloned())
             .map(|m| m.into_iter().collect())
             .unwrap_or_default()
+    }
+
+    /// Large account: add synthetic bots (copies of the second fixture bot, ids `…-0000000100xx`, names
+    /// `Bulk Bot NN`) until there are `total` bots.
+    pub fn with_bots(mut self, total: usize) -> Self {
+        let Some(tpl) = self.agents.get(1).cloned() else {
+            return self;
+        };
+        let mut n = 0;
+        while self.agents.len() < total {
+            let mut a = tpl.clone();
+            a["id"] = json!(format!("00000000-0000-4000-8000-0000001{n:05}"));
+            a["name"] = json!(format!("Bulk Bot {n:02}"));
+            a["hasUnread"] = json!(false);
+            a["awaitingUserResponse"] = Value::Null;
+            self.agents.push(a);
+            n += 1;
+        }
+        self
+    }
+
+    /// Large account: the sidebar draws the pinned main bot plus `window` of the other rows, from row `top`.
+    pub fn with_virtual_sidebar(mut self, window: usize, top: usize) -> Self {
+        let ids = self
+            .agents
+            .iter()
+            .skip(1)
+            .filter_map(|a| a.get("id").and_then(Value::as_str).map(str::to_string))
+            .collect();
+        self.sidebar = Some(super::sidebar::VirtualSidebar::new(ids, window, top));
+        self
+    }
+
+    /// Scroll steps the virtualized sidebar has taken (live counter, readable after the engine owns the fake).
+    pub fn sidebar_scrolls(&self) -> std::sync::Arc<std::sync::atomic::AtomicUsize> {
+        self.sidebar_scrolls.clone()
+    }
+
+    fn row_rendered(&self, i: usize, id: &str) -> bool {
+        match &self.sidebar {
+            None => true,
+            Some(sb) => i == 0 || sb.visible().iter().any(|v| v == id),
+        }
     }
 
     /// P3: set the weekly usage percent and whether usage is available.
@@ -730,6 +779,9 @@ impl Transport for FakeTransport {
         let mut out = vec![];
         for (i, a) in self.agents.iter().enumerate() {
             let id = a.get("id").and_then(Value::as_str).unwrap_or_default();
+            if !self.row_rendered(i, id) {
+                continue;
+            }
             let name = a.get("name").and_then(Value::as_str).unwrap_or_default();
             let unread = a.get("hasUnread").and_then(Value::as_bool).unwrap_or(false);
             let over = self.row_over.get(id);
@@ -768,6 +820,25 @@ impl Transport for FakeTransport {
             }
         }
         Ok(out)
+    }
+
+    /// With a virtualized sidebar, select the bot as the debug port does: scroll until its row renders.
+    fn open(&mut self, id: &str) -> TResult<()> {
+        if let Some(sb) = &mut self.sidebar {
+            let first = self
+                .agents
+                .first()
+                .and_then(|a| a.get("id"))
+                .and_then(Value::as_str);
+            if first != Some(id) {
+                let before = sb.scrolls;
+                let r = super::sidebar::scroll_to_row(sb, id);
+                self.sidebar_scrolls
+                    .fetch_add(sb.scrolls - before, std::sync::atomic::Ordering::SeqCst);
+                r?;
+            }
+        }
+        Ok(())
     }
 
     fn reconnect(&mut self) -> TResult<()> {

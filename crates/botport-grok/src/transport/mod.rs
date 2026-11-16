@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 pub mod cdp;
 pub mod fake;
+pub mod sidebar;
 pub mod ws;
 
 /// Right after a launch the page target is up and `document.readyState` is complete, but the app has not yet

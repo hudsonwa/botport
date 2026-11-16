@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-16
+
+### Fixed
+- `botport grok bots` no longer refuses large accounts. The app virtualizes its sidebar (64 bots, about 15 rows
+  drawn), so the second-route check now passes when the rendered rows are a consistent subset of the app's list
+  (every rendered row is a listed bot by id and name; none missing from the list) and reports the counts.
+- Selecting a bot (read / ask / wait / send) scrolls the app's own sidebar scroller until the bot's row is rendered,
+  re-measuring after each step, then clicks with the same hit-test checks as before (M2). It fails clearly if the
+  row never appears.
+
 ## [0.3.0] - 2026-11-16
 
 ### Added

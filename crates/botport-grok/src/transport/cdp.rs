@@ -614,6 +614,9 @@ impl CdpTransport {
         let target = format!(
             r#"(() => {{ const els = [...document.querySelectorAll('[data-agent-id="{id}"]')]; return els.find(e => e.getAttribute('aria-label')) || els[0]; }})()"#
         );
+        // The sidebar is virtualized (live: 64 bots, about 15 rows drawn): scroll the app's own sidebar scroller
+        // until the row is rendered, re-measuring after each step, then hit-test and click as before (M2).
+        super::sidebar::scroll_to_row(&mut CdpSidebar(self), id)?;
         let p = self.eval_json(&body)?;
         let Some((x, y)) = click_point(&p)? else {
             return Err(TransportError::App(
@@ -621,6 +624,37 @@ impl CdpTransport {
             ));
         };
         self.checked_click(&target, x, y)
+    }
+}
+
+/// The sidebar's scroller: the nearest scrollable ancestor of a rendered bot row (reading and scrolling only).
+/// Rows outside the scroller (the pinned main bot) are skipped: the first row with a scrollable ancestor decides.
+const SIDEBAR_SCROLL_JS: &str = r#"(step) => { const rows = [...document.querySelectorAll('[data-agent-id]')]; if (!rows.length) return __json(null);
+  const up = (r) => { let s = r.parentElement; while (s && !(s.scrollHeight > s.clientHeight + 4 && /(auto|scroll)/.test(getComputedStyle(s).overflowY))) s = s.parentElement; return s; };
+  let s = null; for (const r of rows) { s = up(r); if (s) break; }
+  if (!s) return __json(false); const before = s.scrollTop;
+  s.scrollTop = step === 'top' ? 0 : before + Math.max(40, s.clientHeight * 0.7); return __json(s.scrollTop !== before); }"#;
+
+struct CdpSidebar<'a>(&'a mut CdpTransport);
+
+impl super::sidebar::Sidebar for CdpSidebar<'_> {
+    fn rendered(&mut self, id: &str) -> TResult<bool> {
+        let v = self.0.eval_json(&format!(
+            r#"(() => __json(!!document.querySelector('[data-agent-id="{id}"]')))()"#
+        ))?;
+        Ok(v.as_bool() == Some(true))
+    }
+    fn scroll(&mut self, step: super::sidebar::Scroll) -> TResult<bool> {
+        let arg = match step {
+            super::sidebar::Scroll::Top => "top",
+            super::sidebar::Scroll::Down => "down",
+        };
+        let v = self
+            .0
+            .eval_json(&format!("({SIDEBAR_SCROLL_JS})('{arg}')"))?;
+        // let the virtualized list render the rows for the new offset before re-measuring
+        std::thread::sleep(Duration::from_millis(120));
+        Ok(v.as_bool() == Some(true))
     }
 }
 

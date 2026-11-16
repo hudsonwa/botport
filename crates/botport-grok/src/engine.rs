@@ -445,32 +445,29 @@ impl Engine {
             let proof = match rows {
                 None => Proof::pass(format!("{} bots", bots.len()), "self-check", "self-check"),
                 Some(rows) => {
-                    let mut a: Vec<(&str, &str)> = shown
+                    // The app virtualizes the sidebar (live: 64 bots, about 15 rows drawn), so the rendered rows
+                    // must be a consistent subset of the list: each one a listed bot by id and name.
+                    let a: Vec<(&str, &str)> = shown
                         .iter()
                         .map(|b| (b.id.as_str(), b.name.as_str()))
                         .collect();
-                    let mut b: Vec<(&str, &str)> = rows
+                    let b: Vec<(&str, &str)> = rows
                         .iter()
                         .map(|r| (r.id.as_str(), r.name.as_str()))
                         .collect();
-                    a.sort();
-                    b.sort();
-                    if a != b {
-                        return Err(halt(
-                            ExitCode::Other,
-                            &format!("{} bots", bots.len()),
-                            format!(
-                                "the sidebar shows {} rows that differ from the app's list",
-                                rows.len()
-                            ),
-                            None,
-                        ));
+                    match crate::transport::sidebar::check_rows(&a, &b) {
+                        Ok(c) => {
+                            Proof::pass(format!("{} bots", bots.len()), c.check_line(), "dom-rows")
+                        }
+                        Err(why) => {
+                            return Err(halt(
+                                ExitCode::Other,
+                                &format!("{} bots", bots.len()),
+                                why,
+                                None,
+                            ))
+                        }
                     }
-                    Proof::pass(
-                        format!("{} bots", bots.len()),
-                        "matches sidebar",
-                        "dom-rows",
-                    )
                 }
             };
             Ok(Outcome::ok(bots, proof))

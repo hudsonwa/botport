@@ -633,3 +633,46 @@ fn proof_lines_never_carry_secret_shapes() {
     assert!(!p.line().contains("crsr_"));
     assert!(p.line().contains("[secret]"));
 }
+
+// ---------------------------------------------------------------- large account (virtualized sidebar)
+
+fn eng_large(top: usize) -> (Engine, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    let c = clock();
+    let f = FakeTransport::load(&fx(), c.clone())
+        .unwrap()
+        .with_bots(64)
+        .with_virtual_sidebar(14, top);
+    let n = f.sidebar_scrolls();
+    (
+        engine_from(f, c, Policy::default(), Caller::Cli { tty: false }),
+        n,
+    )
+}
+
+#[test]
+fn bots_passes_when_the_sidebar_renders_a_consistent_subset() {
+    let (mut e, _) = eng_large(0);
+    let o = e.bots();
+    assert_eq!(o.exit, ExitCode::Done, "{}", o.proof.line());
+    assert_eq!(o.value.unwrap().len(), 64);
+    assert_eq!(
+        o.proof.line(),
+        "PASS: 64 bots; 15 of 64 rendered rows match (virtualized sidebar)"
+    );
+}
+
+#[test]
+fn read_scrolls_the_sidebar_to_an_off_screen_bot() {
+    let (mut e, n) = eng_large(0);
+    let o = e.read("Bulk Bot 50", None, 5);
+    assert_eq!(o.exit, ExitCode::Done, "{}", o.proof.line());
+    assert!(n.load(std::sync::atomic::Ordering::SeqCst) > 1);
+}
+
+#[test]
+fn read_scrolls_back_up_to_a_bot_above_the_window() {
+    let (mut e, n) = eng_large(49);
+    let o = e.read("Ledger Bot", None, 5);
+    assert_eq!(o.exit, ExitCode::Done, "{}", o.proof.line());
+    assert!(n.load(std::sync::atomic::Ordering::SeqCst) >= 1);
+}
