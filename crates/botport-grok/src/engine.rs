@@ -2,7 +2,7 @@
 //! loop, stop, watch, and the PASS/FAIL line of every command. Each PASS is checked by a route other than the
 //! one that did the work (the sidebar DOM rows, or the transcript), or says `self-check`.
 use crate::clock::SharedClock;
-use crate::log::ActionLog;
+use crate::log::{ActionLog, TurnLedger};
 use crate::model::*;
 use crate::parse;
 use crate::policy::{Action, Caller, Decision, Policy, Target};
@@ -193,6 +193,10 @@ pub struct Engine {
     caps: Vec<Option<Capabilities>>,
     pub policy: Policy,
     pub log: ActionLog,
+    /// Every paid call (ask, send) is recorded here; the weekly budget counts it.
+    pub turns: TurnLedger,
+    /// Who asked for the paid call (`--tag`, else `cli` / `mcp`), recorded in the turn ledger.
+    pub caller_tag: Option<String>,
     pub clock: SharedClock,
     pub caller: Caller,
     pub trust_version: bool,
@@ -226,6 +230,8 @@ impl Engine {
             caps: vec![None; n],
             policy,
             log: ActionLog::off(),
+            turns: TurnLedger::off(),
+            caller_tag: None,
             clock,
             caller,
             trust_version: false,
@@ -602,6 +608,7 @@ impl Engine {
         self.decide(what, Action::Send, Some(&bot))?;
         self.version_gate(what, warnings)?;
         self.usage_gate(what, warnings)?;
+        self.budget_gate(what, warnings)?;
         self.refuse_if_approval(what, &bot)?;
         let id = bot.id.clone();
         let key = self
@@ -610,6 +617,15 @@ impl Engine {
                 t.send(&id, msg, files)
             })
             .map_err(|e| terr(what, e))?;
+        // the turn is spent once the message is in, whatever the check below finds
+        let tag = self.caller_tag.clone().unwrap_or_else(|| {
+            match self.caller {
+                Caller::Cli { .. } => "cli",
+                Caller::Mcp { .. } => "mcp",
+            }
+            .to_string()
+        });
+        self.turns.record(self.now(), what, &tag, &id);
         let seen = self
             .read_raw(what, &id, None, 0)?
             .into_iter()

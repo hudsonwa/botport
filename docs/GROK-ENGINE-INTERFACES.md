@@ -207,6 +207,9 @@ impl Policy { fn preset(Preset) -> Self; fn decide(&self, &Caller, &Action, Opti
 | action_log | on | on | on (`--no-log` / `action_log off`) |
 | secrets_to_grok | by reference | by reference | values with `--allow-secret-values` |
 | usage_check | refuse ≥ 90 % | warn ≥ 80 % | warn ≥ 90 % (P3 wires the check) |
+| usage_budget_week | none | none | none (paid turns botport may spend in 7 days) |
+| usage_warn_pct | 80 | 80 | 80 (warn at this % of the budget) |
+| usage_hard_cap | on | on | on (at the budget: exit 4; off: warn) |
 | unknown_version_writes | blocked | after canary | after canary or `--trust-version` |
 | mcp_lifecycle_tools | off | on, never bot-callable | on, never bot-callable |
 
@@ -368,6 +371,12 @@ botport grok launch --for DUR [--when-idle MIN]                 issue 02, see §
   engine. `warn` presets add a `warnings` entry at the threshold or when `available` is false; `refuse` (careful)
   exits 4 `refused by usage_check`. A failed read adds a warning; a transport without usage skips it. The summary's
   `dashboardUrl` (holds the account id) is never read.
+- **Turn ledger and budget** (`Engine::budget_gate`): every paid call that got its message in (send, ask, and the
+  asks inside routine add/run/remove-via-bot) appends `{at_ms, cmd, caller, bot_id}` to `~/.botport/grok-turns.jsonl`
+  (0600; kept under `--no-log`; caller from `--tag`, `BOTPORT_CALLER`, else `cli`/`mcp`). Reads, routine lists and
+  `usage` are never recorded. With `usage_budget_week` set, a paid call warns from `usage_warn_pct` of it and, once
+  the last 7 days hold the budget, exits 4 `refused by usage_hard_cap` (a warning when `usage_hard_cap off`).
+  `usage` prints `N turns by botport this week, budget M`.
 - **Needs-input signal 3** is wired on the debug port: when the open chat holds a pending approval card that the
   flags do not explain, `listTeamBotAutomations` is read and an open run makes it needs-input (`snapshot_with`).
 - Floor 6 allowlist unchanged (all P3 calls were already listed). `CdpTransport` errors now carry the app's thrown

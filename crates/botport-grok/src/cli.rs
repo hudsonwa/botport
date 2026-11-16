@@ -2,7 +2,7 @@
 use crate::clock::{FakeClock, SharedClock, SystemClock};
 use crate::engine::{Engine, ExitCode, Outcome, Proof, WaitOpts};
 use crate::lifecycle::{AppHost, Lifecycle, MacHost, PortFile};
-use crate::log::ActionLog;
+use crate::log::{ActionLog, TurnLedger};
 use crate::mcp::{outcome_json, wrap};
 use crate::model::*;
 use crate::policy::{Action, Caller, Decision, Policy, Preset};
@@ -57,7 +57,8 @@ pub const USAGE: &str = "botport grok <command> [--json] [--quiet] [--transport 
   routines <bot> add --name N --schedule \"0 9 * * 1\" [--tz UTC] --prompt P [--disabled]   asks the bot
   routines <bot> remove <routine> [--yes] exact id, slug or name only; the app's menu, else asks the bot
   routines <bot> run <routine>            asks the bot to run it now; PASS when a new run is listed
-  usage                                   weekly Grok usage (checked before every send/ask/routine run)
+  usage                                   weekly Grok usage, and the paid turns botport spent this week (ledger)
+                                          policy: usage_budget_week N, usage_warn_pct P, usage_hard_cap on|off
   files <bot> [list]                      the bot's files
   files <bot> download [NAME...] [--out DIR]   save (all when no NAME); never overwrites; sha256 checked
   files <bot> fetch [NAME|KEY] [--out DIR]    save a file the bot sent in chat (newest when no NAME); never overwrites
@@ -65,7 +66,7 @@ pub const USAGE: &str = "botport grok <command> [--json] [--quiet] [--transport 
   files <bot> delete NAME [--yes]         exact name only
 exit: 0 done, 1 other failure, 2 timeout (still working), 3 waiting for you, 4 refused by policy, 5 app/transport unavailable
 fake transport (offline, replays fixtures): --transport fake --fixtures DIR [--turn NAME]... [--scenario idle|awaiting|routine-approval]
-common: --trust-version  --no-log  --yes";
+common: --trust-version  --no-log  --yes  --tag NAME (caller tag in the turn ledger; or BOTPORT_CALLER)";
 
 const VALUED: &[&str] = &[
     "transport",
@@ -87,6 +88,7 @@ const VALUED: &[&str] = &[
     "prompt",
     "out",
     "when-idle",
+    "tag",
 ];
 const FLAGS: &[&str] = &[
     "json",
@@ -419,6 +421,13 @@ pub fn build_engine(a: &Args, policy: &Policy, caller: Caller) -> Result<Engine,
     e.trust_version = a.has("trust-version");
     e.canary_dir = Some(botport_home().join("canary"));
     e.log = log;
+    // the turn ledger is kept whatever --no-log says: the weekly budget counts it
+    e.turns = TurnLedger::new(Some(botport_home().join("grok-turns.jsonl")));
+    e.caller_tag = a
+        .get("tag")
+        .map(str::to_string)
+        .or_else(|| std::env::var("BOTPORT_CALLER").ok())
+        .filter(|t| !t.trim().is_empty());
     e.asker = tty_asker();
     Ok(e)
 }
@@ -1016,22 +1025,33 @@ fn cmd_p3(a: &Args, out: &Out, policy: &Policy) -> u8 {
     match (cmd, sub) {
         ("usage", _) => {
             let o = e.usage();
-            let j = outcome_json(&o, None);
+            let turns = e.turns_this_week();
+            let budget = e.policy.usage_budget_week;
+            let mut j = outcome_json(&o, None);
+            j["botport_turns_week"] = json!(turns);
+            j["usage_budget_week"] = json!(budget);
+            let ledger = format!(
+                "{turns} turns by botport this week, budget {}",
+                budget.map_or("none".to_string(), |b| b.to_string())
+            );
             out.emit(&o, j, |u| {
-                vec![format!(
-                    "{}% used  plan {}  resets {}  on-demand {} cents{}  available {}",
-                    u.percent_used,
-                    if u.plan.is_empty() { "-" } else { &u.plan },
-                    u.resets_at
-                        .as_deref()
-                        .map(crate::util::local_from_rfc3339)
-                        .unwrap_or_else(|| "-".into()),
-                    u.on_demand_cents,
-                    u.on_demand_limit_cents
-                        .map(|c| format!(" of {c}"))
-                        .unwrap_or_default(),
-                    u.available
-                )]
+                vec![
+                    ledger.clone(),
+                    format!(
+                        "{}% used  plan {}  resets {}  on-demand {} cents{}  available {}",
+                        u.percent_used,
+                        if u.plan.is_empty() { "-" } else { &u.plan },
+                        u.resets_at
+                            .as_deref()
+                            .map(crate::util::local_from_rfc3339)
+                            .unwrap_or_else(|| "-".into()),
+                        u.on_demand_cents,
+                        u.on_demand_limit_cents
+                            .map(|c| format!(" of {c}"))
+                            .unwrap_or_default(),
+                        u.available
+                    ),
+                ]
             })
         }
         ("routines", "list") => {
