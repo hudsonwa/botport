@@ -146,7 +146,13 @@ botport mirror digest-items|apply-pack|recent --root R [--pair P]... [other flag
   the owner does: create one Mirror bot per account in the app, if there is none yet, and paste the charter
   (`botport mirror setup --print-charter` prints it too) themselves; then ask it, in its chat, to add the pair, with
   the brief and the box archive attached. The Mirror bot reads each bot's setup from the box files.
-- **Grok box** (the routine's steps: [AGENT-MIRROR.md](AGENT-MIRROR.md)). Both box commands read the bot's setup from
+- **Push, not a routine** (`mirror push --bot NAME [--pair P]... [--dry-run]`, on the Mac, e.g. every 15 min from
+  launchd or cron): hashes each pair's config, mirror state, on-disk `HEAD` and Hermes digest, and only when one
+  changed since the last answered push sends the Mirror bot ONE `botport grok ask` naming every changed pair (through
+  the Grok engine: its policy, usage check and action log). No change: no Grok turn. A failed ask is not marked
+  pushed. Signatures in `$XDG_CONFIG_HOME/botport/mirror/push-stamps.json`. A Grok routine stays an opt-in: it costs a
+  bot turn on every run, also when nothing changed (every 15 min is about 672 turns a week).
+- **Grok box** (the run's steps: [AGENT-MIRROR.md](AGENT-MIRROR.md)). Both box commands read the bot's setup from
   the box files with `--agent-id ID` (`--agent-data DIR`, default `/home/box/agent-data`: the name from
   `agents/<ID>/profile.json`, never through a link), or from an export with `--from` (the manual option). The box
   files hold no instructions, routines or connectors, and the box's skills belong to all its bots together (read, from

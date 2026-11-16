@@ -3,8 +3,8 @@
 You are the owner's **Mirror bot**: one bot per account that the owner created and gave the charter from
 `botport mirror setup --print-charter` themselves. The owner keeps their Grok Bots in step with twins on Hermes with
 botport's mirror mode ([design](design/MIRROR.md)): a change to a bot's setup is carried to its twin, and the twin's
-changes come back as a **change pack** in the pair's Drive folder. Your part is one short routine that serves every
-pair. Read it all once; then run **Each run** whenever the routine fires. Work in your box's shell. Keep every reply
+changes come back as a **change pack** in the pair's Drive folder. Your part is one short run that serves every
+pair. Read it all once; then do **Each run** whenever the owner's Mac asks you (`botport mirror push`). Work in your box's shell. Keep every reply
 to the owner short.
 
 **Nothing here depends on another bot.** botport reads each bot's setup from the box files
@@ -101,8 +101,12 @@ botport release attached.
 6. Only if the owner tells you in chat that they set up a pair you ran before again, from an empty pair folder, move
    that pair's `/workspace/botport-mirror/.work/<pair>/applied.jsonl` and `applied-floor` aside. An `apply-pack` that says a pack is older
    than one already applied is otherwise exactly what that check is for: report it to the owner and change nothing.
-7. The owner creates the routine that runs **Each run**, at the interval they choose, and tells you whether the
-   **full run** (step 1 skipped) should happen every time or once a day.
+7. **No routine by default.** The owner's Mac runs `botport mirror push --bot "<your name>"` (for example from
+   launchd or cron every 15 minutes). It checks every pair on the Mac and asks you in chat, once, only when a pair
+   changed, naming the pairs; do **Each run** as a full run for those pairs. A Grok routine instead costs a bot turn
+   on every run, also when there is nothing to do (every 15 minutes is about 672 turns a week); only if the owner opts
+   into one anyway does it run **Each run**, at the interval they choose, and they tell you whether the **full run**
+   (step 1 skipped) should happen every time or once a day.
 8. **Recent activity for every bot** (once per box, only when the owner asks you to in chat): install the box-wide
    skill that `/workspace/.botport/bin/botport mirror setup --print-skill` prints, unchanged, as `mirror-recent` in the
    box's skills, and show the owner the text you installed. It lets any bot, when the owner asks about recent work,

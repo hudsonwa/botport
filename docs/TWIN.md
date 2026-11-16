@@ -220,7 +220,7 @@ Mirror bot (`state:pairs/<pair>.brief/`), the pair key's location and the charte
 3. In the Mirror bot's chat, attach `AGENT-MIRROR.md` and the pair key, and ask it to add the pair for the bot (by its
    agent id); because it is a twin, it uses `pair-skills`, so only the skills this pair installed come back, never
    another bot's.
-4. Press **Test** on the Mirror bot's routine, then sync.
+4. Sync, then run `botport mirror push --bot "<your Mirror bot>"`: it asks the Mirror bot once, only when a pair changed.
 ```json
 {"pair_id":"acme-helper","connected":true,"briefs":"state:pairs/acme-helper.brief","pair_key":"state:pairs/acme-helper.key",
  "steps":[{"id":"mirror_bot","what":"…"},{"id":"share_folder","what":"…"},{"id":"add_pair","what":"…"},{"id":"test","what":"…"}],

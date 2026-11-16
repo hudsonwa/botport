@@ -694,9 +694,172 @@ pub fn run(a: &Args) -> Res<Out> {
         Some("applied") => applied(a),
         Some("recent") => recent(a),
         Some("doctor") => doctor(a),
+        Some("push") => push(a),
         Some(s) => err(format!("unknown mirror command {s:?} (try --help)")),
         None => err("mirror needs a command (try --help)"),
     }
+}
+
+/// What `mirror push` compares: the pair config, the mirror state (a new pack, a digest exchange or a pick changes
+/// it), the pair folder's HEAD when it is on disk, and the Hermes activity digest. All read on this Mac, no Grok turn.
+fn push_signature(cfg_bytes: &[u8], c: &Config) -> String {
+    let mut buf = cfg_bytes.to_vec();
+    let mut add = |p: PathBuf| {
+        buf.extend_from_slice(b"\0");
+        buf.extend_from_slice(&fs::read(p).unwrap_or_default());
+    };
+    add(c.profile_dir.join(STATE_FILE));
+    add(c.profile_dir.join("botport/digest-hermes.md"));
+    if let Some(d) = &c.drive_dir {
+        add(d.join("HEAD"));
+    }
+    // a short prefix: enough to see a change, and never mistaken for a key by the secret guard
+    sha256_hex(&buf)[..16].to_string()
+}
+
+/// `mirror push --bot NAME [--pair P]... [--dry-run] [--timeout 600]`: the Mac checks every pair (or the named ones)
+/// for a change since the last push and, only when one changed, sends the Mirror bot ONE `botport grok ask` naming
+/// every changed pair. No change: no Grok turn at all. Replaces a Grok routine, which costs a bot turn on every run
+/// (every 15 min is about 672 turns a week) even when nothing changed.
+fn push(a: &Args) -> Res<Out> {
+    let bot = a
+        .get("bot")
+        .ok_or("--bot NAME is required (your Mirror bot, e.g. \"Sync Bot\")")?;
+    let names: Vec<String> = if a.all("pair").is_empty() {
+        let mut v: Vec<String> = fs::read_dir(config_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "toml"))
+            .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+            .collect();
+        v.sort();
+        v
+    } else {
+        a.all("pair").to_vec()
+    };
+    if names.is_empty() {
+        return err("no mirror pairs configured: run botport mirror init");
+    }
+    let stamps_path = config_dir().join("push-stamps.json");
+    let mut stamps: BTreeMap<String, String> = fs::read(&stamps_path)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default();
+    let mut changed: Vec<(String, String)> = vec![];
+    for pair in &names {
+        engine::valid_name(pair)?;
+        let p = config_dir().join(format!("{pair}.toml"));
+        let bytes = fs::read(&p)
+            .map_err(|_| format!("no mirror config for {pair:?} at {}", p.display()))?;
+        let c: Config = toml::from_str(&String::from_utf8_lossy(&bytes))
+            .map_err(|e| format!("{}: {e}", p.display()))?;
+        let sig = push_signature(&bytes, &c);
+        if stamps.get(pair) != Some(&sig) {
+            changed.push((pair.clone(), sig));
+        }
+    }
+    let list = changed.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>();
+    let mut j = json!({"pairs": names, "changed": list, "bot": bot, "turns": 0});
+    if changed.is_empty() {
+        return Ok(Out {
+            code: 0,
+            lines: vec![format!(
+                "mirror push: nothing changed in {} pair(s); no Grok turn",
+                names.len()
+            )],
+            json: j,
+        });
+    }
+    if a.has("dry-run") {
+        return Ok(Out {
+            code: 0,
+            lines: vec![format!(
+                "mirror push (dry run): would ask {bot} once for {} pair(s): {}",
+                list.len(),
+                list.join(", ")
+            )],
+            json: j,
+        });
+    }
+    let msg = format!(
+        "botport mirror push: this Mac has changes for pair(s) {}. Do \"Each run\" from your mirror brief now, as a \
+         full run, for these pairs only, and reply with one short line per pair.",
+        list.join(", ")
+    );
+    let (code, line) = ask_mirror_bot(a, bot, &msg)?;
+    j["turns"] = json!(1);
+    j["exit"] = json!(code);
+    let mut lines = vec![format!(
+        "mirror push: asked {bot} once for {} pair(s): {}",
+        list.len(),
+        list.join(", ")
+    )];
+    lines.push(line);
+    if code == 0 {
+        for (p, sig) in changed {
+            stamps.insert(p, sig);
+        }
+        let b = serde_json::to_vec_pretty(&stamps).map_err(|e| e.to_string())?;
+        write_private(&config_dir(), "push-stamps.json", &b)?;
+    } else {
+        lines.push("  not marked as pushed: the next push asks again".into());
+    }
+    Ok(Out {
+        code,
+        lines,
+        json: j,
+    })
+}
+
+/// One `botport grok ask` to the Mirror bot through the Grok engine (its policy, usage check and action log).
+/// `--grok-fixtures DIR` (tests) runs it on the offline fake transport.
+#[cfg(feature = "grok")]
+fn ask_mirror_bot(a: &Args, bot: &str, msg: &str) -> Res<(u8, String)> {
+    use botport_grok::engine::WaitOpts;
+    use botport_grok::policy::Caller;
+    let mut raw = vec!["ask".to_string(), bot.to_string()];
+    if let Some(fx) = a.get("grok-fixtures") {
+        raw.extend(
+            [
+                "--transport",
+                "fake",
+                "--fixtures",
+                fx,
+                "--turn",
+                "reply-ready",
+            ]
+            .map(String::from),
+        );
+    }
+    let ga = botport_grok::cli::Args::parse(&raw)?;
+    let policy = botport_grok::Policy::load(&botport_grok::util::botport_home())?;
+    let mut e = match botport_grok::cli::build_engine(&ga, &policy, Caller::Cli { tty: false }) {
+        Ok(e) => e,
+        Err(o) => return Ok((o.exit.code(), o.proof.line())),
+    };
+    let timeout_s = match a.get("timeout") {
+        Some(t) => t
+            .parse()
+            .map_err(|_| format!("--timeout: bad number {t:?}"))?,
+        None => 600.0,
+    };
+    let o = e.ask(
+        bot,
+        msg,
+        &[],
+        &WaitOpts {
+            timeout_s,
+            settle_s: 8.0,
+        },
+    );
+    Ok((o.exit.code(), o.proof.line()))
+}
+
+#[cfg(not(feature = "grok"))]
+fn ask_mirror_bot(_: &Args, _: &str, _: &str) -> Res<(u8, String)> {
+    err("mirror push needs botport built with the grok feature")
 }
 
 /// `mirror init --pair P (--profile NAME [--hermes-home DIR] | --profile-dir DIR) --transport local|drive|hybrid

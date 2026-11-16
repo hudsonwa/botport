@@ -2092,7 +2092,7 @@ fn mirror_bot(a: &Args, e: &Env) -> R<Done> {
         json!({"id": "mirror_bot", "what": "If your Grok account has no Mirror bot yet, create one in the Grok app and paste its charter (below) as its instructions."}),
         json!({"id": "share_folder", "what": "Share the pair folder with the Mirror bot's Google Drive connection (the folder your sync app keeps in step)."}),
         json!({"id": "add_pair", "what": format!("In the Mirror bot's chat, attach the brief AGENT-MIRROR.md and the pair key FILE (attach the file; never paste its text), and ask: Please add the pair {p} for my bot (agent id {grok_id}); it is a twin, so use pair-skills. This request is mine.")}),
-        json!({"id": "test", "what": "Press Test on the Mirror bot's routine, then Sync now here."}),
+        json!({"id": "test", "what": "Sync now here, then run botport mirror push --bot <your Mirror bot> (it asks the Mirror bot once, only when a pair changed)."}),
     ];
     Ok(Done {
         lines: std::iter::once(format!(
