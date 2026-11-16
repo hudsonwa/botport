@@ -188,7 +188,8 @@ fn main() -> ExitCode {
     if first == Some("grok")
         && raw
             .get(1)
-            .is_some_and(|s| botport_grok::cli::COMMANDS.contains(&s.as_str()))
+            // `grok help` too: the engine prints its usage (as `grok --help` does) instead of an unknown command
+            .is_some_and(|s| s == "help" || botport_grok::cli::COMMANDS.contains(&s.as_str()))
     {
         return ExitCode::from(botport_grok::cli::main(&raw[1..]));
     }
