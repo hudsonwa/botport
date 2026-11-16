@@ -439,3 +439,41 @@ mod tests {
         assert!(super::check_accept(key, None).is_err());
     }
 }
+
+/// Property test: the HTTP body reader (DevTools `/json/version`, `/json/list`) never panics on arbitrary bytes
+/// and returns exactly the declared body when one is declared (deterministic xorshift cases, no dependency).
+#[cfg(test)]
+mod http_body_fuzz {
+    use std::io::Cursor;
+
+    fn rng(s: &mut u64) -> u64 {
+        *s ^= *s << 13;
+        *s ^= *s >> 7;
+        *s ^= *s << 17;
+        *s
+    }
+
+    #[test]
+    fn arbitrary_responses_never_panic_and_declared_bodies_round_trip() {
+        let atoms: [&[u8]; 12] = [
+            b"HTTP/1.1 200 OK\r\n", b"Content-Length: ", b"content-length:", b"7", b"99999999999999999999", b"\r\n",
+            b"\n", b"{\"a\":1}", b":", b" ", b"\xff\xfe", b"Content-Length: 18446744073709551615\r\n",
+        ];
+        let mut s = 0x5eed_u64;
+        for _ in 0..20_000 {
+            let mut buf = Vec::new();
+            for _ in 0..(rng(&mut s) % 12) {
+                buf.extend_from_slice(atoms[(rng(&mut s) % atoms.len() as u64) as usize]);
+            }
+            let _ = super::read_http_body(&mut Cursor::new(buf));
+        }
+        for _ in 0..2_000 {
+            let n = (rng(&mut s) % 200) as usize;
+            let body: String = (0..n).map(|_| (b'a' + (rng(&mut s) % 26) as u8) as char).collect();
+            let raw = format!("HTTP/1.1 200 OK\r\nContent-Length: {n}\r\n\r\n{body}TRAILING-KEEPALIVE");
+            assert_eq!(super::read_http_body(&mut Cursor::new(raw)).unwrap(), body);
+            let raw = format!("HTTP/1.1 200 OK\r\n\r\n{body}");
+            assert_eq!(super::read_http_body(&mut Cursor::new(raw)).unwrap(), body);
+        }
+    }
+}
