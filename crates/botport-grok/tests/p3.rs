@@ -605,3 +605,42 @@ fn budget_policy_keys_parse() {
     let back: Policy = toml::from_str(&old).unwrap();
     assert!(back.usage_hard_cap && back.usage_budget_week.is_none());
 }
+
+// ------------------------------------------------------------------ routines audit
+
+#[test]
+fn audit_lists_a_15_minute_reminder_at_672_runs_and_flags_it_when_unused() {
+    let (f, c) = fake();
+    let f = f.with_routine(BOT2, "Demo Reminder", "*/15 * * * *", true);
+    let mut e = engine(f, c);
+    let before = e.read(BOT2, None, 0).value.unwrap().len();
+    let o = e.routines_audit(&[]);
+    assert_eq!(o.exit, ExitCode::Done, "{}", o.proof.line());
+    let rows = o.value.unwrap();
+    let r = rows.iter().find(|r| r.name == "Demo Reminder").unwrap();
+    assert_eq!((r.runs_per_week, r.est_turns_week), (Some(672), Some(672)));
+    assert!(r.flag.is_some() && !r.used);
+    assert!(
+        o.proof.line().contains("turns a week"),
+        "{}",
+        o.proof.line()
+    );
+    // a pair (or --used-by) that names it clears the flag
+    let o = e.routines_audit(&["demo reminder".into()]);
+    let rows = o.value.unwrap();
+    let r = rows.iter().find(|r| r.name == "Demo Reminder").unwrap();
+    assert!(r.used && r.flag.is_none());
+    // lists only: no message was sent to the bot
+    assert_eq!(e.read(BOT2, None, 0).value.unwrap().len(), before);
+}
+
+#[test]
+fn audit_counts_no_turns_for_a_disabled_routine() {
+    let (f, c) = fake();
+    let f = f.with_routine(BOT2, "Demo Reminder", "*/15 * * * *", false);
+    let mut e = engine(f, c);
+    let rows = e.routines_audit(&[]).value.unwrap();
+    let r = rows.iter().find(|r| r.name == "Demo Reminder").unwrap();
+    assert_eq!((r.runs_per_week, r.est_turns_week), (Some(672), Some(0)));
+    assert!(r.flag.is_none());
+}

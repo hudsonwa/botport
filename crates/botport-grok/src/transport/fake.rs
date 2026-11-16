@@ -424,6 +424,23 @@ impl FakeTransport {
             .expect("automations array")
     }
 
+    /// An extra routine on `bot` (tests: e.g. a frequent reminder for `routines audit`).
+    pub fn with_routine(mut self, bot: &str, name: &str, cron: &str, enabled: bool) -> Self {
+        self.seq += 1;
+        let n = self.seq;
+        let slug: String = name
+            .to_lowercase()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect();
+        let a = json!({"automationId": format!("00000000-0000-4000-8000-{n:012}"), "id": slug, "name": name,
+            "schedule": format!("CRON_TZ=UTC {cron}"), "isEnabled": enabled,
+            "viewerCapabilities": {"canOpen": true, "canToggle": true, "canEdit": true, "canDelete": true},
+            "record": {"prompt": format!("{name}: post the reminder."), "runs": []}});
+        self.automations_mut(bot).push(a);
+        self
+    }
+
     /// The bot's side of a routine message (1.1.0 has no create/run call; the fake plays a bot that complies).
     fn play_bot(&mut self, bot: &str, text: &str) {
         if !self.bot_obeys {

@@ -16,6 +16,8 @@ fn cli_p3_commands_run_offline() {
     let out = s.0.join("dl").to_string_lossy().into_owned();
     assert_eq!(run(&["usage", "--json"]), 0);
     assert_eq!(run(&["routines", common::MAIN]), 0);
+    assert_eq!(run(&["routines", "audit", "--json"]), 0);
+    assert_eq!(run(&["routines", "audit", "--used-by", "Sync Bot"]), 0);
     assert_eq!(
         run(&[
             "routines",

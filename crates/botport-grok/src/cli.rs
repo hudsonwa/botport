@@ -53,6 +53,8 @@ pub const USAGE: &str = "botport grok <command> [--json] [--quiet] [--transport 
   mcp [--bot-callable]                    stdio MCP server over the same functions
   canary                                  after an app update: port still opens, read-only probe per command, report
   routines <bot> [list]                   the bot's routines (schedule, enabled, next/last run)
+  routines audit [--used-by NAME]...      every bot's routines: runs/week, ~turns/week, last run; flags a routine
+                                          no mirror pair (or NAME) mentions. Lists only: 0 bot turns
   routines <bot> enable|disable <routine> direct toggle; PASS when a fresh list agrees
   routines <bot> add --name N --schedule \"0 9 * * 1\" [--tz UTC] --prompt P [--disabled]   asks the bot
   routines <bot> remove <routine> [--yes] exact id, slug or name only; the app's menu, else asks the bot
@@ -89,6 +91,7 @@ const VALUED: &[&str] = &[
     "out",
     "when-idle",
     "tag",
+    "used-by",
 ];
 const FLAGS: &[&str] = &[
     "json",
@@ -982,6 +985,9 @@ fn cmd_p3(a: &Args, out: &Out, policy: &Policy) -> u8 {
             Outcome::fail(ExitCode::Other, cmd, m.to_string(), None),
         )
     };
+    if cmd == "routines" && pos(1) == "audit" {
+        return cmd_routines_audit(a, out, policy);
+    }
     if cmd != "usage" && pos(1).is_empty() {
         return usage_err(&format!("usage: botport grok {cmd} <bot> [action] ..."));
     }
@@ -1150,6 +1156,67 @@ fn cmd_p3(a: &Args, out: &Out, policy: &Policy) -> u8 {
         }
         _ => usage_err("unknown action"),
     }
+}
+
+/// The mirror pair names configured on this Mac (`$XDG_CONFIG_HOME/botport/mirror/<pair>.toml`).
+fn mirror_pair_names() -> Vec<String> {
+    let dir = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".config")
+        })
+        .join("botport/mirror");
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "toml"))
+        .filter_map(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
+        .collect();
+    names.sort();
+    names
+}
+
+/// `routines audit [--used-by NAME]... [--json]`: read-only, lists only.
+fn cmd_routines_audit(a: &Args, out: &Out, policy: &Policy) -> u8 {
+    let mut e = match build_engine(a, policy, caller()) {
+        Ok(e) => e,
+        Err(o) => return fail_line(out, o),
+    };
+    let mut used = mirror_pair_names();
+    used.extend(a.all("used-by").into_iter().map(str::to_string));
+    let o = e.routines_audit(&used);
+    let j = outcome_json(&o, Some("routines"));
+    let n = |v: Option<u64>| v.map_or("?".to_string(), |n| n.to_string());
+    out.emit(&o, j, |v| {
+        v.iter()
+            .map(|r| {
+                format!(
+                    "{} / {}  {}  {}  {}/week  ~{} turns/week  last {}  runs {}{}",
+                    r.bot,
+                    r.name,
+                    if r.enabled { "enabled" } else { "disabled" },
+                    r.schedule,
+                    n(r.runs_per_week),
+                    n(r.est_turns_week),
+                    r.last_run
+                        .as_deref()
+                        .map(crate::util::local_from_rfc3339)
+                        .unwrap_or_else(|| "-".into()),
+                    r.runs,
+                    r.flag
+                        .as_deref()
+                        .map(|f| format!("  FLAG: {f}"))
+                        .unwrap_or_default()
+                )
+            })
+            .collect()
+    })
 }
 
 /// `status` under the fake transport: the fixture's version, no port.
