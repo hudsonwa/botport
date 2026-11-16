@@ -215,7 +215,8 @@ impl Policy { fn preset(Preset) -> Self; fn decide(&self, &Caller, &Action, Opti
 
 `policy set` keys: `bots_scope` (`all` or a comma list), `confirm_destructive` (`typed|yes|none`), `debug_port`
 (`off|ask-once|auto`), `port_ttl` (`45m`), `reply_wrapping` (`note|data|raw`), `action_log`, `mcp_lifecycle_tools`,
-`transports.debug-port|ax|bot-shell|webhook` (`on|off`).
+`transports.debug-port|ax|bot-shell|webhook` (`on|off`), `usage_budget_week` (a number of paid turns, or
+`none`), `usage_warn_pct` (a percent), `usage_hard_cap` (`on|off`).
 
 ### Hard floors (`policy::floors`, checked first in `decide` and again at the transport edge)
 
@@ -317,6 +318,7 @@ CLI (all take the common options; human output ends with the PASS/FAIL line, `--
 
 ```
 botport grok usage
+botport grok routines audit [--used-by NAME]... [--json]   every bot's routines, lists only, 0 bot turns
 botport grok routines <bot> [list]
 botport grok routines <bot> enable|disable <routine>
 botport grok routines <bot> add --name N --schedule "m h dom mon dow" [--tz TZ] --prompt P [--disabled] [--timeout 300]

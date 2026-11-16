@@ -137,6 +137,32 @@ botport drift --bundle $B --spec $S
 ```
 Exit 0 = in sync, 1 = different (cheap enough to run from cron).
 
+With a Mirror bot ([MIRROR-BOT.md](MIRROR-BOT.md)), run `botport mirror push --bot "<your Mirror bot>"` on the Mac,
+for example every 15 minutes from launchd or cron (`--dry-run` shows what it would do). It checks every pair locally
+and asks the Mirror bot once, in one Grok turn, only when a pair changed since the last answered push; no change
+means no Grok turn. A Grok routine instead is an opt-in and costs a turn on every run, also when nothing changed
+(every 15 minutes is about 672 turns a week).
+
+### How many Grok turns botport spends
+Every paid Grok engine call (`send`, `ask`, and the asks inside `routines ... add`/`run`) is written to
+`~/.botport/grok-turns.jsonl` with when, which command, a caller tag (`--tag NAME` or `BOTPORT_CALLER`) and the bot
+id, never message text. Reads, routine lists and `usage` itself are not counted. `botport grok usage` shows the paid
+turns botport spent in the last 7 days next to Grok's own usage figure.
+
+A weekly budget is off by default:
+```bash
+botport grok policy set usage_budget_week 200   # paid turns botport may spend in 7 days (none = off)
+botport grok policy set usage_warn_pct 80       # warn from this percent
+botport grok policy set usage_hard_cap on       # at the budget: refuse with exit 4 (off: only warn)
+```
+The ledger counts only what this botport sent from this computer; other tools, other computers and the bot's own
+routines spend Grok turns it does not see.
+
+To see what routines cost, `botport grok routines audit` lists every bot's routines with schedule, runs a week, an
+estimated turns a week (each run is one turn, also when it finds nothing to do), last run and run count, and flags an
+enabled routine that no mirror pair and no `--used-by NAME` mentions. It only lists: no bot turn, nothing changed.
+The estimate is from the schedule (`?` when it cannot be read), not a bill.
+
 ## 5b. The other way: Hermes → Grok
 If the spec has `[hermes_export] out = "…"`, `sync` also writes what the Hermes bot learned
 since: new facts, skills it created or edited, cron jobs it runs. `drift` prints both directions in one line, e.g.
@@ -274,6 +300,11 @@ Every command prints at most 10 summary lines (`--json` for machines) and puts f
 An agent asked to "import / sync bot X" should: run `verify`, then `plan`, show the owner the summary, run `apply`
 only after the owner agrees (or if already told to), restart the gateway only when
 idle, then run `test`. Never pass `--adopt` without the owner's OK, and never delete restore points.
+
+To answer "what is botport?" without running anything, a Hermes agent can use the read-only skill in
+[skills/botport-explain/SKILL.md](skills/botport-explain/SKILL.md). From 0.3.4 each release attaches it as
+`botport-explain-SKILL.md`, listed in `SHA256SUMS` with its SHA-256 in the release notes; check it before installing
+it into a profile. It runs at most `botport --version`.
 
 ## Coming from `hermes migrate grok-bot`
 

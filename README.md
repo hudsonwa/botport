@@ -82,6 +82,9 @@ records, when it writes, and when it refuses to overwrite a Hermes-side edit).
 | OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |
 | `g2hd` running as a separate OS user | implemented, opt-in (not yet run in production) |
+| Grok engine turn ledger, weekly budget (`usage_budget_week`, off by default) and `grok routines audit` | 0.3.4 release candidate; tested against a fake Grok transport |
+| `mirror push`: the Mac asks the Mirror bot only when a pair changed (no routine by default) | 0.3.4 release candidate; tested with a fake engine |
+| `botport-explain` read-only Hermes skill, attached to each release with its SHA-256 | 0.3.4 release candidate; first attached on the 0.3.4 release |
 
 OpenClaw and OpenBot are named because they are the platforms the `BotModel` seam is meant for, but neither has any
 code yet, and neither is a small first contribution. Porting a bot *from* a new platform needs an adapter that reads
