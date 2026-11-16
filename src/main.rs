@@ -35,6 +35,8 @@ const USAGE: &str = "botport <command> [options]   (v{V}; --version prints it)
       mirror plan|status --pair P   mirror sync --pair P [--allow-retire] [--trigger F] [--take-over]
       mirror watch --pair P [--interval 1s] [--every 5m] [--for DUR] [--now]   sync whenever an input changes
       mirror check --pair P [--reset]   the connection round trip through the pair folder, before the first sync
+      mirror push --bot NAME [--pair P]... [--dry-run]   (on the Mac, e.g. from launchd/cron) when any pair changed since
+          the last push, ONE `botport grok ask` to the Mirror bot for all of them; no change: no Grok turn
           equal-peer sync of the setup (docs/design/MIRROR.md)
   mirror show|approve --pair P ITEM [--yes]   mirror pick --pair P ITEM (--keep grok|hermes | --local-only | --forget) [--yes]
   mirror restore --pair P ITEM --from SHORT   mirror stats [--since 7d] [--metrics FILE]
@@ -128,6 +130,9 @@ const VALUED: &[&str] = &[
     "root",
     "uploaded",
     "install-to",
+    "bot",
+    "grok-fixtures",
+    "timeout",
 ];
 const FLAGS: &[&str] = &[
     "strict",
