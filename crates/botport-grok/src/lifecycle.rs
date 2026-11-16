@@ -537,9 +537,7 @@ impl AppHost for MacHost {
 
     fn devtools_active_port(&self) -> Option<(u16, String)> {
         let s = std::fs::read_to_string(self.support.join("DevToolsActivePort")).ok()?;
-        let mut l = s.lines();
-        let port = l.next()?.trim().parse().ok()?;
-        Some((port, l.next().unwrap_or("").trim().to_string()))
+        parse_devtools_active_port(&s)
     }
 
     fn remove_devtools_active_port(&mut self) {
@@ -615,6 +613,14 @@ pub fn detach(cmd: &mut std::process::Command) -> &mut std::process::Command {
         }
     }
     cmd
+}
+
+/// The text of Chromium's `DevToolsActivePort` file: the port on the first line, the browser websocket path on
+/// the second (empty when absent). None when the first line is not a port number.
+pub fn parse_devtools_active_port(s: &str) -> Option<(u16, String)> {
+    let mut l = s.lines();
+    let port = l.next()?.trim().parse().ok()?;
+    Some((port, l.next().unwrap_or("").trim().to_string()))
 }
 
 /// `"HIDIdleTime" = 123456789` (nanoseconds) in `ioreg -c IOHIDSystem` output -> seconds.
