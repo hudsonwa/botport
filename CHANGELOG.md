@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- `docs/skills/botport-explain/SKILL.md`: a short read-only Hermes skill that explains what botport does (export,
+  import, mirror, the read-only Grok engine) and how to check the installed version. Each release attaches it as
+  `botport-explain-SKILL.md`, lists it in `SHA256SUMS` and gives its SHA-256 in the release notes; a test keeps it
+  free of hosts, addresses and home paths ([#67](https://github.com/hudsonwa/botport/issues/67)).
+
 ## [0.3.3] - 2026-11-16
 
 ### Fixed
