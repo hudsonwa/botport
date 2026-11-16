@@ -755,7 +755,7 @@ impl Engine {
                 }
                 for r in self.list_routines(what, &bot.id)? {
                     let hay = format!("{} {} {}", r.name, r.slug, r.prompt).to_lowercase();
-                    let is_used = used.iter().any(|u| hay.contains(u.as_str()));
+                    let is_used = used.iter().any(|u| contains_word(&hay, u));
                     let rpw = runs_per_week(&r.schedule);
                     let turns = rpw.map(|n| if r.enabled { n } else { 0 });
                     let flag = (r.enabled && !is_used)
@@ -824,4 +824,21 @@ mod tests {
         assert_eq!(runs_per_week("every day"), None);
         assert_eq!(runs_per_week("61 * * * *"), None);
     }
+}
+
+/// `needle` occurs in `hay` as a whole word: not inside a longer run of letters or digits
+/// (so `alpha` matches the slug `alpha-sync` but `a` does not match `alpha`).
+pub fn contains_word(hay: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+    let word = |c: char| c.is_alphanumeric();
+    hay.match_indices(needle).any(|(i, _)| {
+        let before = hay[..i].chars().next_back().is_none_or(|c| !word(c));
+        let after = hay[i + needle.len()..]
+            .chars()
+            .next()
+            .is_none_or(|c| !word(c));
+        before && after
+    })
 }

@@ -625,7 +625,11 @@ impl Engine {
             }
             .to_string()
         });
-        self.turns.record(self.now(), what, &tag, &id);
+        if let Err(e) = self.turns.record(self.now(), what, &tag, &id) {
+            eprintln!(
+                "botport: warning: could not write the turn ledger ({e}); this turn is not counted toward usage_budget_week"
+            );
+        }
         let seen = self
             .read_raw(what, &id, None, 0)?
             .into_iter()

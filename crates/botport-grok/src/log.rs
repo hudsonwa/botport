@@ -64,10 +64,11 @@ impl TurnLedger {
         self.path.as_ref()
     }
 
-    pub fn record(&self, at_ms: u64, cmd: &str, caller: &str, bot_id: &str) {
-        let Some(p) = &self.path else { return };
+    /// Append one paid turn. An error means the budget cannot see this turn; callers warn.
+    pub fn record(&self, at_ms: u64, cmd: &str, caller: &str, bot_id: &str) -> std::io::Result<()> {
+        let Some(p) = &self.path else { return Ok(()) };
         let line = json!({"at_ms": at_ms, "cmd": cmd, "caller": scrub(caller), "bot_id": bot_id});
-        let _ = crate::util::append_private(p, &line.to_string());
+        crate::util::append_private(p, &line.to_string())
     }
 
     /// Paid turns recorded in the 7 days up to `now_ms` (0 when off or unreadable).
