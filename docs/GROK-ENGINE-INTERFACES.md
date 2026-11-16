@@ -364,6 +364,11 @@ botport grok launch --for DUR [--when-idle MIN]                 issue 02, see §
   `routines run` exits 1 ("no new run in the routine list") — kept, so a later version that can run is detected.
   remove: the debug-port transport has no menu route yet (`Cap::RoutinesRemove` not offered), so the engine
   disables the routine by the direct call and asks the bot to delete it; PASS by a fresh list.
+- **Routines audit** (`Engine::routines_audit`, `routines audit [--used-by NAME]... [--json]`): read-only, lists
+  only (`listTeamBotAutomations` per bot in scope), 0 bot turns. Per routine: schedule, runs a week from the cron
+  (an average for day-of-month/month limits; `?` when unreadable), estimated turns a week (each run is one paid turn,
+  also when it finds nothing to do; 0 when disabled), last run and run count. An enabled routine whose name, slug or
+  prompt names no mirror pair (`$XDG_CONFIG_HOME/botport/mirror/<pair>.toml`) and no `--used-by` name is flagged.
 - **Usage check** (`Engine::usage_gate`): before send/ask (and so routine add/run/remove-via-bot), read once per
   engine. `warn` presets add a `warnings` entry at the threshold or when `available` is false; `refuse` (careful)
   exits 4 `refused by usage_check`. A failed read adds a warning; a transport without usage skips it. The summary's

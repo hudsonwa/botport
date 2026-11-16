@@ -12,6 +12,7 @@ use crate::engine::{halt, terr, Engine, ExitCode, Outcome, Proof, WaitOpts, R};
 use crate::model::*;
 use crate::policy::{Action, UsageCheck};
 use crate::transport::{Cap, TransportError};
+use serde::Serialize;
 
 /// What `routines add` asks for.
 #[derive(Clone, Debug, PartialEq)]
@@ -625,6 +626,140 @@ impl Engine {
     }
 }
 
+/// One row of `routines audit`: a routine, how often it fires and what that costs in bot turns a week.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct AuditRow {
+    pub bot: String,
+    pub bot_id: String,
+    pub name: String,
+    pub slug: String,
+    pub schedule: String,
+    pub tz: Option<String>,
+    pub enabled: bool,
+    /// Runs a week from the schedule (None: a schedule the estimate cannot read).
+    pub runs_per_week: Option<u64>,
+    /// Estimated paid bot turns a week: each run is one turn, also when it finds nothing to do (0 when disabled).
+    pub est_turns_week: Option<u64>,
+    pub last_run: Option<String>,
+    pub runs: u64,
+    /// A mirror pair or a `--used-by` name appears in the routine's name, slug or prompt.
+    pub used: bool,
+    pub flag: Option<String>,
+}
+
+/// The values one cron field matches in `lo..=hi` (`*`, `*/n`, `a`, `a-b`, `a-b/n`, lists); None when unreadable.
+fn cron_field(f: &str, lo: u32, hi: u32) -> Option<std::collections::BTreeSet<u32>> {
+    let mut out = std::collections::BTreeSet::new();
+    for part in f.split(',') {
+        let (range, step) = match part.split_once('/') {
+            Some((r, s)) => (r, s.parse::<u32>().ok().filter(|s| *s > 0)?),
+            None => (part, 1),
+        };
+        let (a, b) = if range == "*" {
+            (lo, hi)
+        } else if let Some((a, b)) = range.split_once('-') {
+            (a.parse().ok()?, b.parse().ok()?)
+        } else {
+            let a: u32 = range.parse().ok()?;
+            (a, if step > 1 { hi } else { a })
+        };
+        if a < lo || b > hi || a > b {
+            return None;
+        }
+        out.extend((a..=b).step_by(step as usize));
+    }
+    Some(out)
+}
+
+/// Runs a week of a 5-field cron schedule (an average for day-of-month or month limits); None when unreadable.
+pub fn runs_per_week(schedule: &str) -> Option<u64> {
+    let f: Vec<&str> = schedule.split_whitespace().collect();
+    let [mi, h, dom, mon, dow] = f.as_slice() else {
+        return None;
+    };
+    let mins = cron_field(mi, 0, 59)?.len() as f64;
+    let hours = cron_field(h, 0, 23)?.len() as f64;
+    let months = cron_field(mon, 1, 12)?.len() as f64;
+    let dows = {
+        let mut d = cron_field(dow, 0, 7)?;
+        if d.remove(&7) {
+            d.insert(0);
+        }
+        d.len() as f64
+    };
+    let doms = cron_field(dom, 1, 31)?.len() as f64 * 7.0 / 30.44;
+    let days = match (*dom == "*", *dow == "*") {
+        (true, true) => 7.0,
+        (true, false) => dows,
+        (false, true) => doms,
+        (false, false) => (dows + doms).min(7.0), // cron: either matches
+    };
+    Some((mins * hours * days * months / 12.0).round() as u64)
+}
+
+impl Engine {
+    /// `routines audit`: every bot's routines with runs a week and an estimated weekly turn count, flagging a routine
+    /// that no mirror pair or `used` name mentions. Read-only: lists only (`listTeamBotAutomations`), 0 bot turns.
+    pub fn routines_audit(&mut self, used: &[String]) -> Outcome<Vec<AuditRow>> {
+        let mut w = self.read_warnings();
+        let what = "routines audit";
+        let r = (|| {
+            let (bots, _) = self.list(what)?;
+            let used: Vec<String> = used
+                .iter()
+                .map(|u| u.to_lowercase())
+                .filter(|u| !u.is_empty())
+                .collect();
+            let mut rows = vec![];
+            for bot in &bots {
+                if self.decide(what, Action::Read, Some(bot)).is_err() {
+                    w.push(format!("{}: skipped (outside bots_scope)", bot.name));
+                    continue;
+                }
+                for r in self.list_routines(what, &bot.id)? {
+                    let hay = format!("{} {} {}", r.name, r.slug, r.prompt).to_lowercase();
+                    let is_used = used.iter().any(|u| hay.contains(u.as_str()));
+                    let rpw = runs_per_week(&r.schedule);
+                    let turns = rpw.map(|n| if r.enabled { n } else { 0 });
+                    let flag = (r.enabled && !is_used)
+                        .then(|| "no mirror pair or --used-by name uses it".to_string());
+                    rows.push(AuditRow {
+                        bot: bot.name.clone(),
+                        bot_id: bot.id.clone(),
+                        name: r.name,
+                        slug: r.slug,
+                        schedule: r.schedule,
+                        tz: r.tz,
+                        enabled: r.enabled,
+                        runs_per_week: rpw,
+                        est_turns_week: turns,
+                        last_run: r.last_run,
+                        runs: r.runs,
+                        used: is_used,
+                        flag,
+                    });
+                }
+            }
+            let total: u64 = rows.iter().filter_map(|r| r.est_turns_week).sum();
+            let flagged = rows.iter().filter(|r| r.flag.is_some()).count();
+            let p = Proof::pass(
+                format!(
+                    "{} routines on {} bots, about {total} turns a week, {flagged} flagged",
+                    rows.len(),
+                    bots.len()
+                ),
+                "self-check (lists only, no bot turn)",
+                "self-check",
+            );
+            Ok(Outcome::ok(rows, p))
+        })();
+        let o = r.unwrap_or_else(Outcome::from_halt);
+        let mut o = self.finish(what, None, o);
+        o.warnings.extend(w);
+        o
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -639,5 +774,17 @@ mod tests {
             disabled: false,
         };
         assert_eq!(parse_add_prompt(&add_prompt(&s)).unwrap(), s);
+    }
+
+    #[test]
+    fn runs_per_week_from_cron() {
+        assert_eq!(runs_per_week("*/15 * * * *"), Some(672));
+        assert_eq!(runs_per_week("0 8 * * 1"), Some(1));
+        assert_eq!(runs_per_week("0 9 * * 1-5"), Some(5));
+        assert_eq!(runs_per_week("0 */6 * * *"), Some(28));
+        assert_eq!(runs_per_week("30 7 1 * *"), Some(0)); // monthly: about 0.23 a week
+        assert_eq!(runs_per_week("0 9 * * 0,7"), Some(1));
+        assert_eq!(runs_per_week("every day"), None);
+        assert_eq!(runs_per_week("61 * * * *"), None);
     }
 }
