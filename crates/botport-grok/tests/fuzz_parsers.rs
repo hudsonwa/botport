@@ -14,7 +14,7 @@ impl Rng {
     pub fn new(seed: u64) -> Self {
         Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1)
     }
-    pub fn next(&mut self) -> u64 {
+    pub fn bits(&mut self) -> u64 {
         let mut x = self.0;
         x ^= x << 13;
         x ^= x >> 7;
@@ -23,7 +23,7 @@ impl Rng {
         x
     }
     pub fn below(&mut self, n: usize) -> usize {
-        (self.next() % n.max(1) as u64) as usize
+        (self.bits() % n.max(1) as u64) as usize
     }
     pub fn pick<'a, T>(&mut self, v: &'a [T]) -> &'a T {
         &v[self.below(v.len())]
@@ -120,9 +120,9 @@ fn value(r: &mut Rng, depth: u32) -> Value {
     match r.below(if depth == 0 { 6 } else { 8 }) {
         0 => Value::Null,
         1 => json!(r.below(2) == 0),
-        2 => json!(r.next() as i64),
+        2 => json!(r.bits() as i64),
         3 => {
-            let f = f64::from_bits(r.next());
+            let f = f64::from_bits(r.bits());
             json!(if f.is_finite() { f } else { 1.5 })
         }
         4 => json!(r.string(6)),
@@ -173,7 +173,7 @@ fn r_pick<'a>(r: &mut Rng, v: &[&'a str]) -> &'a str {
 fn devtools_active_port_round_trips() {
     let mut r = Rng::new(2);
     for _ in 0..iters(5_000) {
-        let port = r.next() as u16;
+        let port = r.bits() as u16;
         let id: String = (0..r.below(40))
             .map(|_| *r.pick(&['a', 'f', '0', '9', '-']))
             .collect();
@@ -202,11 +202,11 @@ fn port_file_round_trips_and_expiry_never_overflows() {
     let mut r = Rng::new(3);
     for _ in 0..iters(5_000) {
         let pf = PortFile {
-            port: r.next() as u16,
-            pid: r.next() as u32,
+            port: r.bits() as u16,
+            pid: r.bits() as u32,
             ws_path: r.string(8),
-            opened_at_ms: r.next(),
-            ttl_s: r.next(),
+            opened_at_ms: r.bits(),
+            ttl_s: r.bits(),
         };
         let s = serde_json::to_string(&pf).unwrap();
         assert_eq!(serde_json::from_str::<PortFile>(&s).unwrap(), pf);

@@ -12,7 +12,7 @@ impl Rng {
     fn new(seed: u64) -> Self {
         Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1)
     }
-    fn next(&mut self) -> u64 {
+    fn bits(&mut self) -> u64 {
         let mut x = self.0;
         x ^= x << 13;
         x ^= x >> 7;
@@ -21,7 +21,7 @@ impl Rng {
         x
     }
     fn below(&mut self, n: usize) -> usize {
-        (self.next() % n.max(1) as u64) as usize
+        (self.bits() % n.max(1) as u64) as usize
     }
     /// Text biased toward what the tolerant reader looks at: fences, braces, quotes (straight and curly),
     /// commas, escapes, line ends, counted keys and multi-byte characters.
