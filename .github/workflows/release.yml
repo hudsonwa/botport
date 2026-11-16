@@ -72,12 +72,21 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # botport#67: the botport-explain skill ships with each release so the twin plugin can pin it with the binary
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: src
+          sparse-checkout: docs/skills/botport-explain
+      - name: botport-explain skill
+        run: cp src/docs/skills/botport-explain/SKILL.md dist/botport-explain-SKILL.md
       - name: SHA256SUMS
-        run: cd dist && sha256sum ./*.tar.gz | sed 's| \./| |' > SHA256SUMS && cat SHA256SUMS
+        run: cd dist && sha256sum ./*.tar.gz ./botport-explain-SKILL.md | sed 's| \./| |' > SHA256SUMS && cat SHA256SUMS
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
         # a tag with a suffix (v0.1.0-rc1) is published as a pre-release, so "latest" keeps pointing at the last real one
         run: |
           pre=; case "$GITHUB_REF_NAME" in *-*) pre=--prerelease ;; esac
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes $pre
+          skill=$(sha256sum dist/botport-explain-SKILL.md | cut -d" " -f1)
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes \
+            --notes "botport-explain-SKILL.md SHA-256: $skill" $pre

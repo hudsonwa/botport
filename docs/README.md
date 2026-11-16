@@ -16,6 +16,7 @@ Hand these to an agent and it can do the job for you.
 - [MIRROR-BOT.md](MIRROR-BOT.md): the charter the owner pastes into their Mirror bot (`botport mirror setup --print-charter`).
 - [AGENT-MIRROR.md](AGENT-MIRROR.md): the Mirror bot's sync routine (reads each bot's setup from the box files).
 - [AGENT-IMPORT.md](AGENT-IMPORT.md): a Grok Bot loads what the Hermes bot learned.
+- [skills/botport-explain/SKILL.md](skills/botport-explain/SKILL.md): a read-only skill that explains botport (shipped as a release asset with its SHA-256 in the notes).
 - [ROUTINE-PROMPT.md](ROUTINE-PROMPT.md): paste-ready prompts for the Grok side of g2h.
 
 ## How it works
