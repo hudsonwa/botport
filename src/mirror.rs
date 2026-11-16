@@ -704,17 +704,42 @@ pub fn run(a: &Args) -> Res<Out> {
 /// it), the pair folder's HEAD when it is on disk, and the Hermes activity digest. All read on this Mac, no Grok turn.
 fn push_signature(cfg_bytes: &[u8], c: &Config) -> String {
     let mut buf = cfg_bytes.to_vec();
+    buf.extend_from_slice(b"\0");
+    buf.extend_from_slice(&push_state_bytes(
+        &fs::read(c.profile_dir.join(STATE_FILE)).unwrap_or_default(),
+    ));
     let mut add = |p: PathBuf| {
         buf.extend_from_slice(b"\0");
         buf.extend_from_slice(&fs::read(p).unwrap_or_default());
     };
-    add(c.profile_dir.join(STATE_FILE));
     add(c.profile_dir.join("botport/digest-hermes.md"));
     if let Some(d) = &c.drive_dir {
         add(d.join("HEAD"));
     }
     // a short prefix: enough to see a change, and never mistaken for a key by the secret guard
     sha256_hex(&buf)[..16].to_string()
+}
+
+/// The mirror state as `mirror push` compares it: without what every quiet sync rewrites (each item's `at` stamp, the
+/// remote and local sequence numbers the bot's own run advances, used trigger nonces), so a sync that changed nothing
+/// on this Mac, or the Mirror bot's own answer to the last push, is not mistaken for a change (one Grok turn a push).
+fn push_state_bytes(raw: &[u8]) -> Vec<u8> {
+    let Ok(mut v) = serde_json::from_slice::<Value>(raw) else {
+        return raw.to_vec();
+    };
+    if let Some(o) = v.as_object_mut() {
+        for k in ["remote_seq", "local_seq", "nonces"] {
+            o.remove(k);
+        }
+        if let Some(items) = o.get_mut("items").and_then(Value::as_object_mut) {
+            for it in items.values_mut() {
+                if let Some(it) = it.as_object_mut() {
+                    it.remove("at");
+                }
+            }
+        }
+    }
+    serde_json::to_vec(&v).unwrap_or_else(|_| raw.to_vec())
 }
 
 /// `mirror push --bot NAME [--pair P]... [--dry-run] [--timeout 600]`: the Mac checks every pair (or the named ones)

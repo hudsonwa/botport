@@ -96,3 +96,30 @@ fn a_failed_ask_is_not_marked_pushed() {
     let (code, out) = e.push("Mirror Bot");
     assert_eq!((code, turns(&out)), (0, 1), "{out}");
 }
+
+#[test]
+fn a_quiet_sync_restamping_the_state_is_no_change() {
+    let e = Env::new("quiet");
+    let f = |pair: &str| {
+        e.root
+            .join("profiles")
+            .join(pair)
+            .join("botport.mirror.json")
+    };
+    let st = |at: &str, seq: u32| {
+        format!("{{\"gen\":1,\"remote_seq\":{seq},\"items\":{{\"skill:x\":{{\"base_local\":\"d1\",\"at\":\"{at}\"}}}}}}")
+    };
+    std::fs::write(f("demo-bot-a"), st("2026-11-17T00:00:00Z", 1)).unwrap();
+    assert_eq!(turns(&e.push("Mirror Bot").1), 1);
+    // a later sync that found nothing new: only the time stamps and the bot's sequence number moved
+    std::fs::write(f("demo-bot-a"), st("2026-11-17T00:05:00Z", 2)).unwrap();
+    let (code, out) = e.push("No Such Bot");
+    assert_eq!((code, turns(&out)), (0, 0), "{out}");
+    // a real change of an item still asks
+    std::fs::write(
+        f("demo-bot-a"),
+        st("2026-11-17T00:10:00Z", 2).replace("d1", "d2"),
+    )
+    .unwrap();
+    assert_eq!(turns(&e.push("Mirror Bot").1), 1);
+}
