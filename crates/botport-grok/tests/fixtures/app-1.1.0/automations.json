@@ -1,0 +1,305 @@
+{
+ "app_version": "1.1.0",
+ "synthetic": true,
+ "source": "scrubbed from a TEST-account recording, see control/GROUND-TRUTH.md",
+ "byAgent": {
+  "00000000-0000-4000-8000-000000000001": {
+   "kind": "available",
+   "automations": [
+    {
+     "automationId": "00000000-0000-4000-8000-000000000048",
+     "id": "weekly-cost-log",
+     "name": "Temp Probe Bot Renamed",
+     "triggerDescription": "Every Monday around 8:00 AM",
+     "triggerPresentation": {
+      "version": 1,
+      "trigger": {
+       "type": "cron",
+       "schedule": "CRON_TZ=UTC 0 8 * * 1",
+       "firesAt": "CRON_TZ=UTC 45 7 * * 1",
+       "window": {
+        "earlyMinutes": 15,
+        "lateMinutes": 15
+       },
+       "timing": "flexible"
+      }
+     },
+     "schedule": "CRON_TZ=UTC 0 8 * * 1",
+     "isEnabled": true,
+     "nextRunAt": 1795391100000,
+     "createdAt": 1794751803000,
+     "runAs": {
+      "userId": 10000010,
+      "displayName": "Synthetic displayName 54.",
+      "isViewer": true
+     },
+     "isTeamAutomation": false,
+     "canSetForTeam": false,
+     "viewerCapabilities": {
+      "canOpen": true,
+      "canToggle": true,
+      "canEdit": true,
+      "canDelete": true
+     },
+     "record": {
+      "id": "weekly-cost-log",
+      "name": "Temp Probe Bot Renamed",
+      "prompt": "Synthetic prompt 55.",
+      "trigger": {
+       "type": "cron",
+       "schedule": "CRON_TZ=UTC 0 8 * * 1",
+       "firesAt": "CRON_TZ=UTC 45 7 * * 1",
+       "window": {
+        "earlyMinutes": 15,
+        "lateMinutes": 15
+       },
+       "timing": "flexible"
+      },
+      "schedule": "CRON_TZ=UTC 0 8 * * 1",
+      "triggerDescription": "Every Monday around 8:00 AM",
+      "triggerPresentation": {
+       "version": 1,
+       "trigger": {
+        "type": "cron",
+        "schedule": "CRON_TZ=UTC 0 8 * * 1",
+        "firesAt": "CRON_TZ=UTC 45 7 * * 1",
+        "window": {
+         "earlyMinutes": 15,
+         "lateMinutes": 15
+        },
+        "timing": "flexible"
+       }
+      },
+      "isEnabled": true,
+      "provenance": "user",
+      "createdAt": 1794751803000,
+      "lastRunAt": 1794786326471,
+      "slackWorkspace": {
+       "slackTeamId": null,
+       "neededSince": null
+      },
+      "nextRunAt": 1795391100000,
+      "runs": [
+       {
+        "id": "00000000-0000-4000-8000-000000000049",
+        "requestId": "00000000-0000-4000-8000-000000000050",
+        "trigger": "schedule",
+        "startedAt": 1794786326471,
+        "finishedAt": 1794786335022,
+        "status": "ok"
+       }
+      ],
+      "filePath": "/home/box/sand-data/agents/00000000-0000-4000-8000-000000000001/automations/weekly-cost-log/automation.json",
+      "automationId": "00000000-0000-4000-8000-000000000048",
+      "viewerCapabilities": {
+       "canOpen": true,
+       "canToggle": true,
+       "canEdit": true,
+       "canDelete": true
+      }
+     }
+    }
+   ],
+   "policy": null
+  },
+  "00000000-0000-4000-8000-000000000002": {
+   "kind": "available",
+   "automations": [],
+   "policy": null
+  },
+  "00000000-0000-4000-8000-000000000003": {
+   "kind": "available",
+   "automations": [
+    {
+     "automationId": "00000000-0000-4000-8000-000000000051",
+     "id": "test-noop",
+     "name": "Synthetic Name 10",
+     "triggerDescription": "Every Sunday around 3:00 AM",
+     "triggerPresentation": {
+      "version": 1,
+      "trigger": {
+       "type": "cron",
+       "schedule": "CRON_TZ=UTC 0 3 * * 0",
+       "firesAt": "CRON_TZ=UTC 59 2 * * 0",
+       "window": {
+        "earlyMinutes": 15,
+        "lateMinutes": 15
+       },
+       "timing": "flexible"
+      }
+     },
+     "schedule": "CRON_TZ=UTC 0 3 * * 0",
+     "isEnabled": false,
+     "nextRunAt": null,
+     "createdAt": 1794428944000,
+     "runAs": {
+      "userId": 10000010,
+      "displayName": "Synthetic displayName 54.",
+      "isViewer": true
+     },
+     "isTeamAutomation": false,
+     "canSetForTeam": false,
+     "viewerCapabilities": {
+      "canOpen": true,
+      "canToggle": true,
+      "canEdit": true,
+      "canDelete": true
+     },
+     "record": {
+      "id": "test-noop",
+      "name": "Synthetic Name 10",
+      "prompt": "Synthetic prompt 56.",
+      "trigger": {
+       "type": "cron",
+       "schedule": "CRON_TZ=UTC 0 3 * * 0",
+       "firesAt": "CRON_TZ=UTC 59 2 * * 0",
+       "window": {
+        "earlyMinutes": 15,
+        "lateMinutes": 15
+       },
+       "timing": "flexible"
+      },
+      "schedule": "CRON_TZ=UTC 0 3 * * 0",
+      "triggerDescription": "Every Sunday around 3:00 AM",
+      "triggerPresentation": {
+       "version": 1,
+       "trigger": {
+        "type": "cron",
+        "schedule": "CRON_TZ=UTC 0 3 * * 0",
+        "firesAt": "CRON_TZ=UTC 59 2 * * 0",
+        "window": {
+         "earlyMinutes": 15,
+         "lateMinutes": 15
+        },
+        "timing": "flexible"
+       }
+      },
+      "isEnabled": false,
+      "provenance": "user",
+      "createdAt": 1794428944000,
+      "lastRunAt": null,
+      "slackWorkspace": {
+       "slackTeamId": null,
+       "neededSince": null
+      },
+      "nextRunAt": null,
+      "runs": [],
+      "filePath": "/home/box/sand-data/agents/00000000-0000-4000-8000-000000000003/automations/test-noop/automation.json",
+      "automationId": "00000000-0000-4000-8000-000000000051",
+      "viewerCapabilities": {
+       "canOpen": true,
+       "canToggle": true,
+       "canEdit": true,
+       "canDelete": true
+      }
+     }
+    },
+    {
+     "automationId": "00000000-0000-4000-8000-000000000052",
+     "id": "test-noop-two",
+     "name": "Synthetic Name 11",
+     "triggerDescription": "Every Sunday around 4:00 AM",
+     "triggerPresentation": {
+      "version": 1,
+      "trigger": {
+       "type": "cron",
+       "schedule": "CRON_TZ=UTC 0 4 * * 0",
+       "firesAt": "CRON_TZ=UTC 54 3 * * 0",
+       "window": {
+        "earlyMinutes": 15,
+        "lateMinutes": 15
+       },
+       "timing": "flexible"
+      }
+     },
+     "schedule": "CRON_TZ=UTC 0 4 * * 0",
+     "isEnabled": false,
+     "nextRunAt": null,
+     "createdAt": 1794429349000,
+     "runAs": {
+      "userId": 10000010,
+      "displayName": "Synthetic displayName 54.",
+      "isViewer": true
+     },
+     "isTeamAutomation": false,
+     "canSetForTeam": false,
+     "viewerCapabilities": {
+      "canOpen": true,
+      "canToggle": true,
+      "canEdit": true,
+      "canDelete": true
+     },
+     "record": {
+      "id": "test-noop-two",
+      "name": "Synthetic Name 11",
+      "prompt": "Synthetic prompt 57.",
+      "trigger": {
+       "type": "cron",
+       "schedule": "CRON_TZ=UTC 0 4 * * 0",
+       "firesAt": "CRON_TZ=UTC 54 3 * * 0",
+       "window": {
+        "earlyMinutes": 15,
+        "lateMinutes": 15
+       },
+       "timing": "flexible"
+      },
+      "schedule": "CRON_TZ=UTC 0 4 * * 0",
+      "triggerDescription": "Every Sunday around 4:00 AM",
+      "triggerPresentation": {
+       "version": 1,
+       "trigger": {
+        "type": "cron",
+        "schedule": "CRON_TZ=UTC 0 4 * * 0",
+        "firesAt": "CRON_TZ=UTC 54 3 * * 0",
+        "window": {
+         "earlyMinutes": 15,
+         "lateMinutes": 15
+        },
+        "timing": "flexible"
+       }
+      },
+      "isEnabled": false,
+      "provenance": "user",
+      "createdAt": 1794429349000,
+      "lastRunAt": null,
+      "slackWorkspace": {
+       "slackTeamId": null,
+       "neededSince": null
+      },
+      "nextRunAt": null,
+      "runs": [],
+      "filePath": "/home/box/sand-data/agents/00000000-0000-4000-8000-000000000003/automations/test-noop-two/automation.json",
+      "automationId": "00000000-0000-4000-8000-000000000052",
+      "viewerCapabilities": {
+       "canOpen": true,
+       "canToggle": true,
+       "canEdit": true,
+       "canDelete": true
+      }
+     }
+    }
+   ],
+   "policy": null
+  },
+  "00000000-0000-4000-8000-000000000004": {
+   "kind": "available",
+   "automations": [],
+   "policy": null
+  },
+  "00000000-0000-4000-8000-000000000005": {
+   "kind": "available",
+   "automations": [],
+   "policy": null
+  },
+  "00000000-0000-4000-8000-000000000006": {
+   "kind": "available",
+   "automations": [],
+   "policy": null
+  },
+  "00000000-0000-4000-8000-000000000007": {
+   "kind": "available",
+   "automations": [],
+   "policy": null
+  }
+ }
+}

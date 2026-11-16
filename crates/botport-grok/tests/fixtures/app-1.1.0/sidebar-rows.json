@@ -1,0 +1,62 @@
+{
+  "synthetic": true,
+  "source": "sidebar [data-agent-id] attributes as the debug-port transport reads them (live shapes incl. a row awaiting approval from the P1 acceptance run; ids and names from roster.json)",
+  "rows": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "label": "Main Bot, Main Bot",
+      "desc": "",
+      "awaiting": null,
+      "composing": null,
+      "layout": "pinned"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "label": "Ledger Bot",
+      "desc": "",
+      "awaiting": null,
+      "composing": null,
+      "layout": "expanded"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "label": "Mirror Bot, Unread activity",
+      "desc": "",
+      "awaiting": null,
+      "composing": null,
+      "layout": "expanded"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "label": "Scout Bot, Needs attention",
+      "desc": "Waiting for you: Permission needed on your computer: echo synthetic",
+      "awaiting": "true",
+      "composing": null,
+      "layout": "expanded"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "label": "Finance Bot",
+      "desc": "",
+      "awaiting": null,
+      "composing": null,
+      "layout": "expanded"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "label": "Trip Bot",
+      "desc": "",
+      "awaiting": null,
+      "composing": null,
+      "layout": "expanded"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000007",
+      "label": "Helper Bot",
+      "desc": "",
+      "awaiting": null,
+      "composing": null,
+      "layout": "expanded"
+    }
+  ]
+}

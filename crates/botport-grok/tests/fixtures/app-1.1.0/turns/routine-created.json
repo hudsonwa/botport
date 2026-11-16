@@ -1,0 +1,3069 @@
+{
+ "app_version": "1.1.0",
+ "synthetic": true,
+ "source": "scrubbed from a TEST-account recording, see control/GROUND-TRUTH.md",
+ "poll_interval_ms": 400,
+ "samples": [
+  {
+   "t": 1794801912566,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801913750,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 15,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801914348,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 53."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "thinking"
+    },
+    "n": 15,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801914799,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 53."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 15,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801915394,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "composing": "true",
+    "desc": "Synthetic desc 53."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": true,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 15,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801915972,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": true,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s0",
+    "unreadCount": 10
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 63."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 16,
+    "lastKinds": [
+     "send-message:text:",
+     "send-message:local-tool-permission:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801916569,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": true,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s0",
+    "unreadCount": 10
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 63."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 16,
+    "lastKinds": [
+     "send-message:text:",
+     "send-message:local-tool-permission:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801917167,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s0",
+    "unreadCount": 10
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 63."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 17,
+    "lastKinds": [
+     "send-message:local-tool-permission:",
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:"
+    ]
+   }
+  },
+  {
+   "t": 1794801917676,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s0",
+    "unreadCount": 10
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 63."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 17,
+    "lastKinds": [
+     "send-message:local-tool-permission:",
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:"
+    ]
+   }
+  },
+  {
+   "t": 1794801918263,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s0",
+    "unreadCount": 10
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801918854,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801919263,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801919836,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801920436,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801921016,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801921546,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801922059,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801922555,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801923145,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801923730,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801924329,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801924796,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801925395,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801925928,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801926527,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801927120,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801927698,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801928297,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801928853,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801929395,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801929995,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801930594,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801931194,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801931703,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801932237,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801932799,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801933387,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801933962,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801934544,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801935117,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801935711,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801936311,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801936870,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801937464,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801937964,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801938384,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801938969,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801939566,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801940153,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801940754,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801941270,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801941789,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801942259,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801942787,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801943366,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801943964,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801944529,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801945123,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801945720,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801946261,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801946861,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801947437,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801947977,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801948424,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801949014,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801949597,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801950174,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801950752,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801951349,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801951948,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801952545,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801953103,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801953670,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801954244,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801954813,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801955383,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801955962,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801956563,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801957071,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801957670,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801958262,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801958854,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801959446,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801960043,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801960642,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801961236,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801961822,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801962378,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801962965,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801963566,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801964145,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801964588,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801965177,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801965758,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801966316,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801966862,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801967456,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801968054,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801968529,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801969120,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801969686,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801970141,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801970719,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801971312,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801971846,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801972443,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801973044,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801973596,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t5s1",
+    "unreadCount": 11
+   },
+   "row": {
+    "busy": null,
+    "desc": "ROUTINE OK"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 18,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "event:automation-changed:",
+     "send-message:text:"
+    ]
+   }
+  }
+ ]
+}

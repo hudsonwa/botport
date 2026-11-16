@@ -1,0 +1,88 @@
+{
+  "synthetic": true,
+  "source": "chat entries 0.4 s apart right after a send (live shape from the P1 acceptance run, app 1.1.0); text, nonces and ids synthetic",
+  "samples": [
+    {
+      "isAgentRunning": false,
+      "entries": [
+        {
+          "kind": "message",
+          "id": "t0u",
+          "role": "user",
+          "content": "Synthetic question 0.",
+          "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic question 0.\"}]}]}",
+          "isStreaming": false,
+          "timestampMs": 1800000000000,
+          "clientNonce": "00000000-0000-4000-8000-0000000000c0",
+          "requestId": "00000000-0000-4000-8000-0000000000d0",
+          "seq": 3,
+          "locallyAuthored": true
+        },
+        {
+          "kind": "send-message",
+          "id": "t0s0",
+          "message": {
+            "type": "text",
+            "content": "Synthetic reply 0."
+          },
+          "timestampMs": 1800000004000,
+          "requestId": "00000000-0000-4000-8000-0000000000d0",
+          "seq": 5
+        },
+        {
+          "kind": "message",
+          "id": "optimistic:00000000-0000-4000-8000-0000000000c1",
+          "role": "user",
+          "content": "Synthetic question 1.",
+          "isStreaming": false,
+          "clientNonce": "00000000-0000-4000-8000-0000000000c1",
+          "timestampMs": 1800000040000,
+          "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic question 1.\"}]}]}",
+          "locallyAuthored": true
+        }
+      ]
+    },
+    {
+      "isAgentRunning": true,
+      "entries": [
+        {
+          "kind": "message",
+          "id": "t0u",
+          "role": "user",
+          "content": "Synthetic question 0.",
+          "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic question 0.\"}]}]}",
+          "isStreaming": false,
+          "timestampMs": 1800000000000,
+          "clientNonce": "00000000-0000-4000-8000-0000000000c0",
+          "requestId": "00000000-0000-4000-8000-0000000000d0",
+          "seq": 3,
+          "locallyAuthored": true
+        },
+        {
+          "kind": "send-message",
+          "id": "t0s0",
+          "message": {
+            "type": "text",
+            "content": "Synthetic reply 0."
+          },
+          "timestampMs": 1800000004000,
+          "requestId": "00000000-0000-4000-8000-0000000000d0",
+          "seq": 5
+        },
+        {
+          "kind": "message",
+          "id": "t1u",
+          "role": "user",
+          "content": "Synthetic question 1.",
+          "isStreaming": false,
+          "clientNonce": "00000000-0000-4000-8000-0000000000c1",
+          "timestampMs": 1800000040000,
+          "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic question 1.\"}]}]}",
+          "locallyAuthored": true,
+          "seq": 6,
+          "requestId": "00000000-0000-4000-8000-0000000000d1"
+        }
+      ]
+    }
+  ]
+}

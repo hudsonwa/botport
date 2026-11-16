@@ -28,8 +28,7 @@ fn env() -> Env {
     let bin = t.path().join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     let fake = bin.join("hermes");
-    std::fs::write(&fake, "#!/bin/sh\necho 'Hermes Agent v9.9.9'\n").unwrap();
-    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    write_script(&fake, "#!/bin/sh\necho 'Hermes Agent v9.9.9'\n", "755");
     let svc = t.path().join("services");
     Env {
         home,
@@ -38,6 +37,27 @@ fn env() -> Env {
         svc,
         _t: t,
     }
+}
+
+/// Write an executable script without this process ever holding a write fd on it.
+/// A test thread that forks while the fd is open lets the child inherit it until its
+/// own exec, and running the script then fails with ETXTBSY ("Text file busy"). So a
+/// `sh` child writes a temp file, closes it, chmods it and renames it into place.
+fn write_script(path: &std::path::Path, body: &str, mode: &str) {
+    use std::io::Write;
+    let mut c = std::process::Command::new("/bin/sh")
+        .args([
+            "-c",
+            r#"cat > "$1.tmp" && chmod "$2" "$1.tmp" && mv "$1.tmp" "$1""#,
+            "sh",
+        ])
+        .arg(path)
+        .arg(mode)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    c.stdin.take().unwrap().write_all(body.as_bytes()).unwrap();
+    assert!(c.wait().unwrap().success(), "writing {}", path.display());
 }
 
 fn g2h(e: &Env, args: &[&str], stdin: &str) -> Output {

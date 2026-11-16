@@ -1,0 +1,735 @@
+{
+ "app_version": "1.1.0",
+ "synthetic": true,
+ "source": "scrubbed from a TEST-account recording, see control/GROUND-TRUTH.md",
+ "chat": {
+  "entries": [
+   {
+    "kind": "send-message",
+    "id": "t25s4",
+    "message": {
+     "type": "widget",
+     "widget": {
+      "prompt": "Synthetic prompt 10.",
+      "options": [
+       {
+        "label": "Synthetic label 11.",
+        "value": "Synthetic value 12.",
+        "style": "primary"
+       },
+       {
+        "label": "Synthetic label 13.",
+        "value": "Synthetic value 14."
+       }
+      ]
+     }
+    },
+    "timestampMs": 1794755866033,
+    "requestId": "00000000-0000-4000-8000-000000000008",
+    "widgetSkipped": true,
+    "seq": 117
+   },
+   {
+    "kind": "send-message",
+    "id": "t28s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "0000000000000001",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed"
+     }
+    },
+    "timestampMs": 1794758131269,
+    "requestId": "00000000-0000-4000-8000-000000000009",
+    "seq": 127
+   },
+   {
+    "kind": "event",
+    "id": "event-0000000000000002",
+    "event": {
+     "type": "automation-changed",
+     "action": "disabled",
+     "automationId": "weekly-cost-log",
+     "automationName": "Synthetic automationName 15."
+    },
+    "timestampMs": 1794758353146,
+    "seq": 132
+   },
+   {
+    "kind": "send-message",
+    "id": "t29s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "0000000000000003",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed"
+     }
+    },
+    "timestampMs": 1794758382227,
+    "requestId": "00000000-0000-4000-8000-000000000010",
+    "seq": 133
+   },
+   {
+    "kind": "send-message",
+    "id": "t30s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "0000000000000004",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed"
+     }
+    },
+    "timestampMs": 1794758631321,
+    "requestId": "00000000-0000-4000-8000-000000000011",
+    "seq": 138
+   },
+   {
+    "kind": "event",
+    "id": "event-0000000000000005",
+    "event": {
+     "type": "automation-changed",
+     "action": "enabled",
+     "automationId": "weekly-cost-log",
+     "automationName": "Synthetic automationName 15."
+    },
+    "timestampMs": 1794758642559,
+    "seq": 140
+   },
+   {
+    "kind": "send-message",
+    "id": "t32s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "0000000000000006",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed"
+     }
+    },
+    "timestampMs": 1794759040139,
+    "requestId": "00000000-0000-4000-8000-000000000012",
+    "seq": 147
+   },
+   {
+    "kind": "send-message",
+    "id": "t33s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "0000000000000007",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed"
+     }
+    },
+    "timestampMs": 1794759226492,
+    "requestId": "00000000-0000-4000-8000-000000000013",
+    "seq": 152
+   },
+   {
+    "kind": "event",
+    "id": "event-0000000000000008",
+    "event": {
+     "type": "automation-changed",
+     "action": "disabled",
+     "automationId": "weekly-cost-log",
+     "automationName": "Synthetic automationName 15."
+    },
+    "timestampMs": 1794759409055,
+    "seq": 157
+   },
+   {
+    "kind": "send-message",
+    "id": "t34s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "0000000000000009",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed"
+     }
+    },
+    "timestampMs": 1794759419261,
+    "requestId": "00000000-0000-4000-8000-000000000014",
+    "seq": 158
+   },
+   {
+    "kind": "send-message",
+    "id": "t35s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "000000000000000a",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed"
+     }
+    },
+    "timestampMs": 1794759609579,
+    "requestId": "00000000-0000-4000-8000-000000000015",
+    "seq": 163
+   },
+   {
+    "kind": "event",
+    "id": "event-000000000000000b",
+    "event": {
+     "type": "automation-changed",
+     "action": "enabled",
+     "automationId": "weekly-cost-log",
+     "automationName": "Synthetic automationName 15."
+    },
+    "timestampMs": 1794759622159,
+    "seq": 165
+   },
+   {
+    "kind": "feedback",
+    "id": "fb-00000000-0000-4000-8000-000000000016",
+    "requestId": "00000000-0000-4000-8000-000000000016",
+    "state": "prompt",
+    "timestampMs": 1794796980363,
+    "seq": 171
+   },
+   {
+    "kind": "message",
+    "id": "t37u",
+    "role": "user",
+    "content": "Synthetic content 16.",
+    "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic user message.\"}]}]}",
+    "isStreaming": false,
+    "timestampMs": 1794797017792,
+    "clientNonce": "00000000-0000-4000-8000-000000000017",
+    "requestId": "00000000-0000-4000-8000-000000000018",
+    "seq": 172,
+    "locallyAuthored": true
+   },
+   {
+    "kind": "send-message",
+    "id": "t37s0",
+    "message": {
+     "type": "text",
+     "content": "Synthetic content 17."
+    },
+    "timestampMs": 1794797023182,
+    "requestId": "00000000-0000-4000-8000-000000000018",
+    "seq": 173
+   },
+   {
+    "kind": "send-message",
+    "id": "t37s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "000000000000000c",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed",
+      "workingDirectory": ""
+     }
+    },
+    "timestampMs": 1794797034965,
+    "requestId": "00000000-0000-4000-8000-000000000018",
+    "seq": 174
+   },
+   {
+    "kind": "send-message",
+    "id": "t37s2",
+    "message": {
+     "type": "text",
+     "content": "PASS: synthetic result; synthetic check"
+    },
+    "timestampMs": 1794797125417,
+    "requestId": "00000000-0000-4000-8000-000000000018",
+    "seq": 176
+   },
+   {
+    "kind": "message",
+    "id": "t38u",
+    "role": "user",
+    "content": "Synthetic content 18.",
+    "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic user message.\"}]}]}",
+    "isStreaming": false,
+    "timestampMs": 1794797280062,
+    "clientNonce": "00000000-0000-4000-8000-000000000019",
+    "requestId": "00000000-0000-4000-8000-000000000020",
+    "seq": 177,
+    "locallyAuthored": true
+   },
+   {
+    "kind": "send-message",
+    "id": "t38s0",
+    "message": {
+     "type": "text",
+     "content": "Synthetic content 19."
+    },
+    "timestampMs": 1794797284441,
+    "requestId": "00000000-0000-4000-8000-000000000020",
+    "seq": 178
+   },
+   {
+    "kind": "send-message",
+    "id": "t38s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "000000000000000d",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed",
+      "workingDirectory": ""
+     }
+    },
+    "timestampMs": 1794797291216,
+    "requestId": "00000000-0000-4000-8000-000000000020",
+    "seq": 179
+   },
+   {
+    "kind": "send-message",
+    "id": "t38s2",
+    "message": {
+     "type": "text",
+     "content": "PASS: synthetic result; synthetic check"
+    },
+    "timestampMs": 1794797376083,
+    "requestId": "00000000-0000-4000-8000-000000000020",
+    "seq": 181
+   },
+   {
+    "kind": "message",
+    "id": "t39u",
+    "role": "user",
+    "content": "Synthetic content 20.",
+    "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic user message.\"}]}]}",
+    "isStreaming": false,
+    "timestampMs": 1794797505979,
+    "clientNonce": "00000000-0000-4000-8000-000000000021",
+    "requestId": "00000000-0000-4000-8000-000000000022",
+    "seq": 182,
+    "locallyAuthored": true
+   },
+   {
+    "kind": "send-message",
+    "id": "t39s0",
+    "message": {
+     "type": "text",
+     "content": "Synthetic content 21."
+    },
+    "timestampMs": 1794797510072,
+    "requestId": "00000000-0000-4000-8000-000000000022",
+    "seq": 183
+   },
+   {
+    "kind": "event",
+    "id": "event-000000000000000e",
+    "event": {
+     "type": "automation-changed",
+     "action": "disabled",
+     "automationId": "weekly-cost-log",
+     "automationName": "Synthetic automationName 15."
+    },
+    "timestampMs": 1794797510668,
+    "seq": 184
+   },
+   {
+    "kind": "send-message",
+    "id": "t39s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "000000000000000f",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed",
+      "workingDirectory": ""
+     }
+    },
+    "timestampMs": 1794797518347,
+    "requestId": "00000000-0000-4000-8000-000000000022",
+    "seq": 185
+   },
+   {
+    "kind": "send-message",
+    "id": "t39s2",
+    "message": {
+     "type": "text",
+     "content": "PASS: synthetic result; synthetic check"
+    },
+    "timestampMs": 1794797616863,
+    "requestId": "00000000-0000-4000-8000-000000000022",
+    "seq": 187
+   },
+   {
+    "kind": "message",
+    "id": "t40u",
+    "role": "user",
+    "content": "Synthetic content 22.",
+    "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic user message.\"}]}]}",
+    "isStreaming": false,
+    "timestampMs": 1794797765568,
+    "clientNonce": "00000000-0000-4000-8000-000000000023",
+    "requestId": "00000000-0000-4000-8000-000000000024",
+    "seq": 188,
+    "locallyAuthored": true
+   },
+   {
+    "kind": "send-message",
+    "id": "t40s0",
+    "message": {
+     "type": "text",
+     "content": "Synthetic content 23."
+    },
+    "timestampMs": 1794797771173,
+    "requestId": "00000000-0000-4000-8000-000000000024",
+    "seq": 189
+   },
+   {
+    "kind": "send-message",
+    "id": "t40s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "0000000000000010",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed",
+      "workingDirectory": ""
+     }
+    },
+    "timestampMs": 1794797775626,
+    "requestId": "00000000-0000-4000-8000-000000000024",
+    "seq": 190
+   },
+   {
+    "kind": "event",
+    "id": "event-0000000000000011",
+    "event": {
+     "type": "automation-changed",
+     "action": "enabled",
+     "automationId": "weekly-cost-log",
+     "automationName": "Synthetic automationName 15."
+    },
+    "timestampMs": 1794797787672,
+    "seq": 192
+   },
+   {
+    "kind": "send-message",
+    "id": "t40s2",
+    "message": {
+     "type": "text",
+     "content": "PASS: synthetic result; synthetic check"
+    },
+    "timestampMs": 1794797791090,
+    "requestId": "00000000-0000-4000-8000-000000000024",
+    "seq": 193
+   },
+   {
+    "kind": "message",
+    "id": "t41u",
+    "role": "user",
+    "content": "Synthetic content 20.",
+    "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic user message.\"}]}]}",
+    "isStreaming": false,
+    "timestampMs": 1794797958111,
+    "clientNonce": "00000000-0000-4000-8000-000000000025",
+    "requestId": "00000000-0000-4000-8000-000000000026",
+    "seq": 194,
+    "locallyAuthored": true
+   },
+   {
+    "kind": "send-message",
+    "id": "t41s0",
+    "message": {
+     "type": "text",
+     "content": "Synthetic content 24."
+    },
+    "timestampMs": 1794797962842,
+    "requestId": "00000000-0000-4000-8000-000000000026",
+    "seq": 195
+   },
+   {
+    "kind": "event",
+    "id": "event-0000000000000012",
+    "event": {
+     "type": "automation-changed",
+     "action": "disabled",
+     "automationId": "weekly-cost-log",
+     "automationName": "Synthetic automationName 15."
+    },
+    "timestampMs": 1794797963490,
+    "seq": 196
+   },
+   {
+    "kind": "send-message",
+    "id": "t41s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "0000000000000013",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed",
+      "workingDirectory": ""
+     }
+    },
+    "timestampMs": 1794797971737,
+    "requestId": "00000000-0000-4000-8000-000000000026",
+    "seq": 197
+   },
+   {
+    "kind": "send-message",
+    "id": "t41s2",
+    "message": {
+     "type": "text",
+     "content": "PASS: synthetic result; synthetic check"
+    },
+    "timestampMs": 1794798070370,
+    "requestId": "00000000-0000-4000-8000-000000000026",
+    "seq": 199
+   },
+   {
+    "kind": "message",
+    "id": "t42u",
+    "role": "user",
+    "content": "Synthetic content 22.",
+    "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic user message.\"}]}]}",
+    "isStreaming": false,
+    "timestampMs": 1794798194005,
+    "clientNonce": "00000000-0000-4000-8000-000000000027",
+    "requestId": "00000000-0000-4000-8000-000000000028",
+    "seq": 200,
+    "locallyAuthored": true
+   },
+   {
+    "kind": "send-message",
+    "id": "t42s0",
+    "message": {
+     "type": "text",
+     "content": "Synthetic content 23."
+    },
+    "timestampMs": 1794798198596,
+    "requestId": "00000000-0000-4000-8000-000000000028",
+    "seq": 201
+   },
+   {
+    "kind": "send-message",
+    "id": "t42s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "0000000000000014",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed",
+      "workingDirectory": ""
+     }
+    },
+    "timestampMs": 1794798203114,
+    "requestId": "00000000-0000-4000-8000-000000000028",
+    "seq": 202
+   },
+   {
+    "kind": "event",
+    "id": "event-0000000000000015",
+    "event": {
+     "type": "automation-changed",
+     "action": "enabled",
+     "automationId": "weekly-cost-log",
+     "automationName": "Synthetic automationName 15."
+    },
+    "timestampMs": 1794798216023,
+    "seq": 204
+   },
+   {
+    "kind": "send-message",
+    "id": "t42s2",
+    "message": {
+     "type": "text",
+     "content": "PASS: synthetic result; synthetic check"
+    },
+    "timestampMs": 1794798219324,
+    "requestId": "00000000-0000-4000-8000-000000000028",
+    "seq": 205
+   },
+   {
+    "kind": "send-message",
+    "id": "t42s3",
+    "message": {
+     "type": "widget",
+     "widget": {
+      "prompt": "Synthetic prompt 25.",
+      "options": [
+       {
+        "label": "Synthetic label 26.",
+        "value": "Synthetic value 27.",
+        "style": "primary"
+       },
+       {
+        "label": "Synthetic label 28.",
+        "value": "Synthetic value 29."
+       }
+      ]
+     }
+    },
+    "timestampMs": 1794798220389,
+    "requestId": "00000000-0000-4000-8000-000000000028",
+    "widgetSkipped": true,
+    "seq": 206
+   },
+   {
+    "kind": "message",
+    "id": "t43u",
+    "role": "user",
+    "content": "Synthetic content 26.",
+    "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic user message.\"}]}]}",
+    "isStreaming": false,
+    "timestampMs": 1794798399622,
+    "clientNonce": "00000000-0000-4000-8000-000000000029",
+    "requestId": "00000000-0000-4000-8000-000000000030",
+    "seq": 207,
+    "locallyAuthored": true
+   },
+   {
+    "kind": "send-message",
+    "id": "t43s0",
+    "message": {
+     "type": "text",
+     "content": "Synthetic content 30."
+    },
+    "timestampMs": 1794798406818,
+    "requestId": "00000000-0000-4000-8000-000000000030",
+    "seq": 209
+   },
+   {
+    "kind": "message",
+    "id": "t44u",
+    "role": "user",
+    "content": "Synthetic content 18.",
+    "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic user message.\"}]}]}",
+    "isStreaming": false,
+    "timestampMs": 1794798567260,
+    "clientNonce": "00000000-0000-4000-8000-000000000031",
+    "requestId": "00000000-0000-4000-8000-000000000032",
+    "seq": 210,
+    "locallyAuthored": true
+   },
+   {
+    "kind": "send-message",
+    "id": "t44s0",
+    "message": {
+     "type": "text",
+     "content": "Synthetic content 31."
+    },
+    "timestampMs": 1794798573452,
+    "requestId": "00000000-0000-4000-8000-000000000032",
+    "seq": 211
+   },
+   {
+    "kind": "send-message",
+    "id": "t44s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "0000000000000016",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed",
+      "workingDirectory": ""
+     }
+    },
+    "timestampMs": 1794798581364,
+    "requestId": "00000000-0000-4000-8000-000000000032",
+    "seq": 212
+   },
+   {
+    "kind": "send-message",
+    "id": "t44s2",
+    "message": {
+     "type": "text",
+     "content": "FAIL: synthetic result; synthetic check"
+    },
+    "timestampMs": 1794798589816,
+    "requestId": "00000000-0000-4000-8000-000000000032",
+    "seq": 214
+   },
+   {
+    "kind": "message",
+    "id": "t45u",
+    "role": "user",
+    "content": "Synthetic content 18.",
+    "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic user message.\"}]}]}",
+    "isStreaming": false,
+    "timestampMs": 1794798728614,
+    "clientNonce": "00000000-0000-4000-8000-000000000033",
+    "requestId": "00000000-0000-4000-8000-000000000034",
+    "seq": 215,
+    "locallyAuthored": true
+   },
+   {
+    "kind": "send-message",
+    "id": "t45s0",
+    "message": {
+     "type": "text",
+     "content": "Synthetic content 32."
+    },
+    "timestampMs": 1794798733252,
+    "requestId": "00000000-0000-4000-8000-000000000034",
+    "seq": 216
+   },
+   {
+    "kind": "send-message",
+    "id": "t45s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "0000000000000017",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "allowed",
+      "workingDirectory": ""
+     }
+    },
+    "timestampMs": 1794798741363,
+    "requestId": "00000000-0000-4000-8000-000000000034",
+    "seq": 217
+   },
+   {
+    "kind": "send-message",
+    "id": "t45s2",
+    "message": {
+     "type": "text",
+     "content": "PASS: synthetic result; synthetic check"
+    },
+    "timestampMs": 1794798829228,
+    "requestId": "00000000-0000-4000-8000-000000000034",
+    "seq": 219
+   }
+  ],
+  "isAgentRunning": false,
+  "isAgentComposing": false,
+  "agentActivity": null,
+  "loadState": "ready",
+  "hasOlder": false
+ }
+}

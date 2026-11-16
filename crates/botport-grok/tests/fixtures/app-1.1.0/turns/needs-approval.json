@@ -1,0 +1,2687 @@
+{
+ "app_version": "1.1.0",
+ "synthetic": true,
+ "source": "scrubbed from a TEST-account recording, see control/GROUND-TRUTH.md",
+ "poll_interval_ms": 400,
+ "samples": [
+  {
+   "t": 1794801845077,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801846353,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 12,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801846945,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 12,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801847536,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 12,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801847972,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 12,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801848561,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 12,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801849122,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "composing": "true",
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": true,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 12,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801849667,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": true,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t4s0",
+    "unreadCount": 8
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 53."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 13,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801850245,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801850697,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801851277,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801851876,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801852410,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801852887,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801853478,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801854062,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801854660,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801855104,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801855702,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801856169,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801856767,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801857212,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801857807,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801858407,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801859004,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801859605,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801860202,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801860745,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801861313,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801861897,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801862378,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801862978,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801863553,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801864105,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801864705,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801865291,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801865861,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801866397,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801866971,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801867557,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801868130,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801868679,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801869279,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801869705,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801870278,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801870855,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801871453,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801872053,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801872636,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801873229,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801873785,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801874386,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801874987,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801875587,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801876185,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801876712,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801877311,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801877796,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801878391,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801878978,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801879387,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801879967,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801880539,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801881138,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801881703,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801882191,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801882786,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801883380,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801883928,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801884453,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801884961,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801885561,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801886129,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801886717,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801887215,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801887798,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801888383,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801888970,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801889486,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801890085,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801890668,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  },
+  {
+   "t": 1794801891254,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": {
+     "tabId": "auto-review",
+     "reason": "Permission needed on your computer: echo synthetic",
+     "since": 1794801850009
+    },
+    "lastMessageId": "t4s1",
+    "unreadCount": 9
+   },
+   "row": {
+    "busy": null,
+    "awaiting": "true",
+    "desc": "Waiting for you: Permission needed on your computer: echo synthetic"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 14,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "send-message:local-tool-permission:"
+    ]
+   }
+  }
+ ]
+}

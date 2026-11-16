@@ -1105,6 +1105,27 @@ fn start_sep(home: &Path, cfg: Config, be: Rec, peer: Option<u32>) -> D {
     }
 }
 
+/// Write an executable script without this process ever holding a write fd on it.
+/// A test thread that forks while the fd is open lets the child inherit it until its
+/// own exec, and running the script then fails with ETXTBSY ("Text file busy"). So a
+/// `sh` child writes a temp file, closes it, chmods it and renames it into place.
+fn write_script(path: &std::path::Path, body: &str, mode: &str) {
+    use std::io::Write;
+    let mut c = std::process::Command::new("/bin/sh")
+        .args([
+            "-c",
+            r#"cat > "$1.tmp" && chmod "$2" "$1.tmp" && mv "$1.tmp" "$1""#,
+            "sh",
+        ])
+        .arg(path)
+        .arg(mode)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    c.stdin.take().unwrap().write_all(body.as_bytes()).unwrap();
+    assert!(c.wait().unwrap().success(), "writing {}", path.display());
+}
+
 fn sep_cfg(dir: &Path, bots_uid: u32) -> (Config, PathBuf) {
     use std::os::unix::fs::MetadataExt;
     let gid = std::fs::metadata(dir).unwrap().gid();
@@ -1114,8 +1135,11 @@ fn sep_cfg(dir: &Path, bots_uid: u32) -> (Config, PathBuf) {
     std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
     let out = dir.join("approver.out");
     let script = bin.join("approver");
-    std::fs::write(&script, format!("#!/bin/sh\ncat >> '{}'\n", out.display())).unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    write_script(
+        &script,
+        &format!("#!/bin/sh\ncat >> '{}'\n", out.display()),
+        "700",
+    );
     let mut cfg = Config::default();
     cfg.peers = vec!["grok".into()];
     cfg.ops_approver = Some(g2h::config::OpsApprover {

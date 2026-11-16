@@ -86,8 +86,9 @@ dependencies = [
 
 [[package]]
 name = "botport"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
+ "botport-grok",
  "regex",
  "rustix",
  "serde",
@@ -97,6 +98,16 @@ dependencies = [
  "toml",
  "unicode-normalization",
  "zip",
+]
+
+[[package]]
+name = "botport-grok"
+version = "0.3.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "toml",
 ]
 
 [[package]]

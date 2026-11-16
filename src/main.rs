@@ -178,6 +178,15 @@ fn main() -> ExitCode {
         .collect();
     // the twin interface parses its own options and always answers in its own envelope (src/twin.rs)
     let first = raw.first().map(String::as_str);
+    // the Grok Bot engine (crates/botport-grok); `grok list` stays with the twin interface
+    #[cfg(feature = "grok")]
+    if first == Some("grok")
+        && raw
+            .get(1)
+            .is_some_and(|s| botport_grok::cli::COMMANDS.contains(&s.as_str()))
+    {
+        return ExitCode::from(botport_grok::cli::main(&raw[1..]));
+    }
     if matches!(first, Some("twin" | "grok"))
         || (first == Some("version") && raw.iter().any(|s| s == "--json"))
     {

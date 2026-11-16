@@ -1,0 +1,15 @@
+[package]
+name = "botport-grok"
+version = "0.3.0"
+edition = "2021"
+description = "botport's Grok Bot desktop-app engine: bots/ask/send/wait/read/stop/watch over the local debug port, policy presets and hard floors, stdio MCP"
+license = "MIT"
+repository = "https://github.com/hudsonwa/botport"
+rust-version = "1.89"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+sha2 = "0.10"

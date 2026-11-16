@@ -1,0 +1,79 @@
+{
+ "app_version": "1.1.0",
+ "synthetic": true,
+ "source": "scrubbed from a TEST-account recording, see control/GROUND-TRUTH.md",
+ "summary": {
+  "isEnterprise": false,
+  "enterpriseTeamId": null,
+  "sandUsagePercent": 18.699891657638137,
+  "sandUsageResetTimestampMs": 1794929157949,
+  "hasAvailableUsage": true,
+  "isSandTrial": false,
+  "hasEndedSandTrial": false,
+  "hasNonZeroIncludedLimit": true,
+  "canCancelSandTrial": false,
+  "onDemand": {
+   "usedCents": 0,
+   "limitCents": null,
+   "resetTimestampMs": 1794929157949
+  },
+  "onDemandSettings": {
+   "visible": true,
+   "eligible": true,
+   "enabled": false
+  },
+  "spendLimit": {
+   "mode": "unlimited",
+   "limitDollars": null
+  },
+  "upgradeCtas": [
+   {
+    "label": "Synthetic label 58.",
+    "disabled": false,
+    "kind": "manage-plan-on-cursor",
+    "supportingText": "Synthetic supportingText 59.",
+    "action": {
+     "kind": "open-url"
+    }
+   }
+  ],
+  "grokPlanLabel": "Grok Bot Plan",
+  "isUnified": true,
+  "unifiedPlanName": "Premium",
+  "cursorPlanName": "Premium",
+  "billingBrand": "grok",
+  "unifiedUpsellActions": [
+   {
+    "kind": "open-buy-credits",
+    "label": "Synthetic label 60.",
+    "entrypoint": "grok_bot_usage_warning"
+   },
+   {
+    "kind": "open-url",
+    "label": "Synthetic label 61.",
+    "emphasis": "primary"
+   }
+  ],
+  "planUpgrades": [
+   {
+    "planName": "Super"
+   },
+   {
+    "planName": "Ultra"
+   }
+  ]
+ },
+ "weekly": {
+  "percentUsed": 18.699891657638137,
+  "nextResetMs": 1794929157949,
+  "isSandTrial": false,
+  "hasNonZeroIncludedLimit": true,
+  "isTeamSeat": false,
+  "onDemand": null,
+  "prepaidBalanceUnknown": true,
+  "grokPlanLabel": "Grok Bot Plan",
+  "unifiedPlanName": "Premium",
+  "readForTeamId": null
+ },
+ "localToolPermission": "ask"
+}

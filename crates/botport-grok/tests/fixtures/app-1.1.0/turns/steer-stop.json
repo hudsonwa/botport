@@ -1,0 +1,1593 @@
+{
+ "app_version": "1.1.0",
+ "synthetic": true,
+ "source": "scrubbed from a TEST-account recording, see control/GROUND-TRUTH.md",
+ "poll_interval_ms": 400,
+ "samples": [
+  {
+   "t": 1794801808193,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t2s0",
+    "unreadCount": 6
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 50."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 9,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801809486,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t2s0",
+    "unreadCount": 6
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 50."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 10,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801810071,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t2s0",
+    "unreadCount": 6
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 50."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 10,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801810587,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t2s0",
+    "unreadCount": 6
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 50."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 10,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801811037,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t2s0",
+    "unreadCount": 6
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 50."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 10,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801811626,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t2s0",
+    "unreadCount": 6
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 50."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 10,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801812221,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t2s0",
+    "unreadCount": 6
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 50."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 10,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801812791,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t2s0",
+    "unreadCount": 6
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 50."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 10,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801813385,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t2s0",
+    "unreadCount": 6
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 50."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 10,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801813791,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t2s0",
+    "unreadCount": 6
+   },
+   "row": {
+    "busy": null,
+    "desc": "Synthetic desc 50."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": false,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 10,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801814345,
+   "agent": {
+    "isActive": false,
+    "isRunning": true,
+    "isRunningTurn": true,
+    "isComposingMessage": true,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t2s0",
+    "unreadCount": 6
+   },
+   "row": {
+    "busy": null,
+    "composing": "true",
+    "desc": "Synthetic desc 50."
+   },
+   "chat": {
+    "isAgentRunning": true,
+    "isAgentComposing": true,
+    "agentActivity": {
+     "kind": "tool",
+     "tool": "SetStatus",
+     "detail": "is doing synthetic work"
+    },
+    "n": 10,
+    "lastKinds": [
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false"
+    ]
+   }
+  },
+  {
+   "t": 1794801814781,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801815376,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801815961,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801816536,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801817044,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801817488,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801818062,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801818661,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801819217,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801819818,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801820410,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801820921,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801821514,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801822094,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801822690,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801823253,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801823715,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801824315,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801824880,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801825390,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801825988,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801826530,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801827087,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801827625,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801828145,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801828656,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801829248,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801829838,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801830436,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801830874,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801831460,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801832060,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801832594,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801833036,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801833611,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801834212,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801834812,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801835378,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801835979,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801836556,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801837145,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801837733,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801838330,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  },
+  {
+   "t": 1794801838922,
+   "agent": {
+    "isActive": false,
+    "isRunning": false,
+    "isRunningTurn": false,
+    "isComposingMessage": false,
+    "awaitingUserResponse": null,
+    "lastMessageId": "t3s0",
+    "unreadCount": 7
+   },
+   "row": {
+    "busy": null,
+    "desc": "STOPPED"
+   },
+   "chat": {
+    "isAgentRunning": false,
+    "isAgentComposing": false,
+    "agentActivity": null,
+    "n": 11,
+    "lastKinds": [
+     "message:user:false",
+     "send-message:text:",
+     "message:user:false",
+     "send-message:text:"
+    ]
+   }
+  }
+ ]
+}

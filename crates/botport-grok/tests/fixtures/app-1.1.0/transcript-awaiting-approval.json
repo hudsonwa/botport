@@ -1,0 +1,642 @@
+{
+ "app_version": "1.1.0",
+ "synthetic": true,
+ "source": "scrubbed from a TEST-account recording, see control/GROUND-TRUTH.md",
+ "currentAgentId": "00000000-0000-4000-8000-000000000035",
+ "agents": [
+  {
+   "id": "00000000-0000-4000-8000-000000000035",
+   "name": "Temp Probe Bot",
+   "description": "",
+   "title": "",
+   "avatarShape": "wedge",
+   "avatarColor": "gray",
+   "avatarVersion": null,
+   "createdAt": 1794801551232,
+   "updatedAt": 1794801850009,
+   "path": "",
+   "isActive": false,
+   "isRunning": false,
+   "isRunningTurn": false,
+   "isComposingMessage": false,
+   "lastEntry": {
+    "kind": "text",
+    "text": "Synthetic text 33."
+   },
+   "lastMessageId": "t4s1",
+   "hasUnread": true,
+   "awaitingUserResponse": {
+    "tabId": "auto-review",
+    "reason": "Permission needed on your computer: echo synthetic",
+    "since": 1794801850009
+   },
+   "notificationsEnabled": true,
+   "notifyOnUpdatesEnabled": true,
+   "origin": "user",
+   "isGroup": false,
+   "memberIds": [],
+   "harness": "temporal",
+   "serverId": "10000009",
+   "visibility": "owner",
+   "sharedWithOthers": false,
+   "viewerIsOwner": true,
+   "slackStatus": "none",
+   "voiceId": null,
+   "voiceSpeed": 1,
+   "voiceLanguage": "auto",
+   "lastActivityAt": 1794801850009,
+   "isRetrying": false,
+   "awaitingSessionIds": [
+    ""
+   ],
+   "boxHandoff": null,
+   "lastTurnSettlement": {
+    "clientNonce": "00000000-0000-4000-8000-000000000036",
+    "outcome": "success",
+    "settledAtMs": 1794801850076
+   },
+   "unreadCount": 9,
+   "unreadThreadCount": 0,
+   "lastViewedAt": 1794801553377,
+   "newestEntryId": "t4s1",
+   "lastMessagePreview": "Synthetic lastMessagePreview 33.",
+   "lastMessagePreviewSource": null,
+   "isHiddenFromSidebar": false,
+   "isRemovedFromSidebar": false
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000001",
+   "name": "Main Bot",
+   "description": "Synthetic description 1.",
+   "title": "",
+   "avatarShape": "tablet",
+   "avatarColor": "green",
+   "avatarVersion": null,
+   "createdAt": 1794745061687,
+   "updatedAt": 1794798829228,
+   "path": "/home/box/sand-data/agents/00000000-0000-4000-8000-000000000001/store.db",
+   "lastEntry": {
+    "kind": "text",
+    "text": "PASS: synthetic result; synthetic check",
+    "sessionPreview": {
+     "kind": "message_text",
+     "text": "PASS: synthetic result; synthetic check"
+    }
+   },
+   "lastMessageId": "t45s2",
+   "newestEntryId": "t45s2",
+   "hasUnread": false,
+   "unreadCount": 0,
+   "unreadThreadCount": 0,
+   "lastViewedAt": 1794801429211,
+   "lastActivityAt": 1794798829228,
+   "localActivityAt": 1794745694513,
+   "awaitingUserResponse": null,
+   "notificationsEnabled": false,
+   "notifyOnUpdatesEnabled": true,
+   "isHiddenFromSidebar": false,
+   "origin": "user",
+   "harness": "temporal",
+   "isGroup": false,
+   "memberIds": [],
+   "isActive": false,
+   "isRunning": false,
+   "isRunningTurn": false,
+   "isComposingMessage": false,
+   "visibility": "owner",
+   "sharedWithOthers": false,
+   "slackStatus": "none",
+   "voiceId": null,
+   "voiceSpeed": 1,
+   "voiceLanguage": "auto",
+   "serverId": "10000001",
+   "viewerIsOwner": true,
+   "lastMessagePreview": "PASS: synthetic result; synthetic check",
+   "lastMessagePreviewSource": {
+    "kind": "message_text",
+    "text": "PASS: synthetic result; synthetic check"
+   }
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000002",
+   "name": "Ledger Bot",
+   "description": "",
+   "title": "",
+   "avatarShape": "square",
+   "avatarColor": "violet",
+   "avatarVersion": null,
+   "createdAt": 1794428334180,
+   "updatedAt": 1794442270417,
+   "path": "/home/box/sand-data/agents/00000000-0000-4000-8000-000000000002/store.db",
+   "lastEntry": {
+    "kind": "text",
+    "text": "Synthetic text 2.",
+    "sessionPreview": {
+     "kind": "message_text",
+     "text": "Synthetic text 2."
+    }
+   },
+   "lastMessageId": "t50s423",
+   "newestEntryId": "t50s423",
+   "hasUnread": false,
+   "unreadCount": 0,
+   "unreadThreadCount": 0,
+   "lastViewedAt": 1794801425861,
+   "lastActivityAt": 1794442270417,
+   "localActivityAt": 1794428447421,
+   "awaitingUserResponse": null,
+   "notificationsEnabled": false,
+   "notifyOnUpdatesEnabled": true,
+   "isHiddenFromSidebar": false,
+   "origin": "user",
+   "harness": "temporal",
+   "isGroup": false,
+   "memberIds": [],
+   "isActive": false,
+   "isRunning": false,
+   "isRunningTurn": false,
+   "isComposingMessage": false,
+   "visibility": "owner",
+   "sharedWithOthers": false,
+   "slackStatus": "none",
+   "voiceId": null,
+   "voiceSpeed": 1,
+   "voiceLanguage": "auto",
+   "serverId": "10000002",
+   "viewerIsOwner": true,
+   "lastMessagePreview": "Synthetic lastMessagePreview 2.",
+   "lastMessagePreviewSource": {
+    "kind": "message_text",
+    "text": "Synthetic text 2."
+   }
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000003",
+   "name": "Mirror Bot",
+   "description": "Synthetic description 3.",
+   "title": "",
+   "avatarShape": "cloud",
+   "avatarColor": "yellow",
+   "avatarVersion": null,
+   "createdAt": 1794428244937,
+   "updatedAt": 1794442249789,
+   "path": "/home/box/sand-data/agents/00000000-0000-4000-8000-000000000003/store.db",
+   "lastEntry": {
+    "kind": "text",
+    "text": "Synthetic text 4.",
+    "sessionPreview": {
+     "kind": "message_text",
+     "text": "Synthetic text 4."
+    }
+   },
+   "lastMessageId": "t16s0",
+   "newestEntryId": "t16s0",
+   "hasUnread": true,
+   "unreadCount": 3,
+   "unreadThreadCount": 0,
+   "lastViewedAt": 1794441084675,
+   "lastActivityAt": 1794442249789,
+   "localActivityAt": 1794428447416,
+   "awaitingUserResponse": null,
+   "notificationsEnabled": false,
+   "notifyOnUpdatesEnabled": true,
+   "isHiddenFromSidebar": false,
+   "origin": "user",
+   "harness": "temporal",
+   "isGroup": false,
+   "memberIds": [],
+   "isActive": false,
+   "isRunning": false,
+   "isRunningTurn": false,
+   "isComposingMessage": false,
+   "visibility": "owner",
+   "sharedWithOthers": false,
+   "slackStatus": "none",
+   "voiceId": null,
+   "voiceSpeed": 1,
+   "voiceLanguage": "auto",
+   "serverId": "10000003",
+   "viewerIsOwner": true,
+   "lastMessagePreview": "Synthetic lastMessagePreview 4.",
+   "lastMessagePreviewSource": {
+    "kind": "message_text",
+    "text": "Synthetic text 4."
+   }
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000004",
+   "name": "Scout Bot",
+   "description": "",
+   "title": "",
+   "avatarShape": "square",
+   "avatarColor": "cyan",
+   "avatarVersion": null,
+   "createdAt": 1794407285340,
+   "updatedAt": 1794434599382,
+   "path": "/home/box/sand-data/agents/00000000-0000-4000-8000-000000000004/store.db",
+   "lastEntry": {
+    "kind": "text",
+    "text": "DONE",
+    "sessionPreview": {
+     "kind": "message_text",
+     "text": "DONE"
+    }
+   },
+   "lastMessageId": "t3s1",
+   "newestEntryId": "t3s1",
+   "hasUnread": true,
+   "unreadCount": 2,
+   "unreadThreadCount": 0,
+   "lastViewedAt": 1794434578617,
+   "lastActivityAt": 1794434599382,
+   "localActivityAt": 1794407349355,
+   "awaitingUserResponse": null,
+   "notificationsEnabled": false,
+   "notifyOnUpdatesEnabled": true,
+   "isHiddenFromSidebar": false,
+   "origin": "user",
+   "harness": "temporal",
+   "isGroup": false,
+   "memberIds": [],
+   "isActive": false,
+   "isRunning": false,
+   "isRunningTurn": false,
+   "isComposingMessage": false,
+   "visibility": "owner",
+   "sharedWithOthers": false,
+   "slackStatus": "none",
+   "voiceId": null,
+   "voiceSpeed": 1,
+   "voiceLanguage": "auto",
+   "serverId": "10000004",
+   "viewerIsOwner": true,
+   "lastMessagePreview": "DONE",
+   "lastMessagePreviewSource": {
+    "kind": "message_text",
+    "text": "DONE"
+   }
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000005",
+   "name": "Finance Bot",
+   "description": "Synthetic description 5.",
+   "title": "",
+   "avatarShape": "wedge",
+   "avatarColor": "blue",
+   "avatarVersion": null,
+   "createdAt": 1794407533291,
+   "updatedAt": 1794418381677,
+   "path": "/home/box/sand-data/agents/00000000-0000-4000-8000-000000000005/store.db",
+   "lastEntry": {
+    "kind": "text",
+    "text": "Synthetic text 6.",
+    "sessionPreview": {
+     "kind": "message_text",
+     "text": "Synthetic text 6."
+    }
+   },
+   "lastMessageId": "t7s1",
+   "newestEntryId": "t7s1",
+   "hasUnread": true,
+   "unreadCount": 4,
+   "unreadThreadCount": 0,
+   "lastViewedAt": 1794418309632,
+   "lastActivityAt": 1794418381677,
+   "localActivityAt": 1794407554162,
+   "awaitingUserResponse": null,
+   "notificationsEnabled": false,
+   "notifyOnUpdatesEnabled": true,
+   "isHiddenFromSidebar": false,
+   "origin": "user",
+   "harness": "temporal",
+   "isGroup": false,
+   "memberIds": [],
+   "isActive": false,
+   "isRunning": false,
+   "isRunningTurn": false,
+   "isComposingMessage": false,
+   "visibility": "owner",
+   "sharedWithOthers": false,
+   "slackStatus": "none",
+   "voiceId": null,
+   "voiceSpeed": 1,
+   "voiceLanguage": "auto",
+   "serverId": "10000005",
+   "viewerIsOwner": true,
+   "lastMessagePreview": "Synthetic lastMessagePreview 6.",
+   "lastMessagePreviewSource": {
+    "kind": "message_text",
+    "text": "Synthetic text 6."
+   }
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000006",
+   "name": "Trip Bot",
+   "description": "Synthetic description 7.",
+   "title": "",
+   "avatarShape": "blob",
+   "avatarColor": "black",
+   "avatarVersion": null,
+   "createdAt": 1794379147983,
+   "updatedAt": 1794418273826,
+   "path": "/home/box/sand-data/agents/00000000-0000-4000-8000-000000000006/store.db",
+   "lastEntry": {
+    "kind": "text",
+    "text": "Synthetic text 8.",
+    "sessionPreview": {
+     "kind": "message_text",
+     "text": "Synthetic text 8."
+    }
+   },
+   "lastMessageId": "t6s1",
+   "newestEntryId": "t6s1",
+   "hasUnread": true,
+   "unreadCount": 18,
+   "unreadThreadCount": 0,
+   "lastViewedAt": 1794417208123,
+   "lastActivityAt": 1794418273826,
+   "localActivityAt": 1794379147964,
+   "awaitingUserResponse": null,
+   "notificationsEnabled": false,
+   "notifyOnUpdatesEnabled": true,
+   "isHiddenFromSidebar": false,
+   "origin": "user",
+   "harness": "temporal",
+   "isGroup": false,
+   "memberIds": [],
+   "isActive": false,
+   "isRunning": false,
+   "isRunningTurn": false,
+   "isComposingMessage": false,
+   "visibility": "owner",
+   "sharedWithOthers": false,
+   "slackStatus": "none",
+   "voiceId": null,
+   "voiceSpeed": 1,
+   "voiceLanguage": "auto",
+   "serverId": "10000006",
+   "viewerIsOwner": true,
+   "lastMessagePreview": "Synthetic lastMessagePreview 8.",
+   "lastMessagePreviewSource": {
+    "kind": "message_text",
+    "text": "Synthetic text 8."
+   }
+  },
+  {
+   "id": "00000000-0000-4000-8000-000000000007",
+   "name": "Helper Bot",
+   "description": "",
+   "title": "",
+   "avatarShape": "blob",
+   "avatarColor": "magenta",
+   "avatarVersion": null,
+   "createdAt": 1794407492808,
+   "updatedAt": 1794407554167,
+   "path": "/home/box/sand-data/agents/00000000-0000-4000-8000-000000000007/store.db",
+   "lastEntry": {
+    "kind": "text",
+    "text": "Synthetic text 9.",
+    "sessionPreview": {
+     "kind": "message_text",
+     "text": "Synthetic text 9."
+    }
+   },
+   "lastMessageId": "t0s1",
+   "newestEntryId": "t0s1",
+   "hasUnread": false,
+   "unreadCount": 0,
+   "unreadThreadCount": 0,
+   "lastViewedAt": 1794407518027,
+   "lastActivityAt": 1794407517900,
+   "localActivityAt": 1794407554167,
+   "awaitingUserResponse": null,
+   "notificationsEnabled": false,
+   "notifyOnUpdatesEnabled": true,
+   "isHiddenFromSidebar": false,
+   "origin": "user",
+   "harness": "temporal",
+   "isGroup": false,
+   "memberIds": [],
+   "isActive": false,
+   "isRunning": false,
+   "isRunningTurn": false,
+   "isComposingMessage": false,
+   "visibility": "owner",
+   "sharedWithOthers": false,
+   "slackStatus": "none",
+   "voiceId": null,
+   "voiceSpeed": 1,
+   "voiceLanguage": "auto",
+   "serverId": "10000007",
+   "viewerIsOwner": true,
+   "lastMessagePreview": "Synthetic lastMessagePreview 9.",
+   "lastMessagePreviewSource": {
+    "kind": "message_text",
+    "text": "Synthetic text 9."
+   }
+  }
+ ],
+ "chat": {
+  "entries": [
+   {
+    "kind": "send-message",
+    "id": "tbs0",
+    "message": {
+     "type": "text",
+     "content": "Synthetic content 34."
+    },
+    "timestampMs": 1794801555206,
+    "requestId": "00000000-0000-4000-8000-000000000037",
+    "seq": 1
+   },
+   {
+    "kind": "send-message",
+    "id": "tbs1",
+    "message": {
+     "type": "widget",
+     "widget": {
+      "prompt": "Synthetic prompt 35.",
+      "options": [
+       {
+        "label": "Synthetic label 36.",
+        "value": "Synthetic value 37."
+       },
+       {
+        "label": "Synthetic label 38.",
+        "value": "Synthetic value 39."
+       },
+       {
+        "label": "Synthetic label 40.",
+        "value": "Synthetic value 41."
+       },
+       {
+        "label": "Synthetic label 42.",
+        "value": "Synthetic value 43."
+       }
+      ],
+      "allowCustom": true,
+      "dismissOnMoveOn": true
+     }
+    },
+    "timestampMs": 1794801557301,
+    "requestId": "00000000-0000-4000-8000-000000000037",
+    "respondedValue": "Synthetic respondedValue 44.",
+    "seq": 2
+   },
+   {
+    "kind": "send-message",
+    "id": "tbs2",
+    "message": {
+     "type": "text",
+     "content": "READY"
+    },
+    "timestampMs": 1794801579410,
+    "requestId": "00000000-0000-4000-8000-000000000038",
+    "seq": 4
+   },
+   {
+    "kind": "message",
+    "id": "t0u",
+    "role": "user",
+    "content": "Synthetic content 45.",
+    "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic user message.\"}]}]}",
+    "isStreaming": false,
+    "timestampMs": 1794801626790,
+    "clientNonce": "00000000-0000-4000-8000-000000000039",
+    "requestId": "00000000-0000-4000-8000-000000000040",
+    "seq": 6,
+    "locallyAuthored": true
+   },
+   {
+    "kind": "send-message",
+    "id": "t0s0",
+    "message": {
+     "type": "text",
+     "content": "Synthetic content 46."
+    },
+    "timestampMs": 1794801673507,
+    "requestId": "00000000-0000-4000-8000-000000000040",
+    "seq": 7
+   },
+   {
+    "kind": "message",
+    "id": "t1u",
+    "role": "user",
+    "content": "Synthetic content 47.",
+    "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic user message.\"}]}]}",
+    "isStreaming": false,
+    "timestampMs": 1794801696598,
+    "clientNonce": "00000000-0000-4000-8000-000000000041",
+    "requestId": "00000000-0000-4000-8000-000000000042",
+    "seq": 8,
+    "locallyAuthored": true
+   },
+   {
+    "kind": "send-message",
+    "id": "t1s0",
+    "message": {
+     "type": "text",
+     "content": "Synthetic content 48."
+    },
+    "timestampMs": 1794801713144,
+    "requestId": "00000000-0000-4000-8000-000000000042",
+    "seq": 9
+   },
+   {
+    "kind": "message",
+    "id": "t2u",
+    "role": "user",
+    "content": "Synthetic content 49.",
+    "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic user message.\"}]}]}",
+    "isStreaming": false,
+    "timestampMs": 1794801755380,
+    "clientNonce": "00000000-0000-4000-8000-000000000043",
+    "requestId": "00000000-0000-4000-8000-000000000044",
+    "seq": 10,
+    "locallyAuthored": true
+   },
+   {
+    "kind": "send-message",
+    "id": "t2s0",
+    "message": {
+     "type": "text",
+     "content": "Synthetic content 50."
+    },
+    "timestampMs": 1794801759412,
+    "requestId": "00000000-0000-4000-8000-000000000044",
+    "seq": 11
+   },
+   {
+    "kind": "message",
+    "id": "t3u",
+    "role": "user",
+    "content": "Synthetic content 51.",
+    "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic user message.\"}]}]}",
+    "isStreaming": false,
+    "timestampMs": 1794801808912,
+    "clientNonce": "00000000-0000-4000-8000-000000000045",
+    "requestId": "00000000-0000-4000-8000-000000000046",
+    "seq": 12,
+    "locallyAuthored": true
+   },
+   {
+    "kind": "send-message",
+    "id": "t3s0",
+    "message": {
+     "type": "text",
+     "content": "STOPPED"
+    },
+    "timestampMs": 1794801814519,
+    "requestId": "00000000-0000-4000-8000-000000000046",
+    "seq": 13
+   },
+   {
+    "kind": "message",
+    "id": "t4u",
+    "role": "user",
+    "content": "Synthetic content 52.",
+    "richText": "{\"type\": \"doc\", \"content\": [{\"type\": \"paragraph\", \"content\": [{\"type\": \"text\", \"text\": \"Synthetic user message.\"}]}]}",
+    "isStreaming": false,
+    "timestampMs": 1794801845781,
+    "clientNonce": "00000000-0000-4000-8000-000000000036",
+    "requestId": "00000000-0000-4000-8000-000000000047",
+    "seq": 14,
+    "locallyAuthored": true
+   },
+   {
+    "kind": "send-message",
+    "id": "t4s0",
+    "message": {
+     "type": "text",
+     "content": "Synthetic content 53."
+    },
+    "timestampMs": 1794801849352,
+    "requestId": "00000000-0000-4000-8000-000000000047",
+    "seq": 15
+   },
+   {
+    "kind": "send-message",
+    "id": "t4s1",
+    "message": {
+     "type": "local-tool-permission",
+     "ask": {
+      "requestId": "0000000000000018",
+      "action": "run-command",
+      "target": "echo synthetic",
+      "machineId": "10000008",
+      "status": "pending",
+      "workingDirectory": ""
+     }
+    },
+    "timestampMs": 1794801850009,
+    "requestId": "00000000-0000-4000-8000-000000000047",
+    "seq": 16
+   }
+  ],
+  "isAgentRunning": false,
+  "isAgentComposing": false,
+  "agentActivity": null,
+  "loadState": "ready",
+  "hasOlder": false
+ }
+}

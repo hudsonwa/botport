@@ -1,0 +1,234 @@
+{
+  "synthetic": true,
+  "source": "the sidebar read every 0.5 s right after launch (live shape from the P1 acceptance run, app 1.1.0: readyState complete, 0 rows, then rows); agents synthetic from roster.json",
+  "interval_ms": 500,
+  "samples": [
+    {
+      "error": "sidebar props not found"
+    },
+    {
+      "agents": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "name": "Main Bot",
+          "description": "Synthetic description 1.",
+          "title": "",
+          "avatarShape": "tablet",
+          "avatarColor": "green",
+          "avatarVersion": null,
+          "createdAt": 1794745061687,
+          "updatedAt": 1794798829228,
+          "path": "/home/box/sand-data/agents/00000000-0000-4000-8000-000000000001/store.db",
+          "lastEntry": {
+            "kind": "text",
+            "text": "PASS: synthetic result; synthetic check",
+            "sessionPreview": {
+              "kind": "message_text",
+              "text": "PASS: synthetic result; synthetic check"
+            }
+          },
+          "lastMessageId": "t45s2",
+          "newestEntryId": "t45s2",
+          "hasUnread": false,
+          "unreadCount": 0,
+          "unreadThreadCount": 0,
+          "lastViewedAt": 1794801429211,
+          "lastActivityAt": 1794798829228,
+          "localActivityAt": 1794745694513,
+          "awaitingUserResponse": null,
+          "notificationsEnabled": false,
+          "notifyOnUpdatesEnabled": true,
+          "isHiddenFromSidebar": false,
+          "origin": "user",
+          "harness": "temporal",
+          "isGroup": false,
+          "memberIds": [],
+          "isActive": false,
+          "isRunning": false,
+          "isRunningTurn": false,
+          "isComposingMessage": false,
+          "visibility": "owner",
+          "sharedWithOthers": false,
+          "slackStatus": "none",
+          "voiceId": null,
+          "voiceSpeed": 1,
+          "voiceLanguage": "auto",
+          "serverId": "10000001",
+          "viewerIsOwner": true,
+          "lastMessagePreview": "PASS: synthetic result; synthetic check",
+          "lastMessagePreviewSource": {
+            "kind": "message_text",
+            "text": "PASS: synthetic result; synthetic check"
+          }
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "name": "Ledger Bot",
+          "description": "",
+          "title": "",
+          "avatarShape": "square",
+          "avatarColor": "violet",
+          "avatarVersion": null,
+          "createdAt": 1794428334180,
+          "updatedAt": 1794442270417,
+          "path": "/home/box/sand-data/agents/00000000-0000-4000-8000-000000000002/store.db",
+          "lastEntry": {
+            "kind": "text",
+            "text": "Synthetic text 2.",
+            "sessionPreview": {
+              "kind": "message_text",
+              "text": "Synthetic text 2."
+            }
+          },
+          "lastMessageId": "t50s423",
+          "newestEntryId": "t50s423",
+          "hasUnread": false,
+          "unreadCount": 0,
+          "unreadThreadCount": 0,
+          "lastViewedAt": 1794801425861,
+          "lastActivityAt": 1794442270417,
+          "localActivityAt": 1794428447421,
+          "awaitingUserResponse": null,
+          "notificationsEnabled": false,
+          "notifyOnUpdatesEnabled": true,
+          "isHiddenFromSidebar": false,
+          "origin": "user",
+          "harness": "temporal",
+          "isGroup": false,
+          "memberIds": [],
+          "isActive": false,
+          "isRunning": false,
+          "isRunningTurn": false,
+          "isComposingMessage": false,
+          "visibility": "owner",
+          "sharedWithOthers": false,
+          "slackStatus": "none",
+          "voiceId": null,
+          "voiceSpeed": 1,
+          "voiceLanguage": "auto",
+          "serverId": "10000002",
+          "viewerIsOwner": true,
+          "lastMessagePreview": "Synthetic lastMessagePreview 2.",
+          "lastMessagePreviewSource": {
+            "kind": "message_text",
+            "text": "Synthetic text 2."
+          }
+        }
+      ],
+      "hiddenAgents": [],
+      "unavailableReason": null
+    },
+    {
+      "agents": [
+        {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "name": "Main Bot",
+          "description": "Synthetic description 1.",
+          "title": "",
+          "avatarShape": "tablet",
+          "avatarColor": "green",
+          "avatarVersion": null,
+          "createdAt": 1794745061687,
+          "updatedAt": 1794798829228,
+          "path": "/home/box/sand-data/agents/00000000-0000-4000-8000-000000000001/store.db",
+          "lastEntry": {
+            "kind": "text",
+            "text": "PASS: synthetic result; synthetic check",
+            "sessionPreview": {
+              "kind": "message_text",
+              "text": "PASS: synthetic result; synthetic check"
+            }
+          },
+          "lastMessageId": "t45s2",
+          "newestEntryId": "t45s2",
+          "hasUnread": false,
+          "unreadCount": 0,
+          "unreadThreadCount": 0,
+          "lastViewedAt": 1794801429211,
+          "lastActivityAt": 1794798829228,
+          "localActivityAt": 1794745694513,
+          "awaitingUserResponse": null,
+          "notificationsEnabled": false,
+          "notifyOnUpdatesEnabled": true,
+          "isHiddenFromSidebar": false,
+          "origin": "user",
+          "harness": "temporal",
+          "isGroup": false,
+          "memberIds": [],
+          "isActive": false,
+          "isRunning": false,
+          "isRunningTurn": false,
+          "isComposingMessage": false,
+          "visibility": "owner",
+          "sharedWithOthers": false,
+          "slackStatus": "none",
+          "voiceId": null,
+          "voiceSpeed": 1,
+          "voiceLanguage": "auto",
+          "serverId": "10000001",
+          "viewerIsOwner": true,
+          "lastMessagePreview": "PASS: synthetic result; synthetic check",
+          "lastMessagePreviewSource": {
+            "kind": "message_text",
+            "text": "PASS: synthetic result; synthetic check"
+          }
+        },
+        {
+          "id": "00000000-0000-4000-8000-000000000002",
+          "name": "Ledger Bot",
+          "description": "",
+          "title": "",
+          "avatarShape": "square",
+          "avatarColor": "violet",
+          "avatarVersion": null,
+          "createdAt": 1794428334180,
+          "updatedAt": 1794442270417,
+          "path": "/home/box/sand-data/agents/00000000-0000-4000-8000-000000000002/store.db",
+          "lastEntry": {
+            "kind": "text",
+            "text": "Synthetic text 2.",
+            "sessionPreview": {
+              "kind": "message_text",
+              "text": "Synthetic text 2."
+            }
+          },
+          "lastMessageId": "t50s423",
+          "newestEntryId": "t50s423",
+          "hasUnread": false,
+          "unreadCount": 0,
+          "unreadThreadCount": 0,
+          "lastViewedAt": 1794801425861,
+          "lastActivityAt": 1794442270417,
+          "localActivityAt": 1794428447421,
+          "awaitingUserResponse": null,
+          "notificationsEnabled": false,
+          "notifyOnUpdatesEnabled": true,
+          "isHiddenFromSidebar": false,
+          "origin": "user",
+          "harness": "temporal",
+          "isGroup": false,
+          "memberIds": [],
+          "isActive": false,
+          "isRunning": false,
+          "isRunningTurn": false,
+          "isComposingMessage": false,
+          "visibility": "owner",
+          "sharedWithOthers": false,
+          "slackStatus": "none",
+          "voiceId": null,
+          "voiceSpeed": 1,
+          "voiceLanguage": "auto",
+          "serverId": "10000002",
+          "viewerIsOwner": true,
+          "lastMessagePreview": "Synthetic lastMessagePreview 2.",
+          "lastMessagePreviewSource": {
+            "kind": "message_text",
+            "text": "Synthetic text 2."
+          }
+        }
+      ],
+      "hiddenAgents": [],
+      "unavailableReason": null
+    }
+  ]
+}

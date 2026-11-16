@@ -4,11 +4,27 @@
 [Hermes Agent](https://github.com/NousResearch/hermes-agent).**
 
 ## Use it from Hermes: Grok Bot Twin
-A Hermes plugin, `grok-bot-twin`, keeps a Grok Bot and its Hermes twin in step by calling `botport twin ... --json`.
-botport reads the Grok desktop app's local cache on your machine (each bot's name, description and routine names),
-makes no network calls, and holds back any item that looks like it holds a secret (a check, not a guarantee).
-Instructions and skills travel through your Mirror bot in Grok, or a one-time export. Reference:
-[docs/TWIN.md](docs/TWIN.md). Try it without Grok: `botport twin demo --hermes-home "$(mktemp -d)" --state-dir "$(mktemp -d)"`.
+Most people use botport through **[Grok Bot Twin](https://github.com/hudsonwa/twin)**, a Hermes plugin. Install the
+plugin; its `hermes twin setup` downloads a ready-made, fingerprint-checked botport for you, so **no Rust is needed**
+(ready-made copies: Mac Apple Silicon and Intel, Linux ARM and x86). How they split the work:
+
+- **Grok Bot Twin**: the Twins page, `hermes twin` commands, the one prompt in Grok, Hermes tools, git history.
+- **botport** (this repo): the engine it runs, `botport twin ... --json`. It reads what the Grok bot sent, writes
+  it into the twin's Hermes profile, checks both sides match (`drift`), runs the behaviour test and brings chat
+  history across. It makes no network calls and holds back anything that looks like a secret (a check, not a
+  guarantee).
+
+- **The Grok engine** (new in 0.3.0, `botport grok …`): drives the Grok Bot desktop app on the same Mac over its
+  loopback debug port, opened only while needed and closed again by a time limit. It lists bots, sends a message and
+  waits for the reply, reads chats, manages routines and files, and checks usage before a paid turn. It never answers
+  an approval card for you, deletes only by exact name, and reports a PASS only when a second route confirms it.
+  Tested on Grok Bot 1.1.0; an app update is checked with `botport grok canary`. Reference:
+  [docs/GROK-ENGINE-INTERFACES.md](docs/GROK-ENGINE-INTERFACES.md).
+
+Each plugin version accepts exactly one botport release. Grok Bot Twin 0.4.x uses botport 0.2.1; the next Grok Bot
+Twin release requires botport 0.3.0 for the Grok engine.
+Reference: [docs/TWIN.md](docs/TWIN.md). Try it without Grok:
+`botport twin demo --hermes-home "$(mktemp -d)" --state-dir "$(mktemp -d)"`. Building it yourself (needs Rust) is in [docs/INSTALL.md](docs/INSTALL.md).
 
 ## What works today, between a Grok Bot and a Hermes bot
 1. **Export and import, both directions.** The Grok Bot exports itself into a bundle and `botport apply` turns it

@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-16
+
+### Added
+- `botport grok usage`, `botport grok routines <bot> [list|add|enable|disable|remove|run]` and `botport grok files
+  <bot> [list|fetch|download|upload|delete]` (P3). `files fetch` saves a file a bot sent in chat, byte-exact, through
+  the app's own preview (the direct attachment reads are refused over the port on app 1.1.0); downloads never
+  overwrite and are checked by sha256 against the app's own hash. Routine add/remove go through the bot where the
+  app has no direct call; enable/disable are direct. Routine remove and file delete take the exact name only.
+- A usage check before every paid turn (warn in fast and balanced, refuse in careful).
+- The routine-run needs-input signal: a routine's approval card is reported as waiting for you (exit 3).
+- MCP: `grok_usage`, `grok_routines`, `grok_files`, `grok_routine_remove`, `grok_file_delete`; destructive tools take
+  `confirm` = the exact name and are never on a `--bot-callable` server, where routines and files are list-only.
+- `botport grok launch --for DUR [--when-idle MIN]`: short port windows for scheduled work. Reuses an open botport
+  port instead of restarting the app, restarts only when the Mac has been idle, names a signed-out app and an
+  untested version, and restores a window whose job or guard died (said so on the next run).
+- `botport grok canary` (P5): read-only check after an app update, with a tested-versions table.
+- `botport grok status|launch|restore|bots|ask|send|wait|read|stop|watch|policy|mcp` (P1 engine core, crate
+  `crates/botport-grok`, default cargo feature `grok`): control of the Grok Bot desktop app on the same machine over
+  its loopback debug port, opened only while needed on a random port (0600 port file, TTL guard). JSON output, exit
+  codes 0/1/2/3/4/5, a PASS/FAIL line per command checked by a second route, policy presets careful|balanced|fast
+  (default fast) with hard floors that no preset reaches (loopback only, never answers approval cards, no secrets in
+  logs, exact-name deletes, port TTL, an allowlist of app functions). A stdio MCP server mirrors the commands; a
+  `--bot-callable` server has no stop. A fake transport replays scrubbed fixtures for offline tests. Interfaces:
+  [docs/GROK-ENGINE-INTERFACES.md](docs/GROK-ENGINE-INTERFACES.md).
+
 ## [0.2.1] - 2026-11-10
 
 ### Fixed

@@ -1,0 +1,59 @@
+{
+ "app_version": "1.1.0",
+ "synthetic": true,
+ "source": "scrubbed from a TEST-account recording, see control/GROUND-TRUTH.md",
+ "byAgent": {
+  "00000000-0000-4000-8000-000000000001": {
+   "files": [],
+   "totalBytes": 0,
+   "canEdit": true
+  },
+  "00000000-0000-4000-8000-000000000002": {
+   "files": [
+    {
+     "name": "export.json",
+     "path": "grok-bot/agents/00000000-0000-4000-8000-000000000002/attachments/01SYNTHETIC000000000000001.json",
+     "sizeBytes": 4096,
+     "contentType": "application/json",
+     "updatedAtMs": 1794751803000,
+     "etag": "\"synthetic-etag-1\""
+    },
+    {
+     "name": "notes.md",
+     "path": "grok-bot/agents/00000000-0000-4000-8000-000000000002/attachments/01SYNTHETIC000000000000002.md",
+     "sizeBytes": 120,
+     "contentType": "text/markdown",
+     "updatedAtMs": 1794751804000,
+     "etag": "\"synthetic-etag-2\""
+    }
+   ],
+   "totalBytes": 4216,
+   "canEdit": true
+  },
+  "00000000-0000-4000-8000-000000000003": {
+   "files": [],
+   "totalBytes": 0,
+   "canEdit": true
+  },
+  "00000000-0000-4000-8000-000000000004": {
+   "files": [],
+   "totalBytes": 0,
+   "canEdit": true
+  },
+  "00000000-0000-4000-8000-000000000005": {
+   "files": [],
+   "totalBytes": 0,
+   "canEdit": true
+  },
+  "00000000-0000-4000-8000-000000000006": {
+   "files": [],
+   "totalBytes": 0,
+   "canEdit": true
+  },
+  "00000000-0000-4000-8000-000000000007": {
+   "files": [],
+   "totalBytes": 0,
+   "canEdit": true
+  }
+ }
+}

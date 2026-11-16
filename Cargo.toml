@@ -1,6 +1,6 @@
 [package]
 name = "botport"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 description = "Port, sync and bridge AI bots between Grok Bot and Hermes"
 repository = "https://github.com/hudsonwa/botport"
@@ -29,6 +29,13 @@ regex = { version = "1", default-features = false, features = ["std", "unicode-c
 zip = { version = "9", default-features = false, features = ["deflate"] }
 toml = "0.8"
 unicode-normalization = "0.1"
+# the Grok Bot desktop-app engine (`botport grok status|launch|restore|bots|ask|send|wait|read|stop|watch|policy|mcp`)
+botport-grok = { path = "crates/botport-grok", optional = true }
+
+[features]
+default = ["grok"]
+# live-app control lives in its own crate; build without it with --no-default-features
+grok = ["dep:botport-grok"]
 
 [target.'cfg(unix)'.dependencies]
 # openat/unlinkat through directory handles with O_NOFOLLOW (already in the tree through g2h)
@@ -42,6 +49,6 @@ strip = true
 panic = "abort"
 
 [workspace]
-members = ["crates/g2h"]
+members = ["crates/g2h", "crates/botport-grok"]
 # plain `cargo build --release` builds botport, grok2hermes, g2h and g2hd
-default-members = [".", "crates/g2h"]
+default-members = [".", "crates/g2h", "crates/botport-grok"]
