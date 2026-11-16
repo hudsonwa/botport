@@ -85,8 +85,28 @@ fn opts(home: &Path, cfg: Config) -> DaemonOptions {
     o
 }
 
+/// Bind, tolerating this test's own just-stopped daemon's lock for a moment (a restart on the same
+/// home; a child forked by another test thread can hold the fd until its exec, botport#65).
+fn bind_restart(o: &DaemonOptions) -> daemon::Bound {
+    bind_wait(o).unwrap_or_else(|e| panic!("{e}"))
+}
+
+/// `daemon::bind`, but a lock held by someone else is waited for up to 5 s before its error is
+/// returned (only another test thread's forked child can hold it: each test has its own home).
+fn bind_wait(o: &DaemonOptions) -> Result<daemon::Bound, String> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match daemon::bind(o) {
+            Err(e) if e.contains("already running") && Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            r => return r,
+        }
+    }
+}
+
 fn start<B: PeerBackend + 'static>(o: DaemonOptions, be: B) -> D {
-    let bound = daemon::bind(&o).unwrap();
+    let bound = bind_restart(&o);
     let shutdown = Rc::new(Notify::new());
     let sd = shutdown.clone();
     let task = tokio::task::spawn_local(async move { bound.run(be, sd).await.unwrap() });

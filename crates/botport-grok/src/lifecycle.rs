@@ -62,6 +62,11 @@ pub trait AppHost {
     fn tcp_listeners(&self, pid: u32) -> Vec<String>;
     /// Arm the TTL guard (a detached `botport grok _ttl-guard`).
     fn arm_guard(&mut self, opened_at_ms: u64, expires_ms: u64) -> Result<(), String>;
+    /// Every Grok Bot main process whose command line still carries a `--remote-debugging-*` flag (`ps` args,
+    /// audit 2026-11-16 floor 5: a restore must not PASS while one runs). Default: none (older fakes).
+    fn debug_flag_pids(&self) -> Vec<u32> {
+        Vec::new()
+    }
     /// Seconds since the last keyboard/mouse input on this Mac (`ioreg` HIDIdleTime); None if unknown.
     /// Additive (issue 02): `launch --when-idle` reads it.
     fn idle_s(&self) -> Option<u64> {
@@ -332,24 +337,54 @@ impl Lifecycle<'_> {
             }
         }
         let t0 = self.now();
+        let mut requit = true;
         loop {
+            // floor 5 (audit 2026-11-16): PASS needs all three, read again on every pass: no main process with a
+            // `--remote-debugging-*` flag (ps args), no `DevToolsActivePort`, and no TCP listener. A restore that
+            // looked only at lsof PASSed while the app still ran with `--remote-debugging-port=0` (the listener
+            // was not up yet, or the main process was not found at that instant).
+            let flagged = self.host.debug_flag_pids();
+            if requit && !flagged.is_empty() {
+                // one more clean quit of every flagged process (e.g. a second instance, or one that came back)
+                requit = false;
+                for p in &flagged {
+                    let _ = self.host.quit(*p);
+                }
+                self.host.remove_devtools_active_port();
+                if self.host.installed_version().is_some() && self.host.main_pid().is_none() {
+                    let _ = self.host.start(false);
+                }
+                continue;
+            }
             let pid = self.host.main_pid();
             let listening = pid
                 .map(|p| !self.host.tcp_listeners(p).is_empty())
                 .unwrap_or(false);
-            if !listening {
+            let dap = self.host.devtools_active_port().is_some();
+            // an installed app gets a moment to come back up before "no listener" counts
+            let settled =
+                pid.is_some() || self.host.installed_version().is_none() || self.now() - t0 > 5_000;
+            if flagged.is_empty() && !dap && !listening && settled {
                 return Outcome::ok(
                     (),
-                    Proof::pass("port closed", "no Grok TCP listener", "lsof"),
+                    Proof::pass(
+                        "port closed",
+                        "no Grok TCP listener, no debug flag, no DevToolsActivePort",
+                        "lsof + ps args + port file",
+                    ),
                 );
             }
             if self.now() - t0 > 10_000 {
-                return Outcome::fail(
-                    ExitCode::Other,
-                    what,
-                    "Grok Bot still has a TCP listener",
-                    None,
-                );
+                let why = if !flagged.is_empty() {
+                    "Grok Bot still runs with a --remote-debugging flag"
+                } else if dap {
+                    "DevToolsActivePort is still there"
+                } else if listening {
+                    "Grok Bot still has a TCP listener"
+                } else {
+                    "Grok Bot did not come back up"
+                };
+                return Outcome::fail(ExitCode::Other, what, why, None);
             }
             self.clock.sleep_ms(250);
         }
@@ -531,6 +566,16 @@ impl AppHost for MacHost {
             .collect()
     }
 
+    fn debug_flag_pids(&self) -> Vec<u32> {
+        let exe = self
+            .app
+            .join("Contents/MacOS/")
+            .to_string_lossy()
+            .into_owned();
+        let out = run("/bin/ps", &["-axww", "-o", "pid=,args="]).unwrap_or_default();
+        debug_flag_pids_in(&out, &exe)
+    }
+
     fn arm_guard(&mut self, opened_at_ms: u64, _expires_ms: u64) -> Result<(), String> {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
         detach(&mut std::process::Command::new(exe))
@@ -603,6 +648,34 @@ mod detach_tests {
         assert_ne!(cg, pg);
         assert_eq!(cs, pid, "and its own session");
         assert_ne!(cs, ps);
+    }
+}
+
+/// `ps -o pid=,args=` lines -> the pids of Grok main processes (not Helpers) started with a remote-debugging flag.
+pub fn debug_flag_pids_in(ps: &str, exe_dir: &str) -> Vec<u32> {
+    ps.lines()
+        .filter_map(|l| {
+            let l = l.trim_start();
+            let (pid, args) = l.split_once(' ')?;
+            let args = args.trim_start();
+            let main =
+                args.starts_with(exe_dir) && !args[exe_dir.len()..].starts_with("Grok Bot Helper");
+            (main && args.contains("--remote-debugging-")).then(|| pid.parse().ok())?
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod debug_flag_tests {
+    const EXE: &str = "/Applications/Grok Bot.app/Contents/MacOS/";
+    #[test]
+    fn finds_only_flagged_main_processes() {
+        let ps = "  101 /Applications/Grok Bot.app/Contents/MacOS/Grok Bot --remote-debugging-address=127.0.0.1 --remote-debugging-port=0\n\
+                  102 /Applications/Grok Bot.app/Contents/MacOS/Grok Bot\n\
+                  103 /Applications/Grok Bot.app/Contents/Frameworks/Grok Bot Helper.app/Contents/MacOS/Grok Bot Helper --remote-debugging-port=0\n\
+                  104 /usr/bin/grep --remote-debugging-port\n";
+        assert_eq!(super::debug_flag_pids_in(ps, EXE), vec![101]);
+        assert!(super::debug_flag_pids_in("", EXE).is_empty());
     }
 }
 

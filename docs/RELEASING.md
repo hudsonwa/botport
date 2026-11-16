@@ -6,6 +6,24 @@ Push a `v*` tag. `.github/workflows/release.yml` builds the four targets with `s
 publishes the archives, their `.sha256` files and `SHA256SUMS`; the asset names are listed in
 [INSTALL.md](INSTALL.md#building-release-archives).
 
+## Gates before a tag
+
+1. **Green main-branch CI.** `release.yml` runs the full CI itself, and its `main-ci-green` job also waits for every
+   `ci.yml` push run on the tagged commit to have succeeded (`scripts/wait-ci-green.sh`). A failed or missing run
+   stops the release before anything is built, so a tag whose CI failed gets no assets.
+2. **Large-account canary** (botport 0.3.0 and 0.3.1 shipped bugs that only a large account shows). The fake-transport
+   tests cover a 64-bot roster with 15 rendered rows, a bot that needs scrolling, and a collapsed sidebar
+   (`crates/botport-grok/tests/engine.rs`). Before tagging, also run on a large TEST account (60+ invented bots,
+   never an owner's main account), with the chat open so the sidebar is collapsed:
+
+       botport grok bots --json                > canary/bots.json      # PASS: N bots; k of N rendered rows match
+       botport grok read "<an off-screen bot>" > canary/read.txt       # scrolls the sidebar to it
+       botport grok ask "<the main bot>" "Reply READY" > canary/ask.txt # the one write: a single ask
+       botport grok restore                                            # PASS; no debug-flagged process left
+
+   Read-only apart from that one ask. Keep the four outputs as `canary/<tag>.txt` with the release notes. Tag only
+   when all four say PASS.
+
 ## Build attestations
 
 The `build` job attests every archive and every binary in it with `actions/attest-build-provenance` (GitHub's

@@ -17,6 +17,8 @@ step cargo fmt --all --check
 step cargo build --workspace --all-targets --locked
 step cargo clippy --workspace --all-targets -- -D warnings
 step cargo test --workspace
+echo "==> release gate script"
+scripts/test-wait-ci-green.sh
 
 if command -v cargo-deny >/dev/null 2>&1; then
   step cargo deny check licenses advisories

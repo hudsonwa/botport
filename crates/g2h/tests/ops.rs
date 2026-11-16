@@ -479,7 +479,7 @@ fn start_ttl(home: &Path, cfg: Config, be: Rec, code_ttl: Option<Duration>) -> D
     if let Some(t) = code_ttl {
         o.code_ttl = t;
     }
-    let bound = daemon::bind(&o).unwrap();
+    let bound = bind_restart(&o);
     let shutdown = Rc::new(Notify::new());
     let sd = shutdown.clone();
     let task = tokio::task::spawn_local(async move { bound.run(be, sd).await.unwrap() });
@@ -488,6 +488,30 @@ fn start_ttl(home: &Path, cfg: Config, be: Rec, code_ttl: Option<Duration>) -> D
         home: o.paths.home.clone(),
         shutdown,
         task,
+    }
+}
+
+/// Bind, tolerating the lock of this test's own just-stopped daemon for a moment.
+///
+/// Each test has its own temp home, so the only holder can be this test's previous daemon on the
+/// same home (a restart). Its lock file description can briefly outlive `stop()`: a child that
+/// another test thread forks in that instant inherits the fd until its own exec (CI flake,
+/// botport#65). Any other bind error, or a lock still held after 5 s, fails the test.
+fn bind_restart(o: &DaemonOptions) -> daemon::Bound {
+    bind_wait(o).unwrap_or_else(|e| panic!("{e}"))
+}
+
+/// `daemon::bind`, but a lock held by someone else is waited for up to 5 s before its error is
+/// returned (only another test thread's forked child can hold it: each test has its own home).
+fn bind_wait(o: &DaemonOptions) -> Result<daemon::Bound, String> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        match daemon::bind(o) {
+            Err(e) if e.contains("already running") && std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            r => return r,
+        }
     }
 }
 
@@ -1093,7 +1117,7 @@ fn op_to_grok_validates_and_bad_status_is_refused() {
 fn start_sep(home: &Path, cfg: Config, be: Rec, peer: Option<u32>) -> D {
     let mut o = DaemonOptions::new(Paths::new(home), cfg);
     o.peer_uid_override = peer;
-    let bound = daemon::bind(&o).unwrap();
+    let bound = bind_restart(&o);
     let shutdown = Rc::new(Notify::new());
     let sd = shutdown.clone();
     let task = tokio::task::spawn_local(async move { bound.run(be, sd).await.unwrap() });
@@ -1237,7 +1261,7 @@ fn separate_user_refuses_to_start_when_misconfigured() {
     let me = own_uid(t.path());
     // g2hd's own uid listed as a client = same user in disguise
     let (cfg, _) = sep_cfg(t.path(), me);
-    let e = daemon::bind(&DaemonOptions::new(Paths::new(&home), cfg.clone()))
+    let e = bind_wait(&DaemonOptions::new(Paths::new(&home), cfg.clone()))
         .err()
         .unwrap();
     assert!(e.contains("allowed_uids"), "{e}");
@@ -1250,7 +1274,7 @@ fn separate_user_refuses_to_start_when_misconfigured() {
         std::fs::Permissions::from_mode(0o666),
     )
     .unwrap();
-    let e = daemon::bind(&DaemonOptions::new(Paths::new(&home), cfg))
+    let e = bind_wait(&DaemonOptions::new(Paths::new(&home), cfg))
         .err()
         .unwrap();
     assert!(e.contains("writable"), "{e}");

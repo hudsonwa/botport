@@ -10,8 +10,21 @@ jobs:
   # the full CI suite (ci.yml) must pass on the tagged commit before anything is built or published
   ci:
     uses: ./.github/workflows/ci.yml
+  # ...and the main-branch CI run (ci.yml on push) for the same commit must be green too: v0.3.2 published while
+  # that run had failed on ubuntu, because this file's own CI pass was a separate run (botport#65). Waits up to
+  # 60 min for a run still going; no run, or any failed one, stops the release.
+  main-ci-green:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: wait for a green ci.yml push run on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/wait-ci-green.sh "$GITHUB_REPOSITORY" "$GITHUB_SHA"
   build:
-    needs: ci
+    needs: [ci, main-ci-green]
     strategy:
       fail-fast: false
       matrix:

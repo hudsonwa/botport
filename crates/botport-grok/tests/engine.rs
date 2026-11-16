@@ -676,3 +676,43 @@ fn read_scrolls_back_up_to_a_bot_above_the_window() {
     assert_eq!(o.exit, ExitCode::Done, "{}", o.proof.line());
     assert!(n.load(std::sync::atomic::Ordering::SeqCst) >= 1);
 }
+
+// ------------------------------------------- large account, chat open: collapsed sidebar (botport#64)
+
+fn eng_large_collapsed(top: usize) -> (Engine, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    let c = clock();
+    let f = FakeTransport::load(&fx(), c.clone())
+        .unwrap()
+        .with_turn("reply-ready")
+        .with_bots(64)
+        .with_virtual_sidebar(14, top)
+        .with_collapsed_sidebar();
+    let n = f.sidebar_scrolls();
+    (
+        engine_from(f, c, Policy::default(), Caller::Cli { tty: false }),
+        n,
+    )
+}
+
+#[test]
+fn bots_on_64_bots_in_a_collapsed_sidebar_find_the_main_row() {
+    let (mut e, _) = eng_large_collapsed(0);
+    let o = e.bots();
+    assert_eq!(o.exit, ExitCode::Done, "{}", o.proof.line());
+    let bots = o.value.unwrap();
+    assert_eq!(bots.len(), 64);
+    assert_eq!(
+        o.proof.line(),
+        "PASS: 64 bots; 15 of 64 rendered rows match (virtualized sidebar)"
+    );
+}
+
+#[test]
+fn ask_and_read_on_64_bots_in_a_collapsed_sidebar() {
+    let (mut e, n) = eng_large_collapsed(0);
+    let o = e.read("Bulk Bot 50", None, 5);
+    assert_eq!(o.exit, ExitCode::Done, "{}", o.proof.line());
+    assert!(n.load(std::sync::atomic::Ordering::SeqCst) > 1);
+    let o = e.ask("main", "Reply READY", &[], &w());
+    assert_eq!(o.exit, ExitCode::Done, "{}", o.proof.line());
+}

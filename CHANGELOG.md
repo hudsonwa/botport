@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-16
+
+### Fixed
+- `botport grok restore` (and the TTL guard) PASS only when no Grok Bot main process carries a `--remote-debugging-*`
+  flag (`ps` args), there is no `DevToolsActivePort` and there is no TCP listener, each read again until it settles.
+  A flagged process is quit once more and the app is started again; otherwise the FAIL names what is left. Before,
+  a restore could PASS on `lsof` alone while the app still ran with `--remote-debugging-port=0`
+  ([#63](https://github.com/hudsonwa/botport/issues/63)).
+- `botport test`: a model answer that looks like a credential is dropped from the results file (its verdict is kept),
+  instead of the write guard refusing the whole file ([#66](https://github.com/hudsonwa/botport/issues/66)).
+- g2h tests wait out a forked child's hold on the g2hd lock (the v0.3.2 Linux CI flake,
+  [#65](https://github.com/hudsonwa/botport/issues/65)).
+
+### Changed
+- The release workflow waits for a green `ci.yml` run on the tagged commit before it builds anything.
+- Fake-transport tests cover a 64-bot account with a collapsed sidebar; RELEASING.md adds a large-account canary
+  before a tag ([#64](https://github.com/hudsonwa/botport/issues/64)).
+
 ## [0.3.2] - 2026-11-16
 
 ### Fixed

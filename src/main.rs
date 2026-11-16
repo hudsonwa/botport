@@ -1120,7 +1120,14 @@ fn cmd_test(a: &Args) -> Res<Report> {
         &wd,
     )?;
     let pass = res.iter().filter(|r| r["pass"] == json!(true)).count();
-    let jl: String = res.iter().map(jsonl_line).collect();
+    // Audit 2026-11-16: a model's answer that only LOOKS like a credential ("Pass: 50%") made the write guard refuse
+    // the whole result file, so a passing twin was rolled back. The answer is diagnostic only: such a record keeps its
+    // verdict and drops the text, never the other way round.
+    let jl: String = res
+        .iter()
+        .map(keepable_result)
+        .map(|v| jsonl_line(&v))
+        .collect();
     let file = out.join(format!("battery-{}.jsonl", utc_stamp()));
     write_atomic(&file, jl.as_bytes(), Some(0o600))?;
     let mut lines = vec![format!("test {profile}: {pass}/{} pass", res.len())];
@@ -1676,5 +1683,61 @@ mod tests {
         assert!(write_new_private(&link, b"{}").is_err());
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
         std::fs::remove_dir_all(&t).unwrap();
+    }
+}
+
+/// One behaviour-test record as it may be written under a Hermes folder: unchanged when the write guard accepts it;
+/// else without the answer (and, if still refused, only id / family / pass / why / wall_s, all made by botport).
+fn keepable_result(r: &Value) -> Value {
+    let ok = |v: &Value| {
+        botport::core::secrets::find_secret("battery", jsonl_line(v).as_bytes()).is_none()
+    };
+    if ok(r) {
+        return r.clone();
+    }
+    let mut v = r.clone();
+    if let Some(o) = v.as_object_mut() {
+        o.insert(
+            "answer".into(),
+            json!("(not kept: the answer looks like it holds a secret)"),
+        );
+    }
+    if ok(&v) {
+        return v;
+    }
+    let mut m = serde_json::Map::new();
+    for k in ["id", "family", "pass", "why", "wall_s"] {
+        if let Some(x) = r.get(k) {
+            m.insert(k.into(), x.clone());
+        }
+    }
+    m.insert(
+        "answer".into(),
+        json!("(not kept: the record looks like it holds a secret)"),
+    );
+    Value::Object(m)
+}
+
+#[cfg(test)]
+mod keepable_tests {
+    use super::*;
+
+    #[test]
+    fn a_credential_shaped_answer_is_dropped_and_the_verdict_kept() {
+        let r = json!({"id": "memory-2", "family": "memory", "pass": true, "why": [], "wall_s": 3.0,
+                       "tools": [], "answer": "Pass: 50% overall. Key: 1A2b3C4d5E6f7G8h"});
+        let k = keepable_result(&r);
+        assert_eq!(k["pass"], json!(true));
+        assert_eq!(k["id"], json!("memory-2"));
+        assert!(!k["answer"].as_str().unwrap().contains("50%"));
+        assert!(
+            botport::core::secrets::find_secret("battery", jsonl_line(&k).as_bytes()).is_none()
+        );
+    }
+
+    #[test]
+    fn a_plain_answer_is_kept() {
+        let r = json!({"id": "persona", "pass": true, "answer": "I am the course planner."});
+        assert_eq!(keepable_result(&r), r);
     }
 }

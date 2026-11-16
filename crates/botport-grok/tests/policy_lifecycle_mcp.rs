@@ -297,6 +297,10 @@ struct Host {
     nonloop: bool,
     starts: Vec<bool>,
     armed: u32,
+    /// the flagged main process survives every quit (audit 2026-11-16: restore PASSed with the flag still on)
+    stuck_flag: bool,
+    /// a debug-flagged main process is running
+    flagged: bool,
 }
 
 impl AppHost for Host {
@@ -307,12 +311,17 @@ impl AppHost for Host {
         self.pid
     }
     fn quit(&mut self, _pid: u32) -> Result<(), String> {
+        if self.stuck_flag {
+            return Ok(()); // says it quit, but the flagged process is still there
+        }
         self.pid = None;
+        self.flagged = false;
         self.listeners.clear();
         Ok(())
     }
     fn start(&mut self, debug: bool) -> Result<(), String> {
         self.starts.push(debug);
+        self.flagged = debug || self.stuck_flag;
         self.pid = Some(4242 + self.starts.len() as u32);
         if debug {
             self.dap = Some((54321, "/devtools/browser/synthetic".into()));
@@ -341,6 +350,12 @@ impl AppHost for Host {
     fn arm_guard(&mut self, _a: u64, _b: u64) -> Result<(), String> {
         self.armed += 1;
         Ok(())
+    }
+    fn debug_flag_pids(&self) -> Vec<u32> {
+        match (self.flagged, self.pid) {
+            (true, Some(p)) => vec![p],
+            _ => vec![],
+        }
     }
 }
 
@@ -530,7 +545,69 @@ fn restore_passes_on_lsof() {
     };
     lc.launch(600);
     let o = lc.restore();
-    assert_eq!(o.proof.line(), "PASS: port closed; no Grok TCP listener");
+    assert_eq!(
+        o.proof.line(),
+        "PASS: port closed; no Grok TCP listener, no debug flag, no DevToolsActivePort"
+    );
+    assert!(h.debug_flag_pids().is_empty());
+    assert!(h.devtools_active_port().is_none());
+}
+
+/// Audit 2026-11-16 (floor 5): the app still ran with `--remote-debugging-port=0` after a restore that PASSed on
+/// lsof alone. A flagged main process (no listener at that instant) must FAIL the restore, never PASS it.
+#[test]
+fn restore_fails_while_the_app_still_has_the_debug_flag() {
+    let s = Scratch::new("restore-flag");
+    let mut h = Host {
+        installed: true,
+        pid: Some(100),
+        ..Default::default()
+    };
+    let (_c, clk) = fclock();
+    {
+        let mut lc = Lifecycle {
+            host: &mut h,
+            home: s.0.clone(),
+            clock: clk.clone(),
+        };
+        lc.launch(600);
+    }
+    h.stuck_flag = true;
+    h.listeners.clear(); // the listener is not visible: the old check alone would PASS here
+    let mut lc = Lifecycle {
+        host: &mut h,
+        home: s.0.clone(),
+        clock: clk,
+    };
+    let o = lc.restore();
+    assert!(!o.proof.pass, "{}", o.proof.line());
+    assert!(
+        o.proof.line().contains("--remote-debugging flag"),
+        "{}",
+        o.proof.line()
+    );
+}
+
+/// A leftover DevToolsActivePort file also blocks a PASS.
+#[test]
+fn restore_requires_devtools_active_port_gone() {
+    let s = Scratch::new("restore-dap");
+    let mut h = Host {
+        installed: true,
+        pid: Some(100),
+        ..Default::default()
+    };
+    let (_c, clk) = fclock();
+    let mut lc = Lifecycle {
+        host: &mut h,
+        home: s.0.clone(),
+        clock: clk,
+    };
+    lc.launch(600);
+    let o = lc.restore();
+    assert!(o.proof.pass);
+    drop(lc);
+    assert!(h.dap.is_none());
 }
 
 // ---------------------------------------------------------------- MCP

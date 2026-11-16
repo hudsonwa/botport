@@ -101,6 +101,9 @@ pub struct FakeTransport {
     /// is rendered. Shared counter of scroll steps taken by `open`.
     sidebar: Option<super::sidebar::VirtualSidebar>,
     sidebar_scrolls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    /// Large-account fix (0.3.2): a chat is open, so the sidebar is "collapsed": no row is "pinned" and only the
+    /// ", Main Bot" label suffix marks the main bot.
+    collapsed: bool,
 }
 
 fn read_json(p: &Path) -> TResult<Value> {
@@ -224,6 +227,7 @@ impl FakeTransport {
             previews: HashMap::new(),
             sidebar: None,
             sidebar_scrolls: Default::default(),
+            collapsed: false,
         }
     }
 
@@ -263,6 +267,12 @@ impl FakeTransport {
             .filter_map(|a| a.get("id").and_then(Value::as_str).map(str::to_string))
             .collect();
         self.sidebar = Some(super::sidebar::VirtualSidebar::new(ids, window, top));
+        self
+    }
+
+    /// Large account with a chat open: every row's layout is "collapsed" (the main row is not "pinned").
+    pub fn with_collapsed_sidebar(mut self) -> Self {
+        self.collapsed = true;
         self
     }
 
@@ -813,7 +823,7 @@ impl Transport for FakeTransport {
                 "desc": desc,
                 "awaiting": if flag("awaiting") || (over.is_none() && aw.is_some()) { "true" } else { "false" },
                 "composing": if flag("composing") { "true" } else { "false" },
-                "layout": if i == 0 { "pinned" } else { "expanded" },
+                "layout": if self.collapsed { "collapsed" } else if i == 0 { "pinned" } else { "expanded" },
             });
             if let Some(r) = parse::row(&v) {
                 out.push(r);
