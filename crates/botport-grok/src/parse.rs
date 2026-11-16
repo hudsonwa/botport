@@ -458,17 +458,24 @@ pub fn row(v: &Value) -> Option<RowView> {
         return None;
     }
     let label = s(v, "label");
-    let main = s(v, "layout") == "pinned";
-    // 1.1.0 labels: "<name>" plus status suffixes (", Unread activity", ", Needs attention"); the pinned main
-    // bot's row also says ", Main Bot". Strip them in any order.
+    let mut main = s(v, "layout") == "pinned";
+    let collapsed = s(v, "layout") == "collapsed";
+    // 1.1.0 labels: "<name>" plus status suffixes (", Unread activity", ", Needs attention"); the main bot's row
+    // also says ", Main Bot". Strip them in any order. With a chat open the sidebar is "collapsed" and the main
+    // row is not "pinned" (live, 64-bot account): there the suffix marks the main bot. An expanded non-pinned row keeps
+    // its name as typed.
     let mut name = label.as_str();
     loop {
         let before = name;
         for sfx in ROW_LABEL_SUFFIXES {
             name = name.strip_suffix(sfx).unwrap_or(name);
         }
-        if main {
-            name = name.strip_suffix(", Main Bot").unwrap_or(name);
+        if let Some(n) = name
+            .strip_suffix(", Main Bot")
+            .filter(|_| main || collapsed)
+        {
+            name = n;
+            main = true;
         }
         if name == before {
             break;

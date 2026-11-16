@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-16
+
+### Fixed
+- With a chat open the sidebar is "collapsed" and the main bot's row is not marked pinned; its ", Main Bot" label
+  suffix is now still recognised there, so `botport grok bots` no longer reports that row as differing from the list.
+
 ## [0.3.1] - 2026-11-16
 
 ### Fixed

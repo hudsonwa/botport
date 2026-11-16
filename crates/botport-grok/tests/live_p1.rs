@@ -196,3 +196,21 @@ fn a_multi_line_message_matches_with_its_line_breaks_doubled() {
     ));
     assert!(!parse::same_sent_text("", sent));
 }
+
+/// Large account (live 2026-11-16): with a chat open the sidebar is "collapsed" and the main row is not
+/// "pinned"; its ", Main Bot" suffix still marks the main bot.
+#[test]
+fn a_collapsed_sidebar_main_row_is_still_the_main_bot() {
+    let r = parse::row(
+        &serde_json::json!({"id": TEMP, "label": "Ops · Desk, Main Bot", "layout": "collapsed"}),
+    )
+    .unwrap();
+    assert_eq!(r.name, "Ops · Desk");
+    assert!(r.main);
+    let r = parse::row(
+        &serde_json::json!({"id": TEMP, "label": "Ops, Unread activity", "layout": "collapsed"}),
+    )
+    .unwrap();
+    assert_eq!(r.name, "Ops");
+    assert!(!r.main);
+}
