@@ -315,6 +315,13 @@ fn m4_mcp_paths_are_confined_to_the_servers_folder() {
         .contains("symlink"));
 }
 
+// An existing absolute file outside the MCP folder. On Windows "/etc/hosts" has no drive letter, resolves
+// to a missing C:\etc\hosts and is refused as "not found" instead of "outside".
+#[cfg(unix)]
+const OUTSIDE_FILE: &str = "/etc/hosts";
+#[cfg(windows)]
+const OUTSIDE_FILE: &str = r"C:\Windows\win.ini";
+
 #[test]
 fn m4_mcp_upload_of_a_path_outside_the_folder_is_refused() {
     let c = clock();
@@ -332,7 +339,7 @@ fn m4_mcp_upload_of_a_path_outside_the_folder_is_refused() {
         &mut e,
         &mut st,
         "grok_files",
-        &json!({"bot": MAIN, "action": "upload", "paths": ["/etc/hosts"]}),
+        &json!({"bot": MAIN, "action": "upload", "paths": [OUTSIDE_FILE]}),
         false,
     );
     assert!(r.unwrap_err().contains("outside"));

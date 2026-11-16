@@ -134,6 +134,7 @@ fn local_offset(_ms: u64) -> (i64, String) {
     (0, "UTC".into())
 }
 
+#[cfg(any(unix, test))]
 fn fmt_offset(off: i64) -> String {
     let a = off.abs();
     format!(
