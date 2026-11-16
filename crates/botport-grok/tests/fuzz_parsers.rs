@@ -1,7 +1,9 @@
 //! Property tests for the debug-port parsers: no panic on arbitrary input, and round trips where a format has a
 //! writer. A deterministic xorshift generator (no new dependency): fixed seeds, so a failure reproduces exactly;
 //! `BOTPORT_FUZZ_ITERS` raises the case count for a longer local run.
-use botport_grok::lifecycle::{debug_flag_pids_in, parse_devtools_active_port, parse_hid_idle_s, PortFile};
+use botport_grok::lifecycle::{
+    debug_flag_pids_in, parse_devtools_active_port, parse_hid_idle_s, PortFile,
+};
 use botport_grok::transport::cdp::{click_point, ws_target_path};
 use botport_grok::transport::ws::{is_upgrade_status, valid_ws_path};
 use serde_json::{json, Value};
@@ -30,10 +32,43 @@ impl Rng {
     /// multi-byte and the empty string.
     pub fn string(&mut self, max: usize) -> String {
         const ATOMS: &[&str] = &[
-            "0", "1", "9", "65535", "65536", "-1", " ", "\t", "\r", "\n", "\r\n", "/", ":", "=", "\"", "{", "}",
-            "devtools", "/devtools/page/", "/devtools/browser/", "ws://127.0.0.1:", "HTTP/1.1", "101", "HIDIdleTime",
-            "--remote-debugging-port=0", "Grok Bot", "é", "\u{0}", "\u{7f}", "\u{feff}", "日本", "🦀", "+", "e9",
-            "18446744073709551616", "a", "Z",
+            "0",
+            "1",
+            "9",
+            "65535",
+            "65536",
+            "-1",
+            " ",
+            "\t",
+            "\r",
+            "\n",
+            "\r\n",
+            "/",
+            ":",
+            "=",
+            "\"",
+            "{",
+            "}",
+            "devtools",
+            "/devtools/page/",
+            "/devtools/browser/",
+            "ws://127.0.0.1:",
+            "HTTP/1.1",
+            "101",
+            "HIDIdleTime",
+            "--remote-debugging-port=0",
+            "Grok Bot",
+            "é",
+            "\u{0}",
+            "\u{7f}",
+            "\u{feff}",
+            "日本",
+            "🦀",
+            "+",
+            "e9",
+            "18446744073709551616",
+            "a",
+            "Z",
         ];
         let n = self.below(max + 1);
         let mut s = String::new();
@@ -108,10 +143,17 @@ fn value(r: &mut Rng, depth: u32) -> Value {
 
 #[test]
 fn devtools_active_port_never_panics_and_accepts_only_a_port_line() {
-    let seeds = ["9222\n/devtools/browser/abc\n", "0\n", "65535\r\n/devtools/browser/x", ""];
+    let seeds = [
+        "9222\n/devtools/browser/abc\n",
+        "0\n",
+        "65535\r\n/devtools/browser/x",
+        "",
+    ];
     let mut r = Rng::new(1);
     for i in 0..iters(20_000) {
-        let s = if i % 2 == 0 { r.string(12) } else {
+        let s = if i % 2 == 0 {
+            r.string(12)
+        } else {
             let seed = r_pick(&mut r, &seeds);
             r.mutate(seed)
         };
@@ -132,14 +174,23 @@ fn devtools_active_port_round_trips() {
     let mut r = Rng::new(2);
     for _ in 0..iters(5_000) {
         let port = r.next() as u16;
-        let id: String = (0..r.below(40)).map(|_| *r.pick(&['a', 'f', '0', '9', '-'])).collect();
+        let id: String = (0..r.below(40))
+            .map(|_| *r.pick(&['a', 'f', '0', '9', '-']))
+            .collect();
         let path = format!("/devtools/browser/{id}");
         let nl = if r.below(2) == 0 { "\n" } else { "\r\n" };
         let tail = if r.below(2) == 0 { nl } else { "" };
         let text = format!("{port}{nl}{path}{tail}");
-        assert_eq!(parse_devtools_active_port(&text), Some((port, path)), "{text:?}");
+        assert_eq!(
+            parse_devtools_active_port(&text),
+            Some((port, path)),
+            "{text:?}"
+        );
     }
-    assert_eq!(parse_devtools_active_port("9222"), Some((9222, String::new())));
+    assert_eq!(
+        parse_devtools_active_port("9222"),
+        Some((9222, String::new()))
+    );
     assert_eq!(parse_devtools_active_port("70000\n/x"), None);
     assert_eq!(parse_devtools_active_port("\n9222"), None);
 }
@@ -180,7 +231,9 @@ fn ps_and_ioreg_parsers_never_panic() {
     ];
     let mut r = Rng::new(4);
     for i in 0..iters(20_000) {
-        let s = if i % 3 == 0 { r.string(16) } else {
+        let s = if i % 3 == 0 {
+            r.string(16)
+        } else {
             let seed = r_pick(&mut r, &seeds);
             r.mutate(seed)
         };
@@ -208,7 +261,9 @@ fn ws_path_and_target_checks_never_panic_and_agree() {
     ];
     let mut r = Rng::new(5);
     for i in 0..iters(20_000) {
-        let s = if i % 2 == 0 { r.string(10) } else {
+        let s = if i % 2 == 0 {
+            r.string(10)
+        } else {
             let seed = r_pick(&mut r, &seeds);
             r.mutate(seed)
         };
@@ -216,11 +271,17 @@ fn ws_path_and_target_checks_never_panic_and_agree() {
             assert!(s.bytes().all(|b| b.is_ascii_graphic()), "{s:?}");
         }
         if let Ok(p) = ws_target_path(&s, prefix) {
-            assert!(p.starts_with("/devtools/page/") && valid_ws_path(p), "{s:?}");
+            assert!(
+                p.starts_with("/devtools/page/") && valid_ws_path(p),
+                "{s:?}"
+            );
             assert_eq!(format!("{prefix}{p}"), s);
         }
         if is_upgrade_status(&s) {
-            assert!(s.starts_with("HTTP/1.1 101") || s.starts_with("HTTP/1.0 101"), "{s:?}");
+            assert!(
+                s.starts_with("HTTP/1.1 101") || s.starts_with("HTTP/1.0 101"),
+                "{s:?}"
+            );
         }
     }
 }

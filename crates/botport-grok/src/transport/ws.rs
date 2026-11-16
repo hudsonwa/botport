@@ -456,8 +456,18 @@ mod http_body_fuzz {
     #[test]
     fn arbitrary_responses_never_panic_and_declared_bodies_round_trip() {
         let atoms: [&[u8]; 12] = [
-            b"HTTP/1.1 200 OK\r\n", b"Content-Length: ", b"content-length:", b"7", b"99999999999999999999", b"\r\n",
-            b"\n", b"{\"a\":1}", b":", b" ", b"\xff\xfe", b"Content-Length: 18446744073709551615\r\n",
+            b"HTTP/1.1 200 OK\r\n",
+            b"Content-Length: ",
+            b"content-length:",
+            b"7",
+            b"99999999999999999999",
+            b"\r\n",
+            b"\n",
+            b"{\"a\":1}",
+            b":",
+            b" ",
+            b"\xff\xfe",
+            b"Content-Length: 18446744073709551615\r\n",
         ];
         let mut s = 0x5eed_u64;
         for _ in 0..20_000 {
@@ -469,8 +479,11 @@ mod http_body_fuzz {
         }
         for _ in 0..2_000 {
             let n = (rng(&mut s) % 200) as usize;
-            let body: String = (0..n).map(|_| (b'a' + (rng(&mut s) % 26) as u8) as char).collect();
-            let raw = format!("HTTP/1.1 200 OK\r\nContent-Length: {n}\r\n\r\n{body}TRAILING-KEEPALIVE");
+            let body: String = (0..n)
+                .map(|_| (b'a' + (rng(&mut s) % 26) as u8) as char)
+                .collect();
+            let raw =
+                format!("HTTP/1.1 200 OK\r\nContent-Length: {n}\r\n\r\n{body}TRAILING-KEEPALIVE");
             assert_eq!(super::read_http_body(&mut Cursor::new(raw)).unwrap(), body);
             let raw = format!("HTTP/1.1 200 OK\r\n\r\n{body}");
             assert_eq!(super::read_http_body(&mut Cursor::new(raw)).unwrap(), body);
