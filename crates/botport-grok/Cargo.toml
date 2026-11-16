@@ -1,6 +1,6 @@
 [package]
 name = "botport-grok"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 description = "botport's Grok Bot desktop-app engine: bots/ask/send/wait/read/stop/watch over the local debug port, policy presets and hard floors, stdio MCP"
 license = "MIT"

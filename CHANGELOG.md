@@ -6,11 +6,27 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.3.4] - unreleased (release candidate rc/0.3.4)
+
 ### Added
+- Grok engine turn ledger and weekly budget: every paid call (send, ask, and the asks inside `routine add`/`run`) is
+  recorded in `~/.botport/grok-turns.jsonl` with its command, caller tag (`--tag` / `BOTPORT_CALLER`) and bot id,
+  never message text. New policy keys `usage_budget_week`, `usage_warn_pct` and `usage_hard_cap`: at the budget a paid
+  call is refused with exit 4 naming `usage_hard_cap` (a warning when it is off). `botport grok usage` adds
+  `botport_turns_week` and `usage_budget_week`. Reads, routine lists and usage are never counted.
+- `botport grok routines audit [--used-by NAME]... [--json]`: every bot's routines with schedule, runs a week, an
+  estimated weekly turn count, last run and run count, flagging an enabled routine that no mirror pair or
+  `--used-by` name mentions. Lists only: no bot turn.
 - `docs/skills/botport-explain/SKILL.md`: a short read-only Hermes skill that explains what botport does (export,
   import, mirror, the read-only Grok engine) and how to check the installed version. Each release attaches it as
   `botport-explain-SKILL.md`, lists it in `SHA256SUMS` and gives its SHA-256 in the release notes; a test keeps it
   free of hosts, addresses and home paths ([#67](https://github.com/hudsonwa/botport/issues/67)).
+
+### Changed
+- `botport mirror push --bot NAME` pushes from the Mac by default: it checks every pair (config, mirror state, on-disk
+  HEAD, Hermes digest) and only when one changed since the last answered push sends the Mirror bot one batched
+  `botport grok ask` naming every changed pair; no change, no Grok turn. The brief no longer asks the owner to create
+  a routine; a routine stays a documented opt-in with its weekly cost (about 672 turns at 15 minutes).
 
 ## [0.3.3] - 2026-11-16
 
