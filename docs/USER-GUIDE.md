@@ -287,9 +287,11 @@ A safe order:
 4. Run `hermes gateway migrate --multiplex`.
 5. **Verify**: `hermes gateway status` lists every profile as served, `botport mirror doctor --pair P` passes for each
    pair, and one short chat with each bot answers.
-6. **If something is wrong**: set `gateway.standalone: true` in that profile's `config.yaml` and start its own gateway
-   (`hermes -p 'NAME' gateway start`), or restore its files from the backup; for anything else, see Hermes' own guide to
-   running several profiles (linked above).
+6. **If something is wrong**: set `gateway.standalone: true` in that profile's `config.yaml` and install its own gateway
+   as a login service (`hermes -p 'NAME' gateway install --start-now --start-on-login`; `gateway start` alone does not
+   come back after a reboot or Hermes restart, and `mirror doctor` fails its `restart` check until it is installed),
+   or restore its files from the backup; for anything else, see Hermes' own guide to running several profiles (linked
+   above).
 
 ## Output and tokens
 Every command prints at most 10 summary lines (`--json` for machines) and puts full detail in a file

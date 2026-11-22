@@ -260,6 +260,38 @@ pub fn hermes_cmd(name: &str, rest: &str) -> String {
     }
 }
 
+/// The `hermes gateway` arguments that install a profile's own gateway as a login service and start it now.
+pub const INSTALL: &str = "gateway install --start-now --start-on-login";
+
+/// Whether the profile at `profile_dir` (not the default profile) runs its own gateway (`gateway.standalone: true`).
+pub fn standalone(profile_dir: &Path) -> bool {
+    yaml(&profile_dir.join("config.yaml"))
+        .and_then(|y| y.get("gateway")?.get("standalone")?.as_bool())
+        .unwrap_or(false)
+}
+
+/// Whether a login service brings profile `name`'s own gateway back after a reboot: Hermes' launchd agent
+/// (`~/Library/LaunchAgents/ai.hermes.gateway-NAME.plist`) on macOS, its systemd user unit
+/// (`~/.config/systemd/user/hermes-gateway-NAME.service`) on Linux; `None` elsewhere or with no home folder.
+pub fn service_installed(name: &str) -> Option<bool> {
+    let home = std::env::var_os("HOME").filter(|h| !h.is_empty())?;
+    service_installed_at(Path::new(&home), std::env::consts::OS, name)
+}
+
+/// [`service_installed`] for the home folder `home` on `os`.
+pub fn service_installed_at(home: &Path, os: &str, name: &str) -> Option<bool> {
+    let f = match os {
+        "macos" => home.join(format!(
+            "Library/LaunchAgents/ai.hermes.gateway-{name}.plist"
+        )),
+        "linux" => home.join(format!(
+            ".config/systemd/user/hermes-gateway-{name}.service"
+        )),
+        _ => return None,
+    };
+    Some(f.is_file())
+}
+
 /// Can the owner chat with the profile at `profile_dir` (named `name`, or the default profile when it is the Hermes home)?
 pub fn chat(hermes_home: &Path, profile_dir: &Path, name: &str) -> Chat {
     chat_at(hermes_home, profile_dir, name, host_record().as_deref())
@@ -286,17 +318,15 @@ pub fn chat_at(hermes_home: &Path, profile_dir: &Path, name: &str, host: Option<
         let v = json(&dir.join("gateway_state.json")).or_else(|| json(&dir.join("gateway.pid")))?;
         live(&v)
     };
-    let standalone = !default
-        && yaml(&profile_dir.join("config.yaml"))
-            .and_then(|y| y.get("gateway")?.get("standalone")?.as_bool())
-            .unwrap_or(false);
+    let standalone = !default && standalone(profile_dir);
     if standalone {
         return match own(profile_dir) {
             Some(true) => Chat::Ready("its own gateway is running (gateway.standalone)".into()),
             Some(false) | None => Chat::Not {
                 reason: "it runs its own gateway (gateway.standalone: true), which is not running"
                     .into(),
-                fix: cmd("gateway start"),
+                // `gateway start` alone is gone after the next reboot: install the service so it comes back
+                fix: cmd(INSTALL),
             },
         };
     }
@@ -399,6 +429,47 @@ mod tests {
 
     fn tmp(tag: &str) -> PathBuf {
         crate::core::util::test_dir(&format!("gw-{tag}"))
+    }
+
+    #[test]
+    fn a_stopped_standalone_profile_is_told_to_install_its_service() {
+        let home = tmp("standalone");
+        let p = home.join("profiles/demo-bot");
+        fs::create_dir_all(&p).unwrap();
+        fs::write(p.join("config.yaml"), "gateway:\n  standalone: true\n").unwrap();
+        assert!(standalone(&p));
+        match chat_at(&home, &p, "demo-bot", None) {
+            Chat::Not { fix, .. } => assert_eq!(
+                fix,
+                "hermes -p 'demo-bot' gateway install --start-now --start-on-login"
+            ),
+            c => panic!("{c:?}"),
+        }
+        fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn a_service_is_found_where_hermes_installs_it() {
+        let home = tmp("svc");
+        assert_eq!(
+            service_installed_at(&home, "macos", "demo-bot"),
+            Some(false)
+        );
+        assert_eq!(
+            service_installed_at(&home, "linux", "demo-bot"),
+            Some(false)
+        );
+        assert_eq!(service_installed_at(&home, "windows", "demo-bot"), None);
+        let mac = home.join("Library/LaunchAgents");
+        fs::create_dir_all(&mac).unwrap();
+        fs::write(mac.join("ai.hermes.gateway-demo-bot.plist"), "").unwrap();
+        assert_eq!(service_installed_at(&home, "macos", "demo-bot"), Some(true));
+        assert_eq!(service_installed_at(&home, "macos", "other"), Some(false));
+        let lin = home.join(".config/systemd/user");
+        fs::create_dir_all(&lin).unwrap();
+        fs::write(lin.join("hermes-gateway-demo-bot.service"), "").unwrap();
+        assert_eq!(service_installed_at(&home, "linux", "demo-bot"), Some(true));
+        fs::remove_dir_all(&home).ok();
     }
 
     #[test]
