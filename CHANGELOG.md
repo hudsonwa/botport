@@ -6,7 +6,18 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-## [0.3.4] - unreleased (release candidate rc/0.3.4)
+## [0.3.5] - 2026-11-24
+
+### Fixed
+- Grok Bot 1.2.3: a busy bot's sidebar label gains a ", Working" suffix, so bot lookup failed and every write was
+  refused as an untested version. The suffix is now stripped; the read-only canary passes 7/7 on 1.2.3.
+- `grok send`/`ask` no longer type after an unsent draft in the bot's message box (the draft was sent glued to the
+  front of the message). The send is refused with a clear line and the draft is left untouched.
+
+### Changed
+- Install docs pin the current release and describe `BOTPORT_VERSION`; Grok Bot 1.2.3 listed as tested.
+
+## [0.3.4] - 2026-11-17
 
 ### Added
 - Grok engine turn ledger and weekly budget: every paid call (send, ask, and the asks inside `routine add`/`run`) is

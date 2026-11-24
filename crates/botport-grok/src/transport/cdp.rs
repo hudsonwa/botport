@@ -67,6 +67,10 @@ const ROWS_JS: &str = r#"(() => { const out = {}; for (const el of document.quer
     layout: el.getAttribute('data-layout') || (layoutEl ? layoutEl.getAttribute('data-layout') : '')}; }
   return __json(Object.values(out)); })()"#;
 
+/// Characters already in the message box (an unsent draft), counted after trimming.
+const DRAFT_LEN_JS: &str = r#"(() => { const e = document.querySelector('[contenteditable="true"]');
+  return e ? (e.innerText || '').trim().length : 0; })()"#;
+
 const FOCUS_COMPOSER_JS: &str = r#"(() => { const e = document.querySelector('[contenteditable="true"]'); if (!e) return false;
   e.focus(); return document.activeElement === e || e.contains(document.activeElement); })()"#;
 
@@ -818,6 +822,13 @@ impl Transport for CdpTransport {
             .unwrap_or_default();
         if self.eval_json(FOCUS_COMPOSER_JS)? != Value::Bool(true) {
             return Err(TransportError::App("the message box was not found".into()));
+        }
+        // insertText types at the caret, so a draft already in the box would be sent with the message (live on
+        // 1.2.3: a three-letter draft ended up in front of a message, which then failed its own check). Never add
+        // to or clear the owner's draft.
+        let draft = self.eval_json(DRAFT_LEN_JS)?.as_u64().unwrap_or(0);
+        if let Some(why) = parse::draft_refusal(draft) {
+            return Err(TransportError::App(why));
         }
         self.call("Input.insertText", json!({"text": text}))?;
         for t in ["keyDown", "keyUp"] {

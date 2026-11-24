@@ -214,3 +214,41 @@ fn a_collapsed_sidebar_main_row_is_still_the_main_bot() {
     assert_eq!(r.name, "Ops");
     assert!(!r.main);
 }
+
+/// Live on app 1.2.3 (24 Nov 2026): a busy bot's row label gains ", Working" after any other suffix
+/// ("<name>, Working", "<name>, Unread activity, Working", "<name>, Main Bot, Unread activity"), so `bots` failed its
+/// second route and the canary blocked writes. Names here are synthetic.
+#[test]
+fn app_1_2_3_working_suffix_is_stripped_in_any_order() {
+    let cases = [
+        ("Acme Support, Working", "Acme Support", false),
+        (
+            "Acme Support, Unread activity, Working",
+            "Acme Support",
+            false,
+        ),
+        (
+            "Acme Support, Working, Unread activity",
+            "Acme Support",
+            false,
+        ),
+        ("Front Desk, Main Bot, Unread activity", "Front Desk", true),
+        ("Front Desk, Main Bot, Working", "Front Desk", true),
+        ("Plain Name", "Plain Name", false),
+    ];
+    for (label, name, main) in cases {
+        let v = serde_json::json!({"id": "a1", "label": label, "layout": if main { "pinned" } else { "expanded" }});
+        let r = parse::row(&v).unwrap();
+        assert_eq!((r.name.as_str(), r.main), (name, main), "label {label:?}");
+    }
+}
+
+/// Live on app 1.2.3 (24 Nov 2026): the bot's message box held a three-letter unsent draft; `Input.insertText`
+/// typed after it, so the message went out with the draft in front and the send then failed its own check.
+#[test]
+fn a_send_refuses_while_the_message_box_holds_a_draft() {
+    assert_eq!(parse::draft_refusal(0), None);
+    let why = parse::draft_refusal(3).unwrap();
+    assert!(why.contains("unsent draft (3 characters)"), "{why}");
+    assert!(why.contains("does not send or clear it"), "{why}");
+}

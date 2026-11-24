@@ -449,8 +449,20 @@ pub fn snapshot_with(bot: &Bot, chat: Option<&Chat>, routine_running: bool) -> B
 
 /// A DOM row from its data attributes: `aria-label` (name + ", Main Bot" on the pinned row + ", Unread activity"), `aria-description` (the last
 /// line or "Waiting for you: ..."), `data-awaiting`, `data-composing`, `data-layout`.
-/// Status suffixes the app appends to a sidebar row's `aria-label` (1.1.0, seen live).
-pub const ROW_LABEL_SUFFIXES: &[&str] = &[", Unread activity", ", Needs attention"];
+/// Status suffixes the app appends to a sidebar row's `aria-label` (1.1.0, seen live; ", Working" from 1.2.3, seen live
+/// 24 Nov 2026 as "Recipe Helper, Working" and "Book Club, Unread activity, Working").
+pub const ROW_LABEL_SUFFIXES: &[&str] = &[", Unread activity", ", Needs attention", ", Working"];
+
+/// Why a send must not start when the message box already holds `chars` characters of unsent draft, or None when it
+/// is empty. The draft is the owner's: botport neither sends it with its message nor clears it.
+pub fn draft_refusal(chars: u64) -> Option<String> {
+    (chars > 0).then(|| {
+        format!(
+            "the message box holds an unsent draft ({chars} characters); botport does not send or clear it. \
+             Send or clear it in the app, then try again"
+        )
+    })
+}
 
 pub fn row(v: &Value) -> Option<RowView> {
     let id = s(v, "id");

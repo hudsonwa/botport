@@ -16,14 +16,14 @@ import, sync, drift-check and test a bot; install the bridge only if you want th
   `--skip-setup` skips the interactive wizard; the other two skip the browser and computer-use extras botport
   does not need. Read the script first if you prefer (`--help` lists every flag).
 - No root access: everything installs under your home directory.
-- For the Grok engine (`botport grok …`) only: a Mac with the Grok Bot desktop app (tested with 1.1.0). The rest of
+- For the Grok engine (`botport grok …`) only: a Mac with the Grok Bot desktop app (tested with 1.1.0; 1.2.3 passes the canary). The rest of
   botport does not need it.
 
 ## Prebuilt binaries (recommended)
 
 Pin a release tag and check what you download before you run it:
 
-    TAG=v0.3.0 T=aarch64-apple-darwin   # or x86_64-apple-darwin, x86_64-unknown-linux-musl, aarch64-unknown-linux-musl
+    TAG=v0.3.5 T=aarch64-apple-darwin   # or x86_64-apple-darwin, x86_64-unknown-linux-musl, aarch64-unknown-linux-musl
     curl -fsSLO "https://github.com/hudsonwa/botport/releases/download/$TAG/botport-$T.tar.gz"
     curl -fsSLO "https://github.com/hudsonwa/botport/releases/download/$TAG/SHA256SUMS"
     shasum -a 256 -c SHA256SUMS --ignore-missing
@@ -35,7 +35,7 @@ Or use the installer script **from the same tag** (read it first; never run a sc
 
     curl -fsSLO "https://raw.githubusercontent.com/hudsonwa/botport/$TAG/install.sh" && BOTPORT_VERSION="$TAG" sh install.sh
 
-The script downloads `botport-<target>.tar.gz` for your platform from the latest GitHub Release, verifies its
+The script downloads `botport-<target>.tar.gz` for your platform from the release named by `BOTPORT_VERSION` (the latest GitHub Release only when it is unset), verifies its
 SHA-256 checksum, refuses an archive holding a link, an absolute or `..` path or any name it does not expect, installs `botport`, `g2h` and `g2hd` into `~/.local/bin` and links `grok2hermes -> botport`. The bridge binaries
 do nothing until you run `g2h setup`; if you don't want them, delete `g2h` and `g2hd` or use cargo below.
 Options (environment variables):
@@ -57,7 +57,7 @@ copy the binaries onto your `PATH`.
 Each release archive and each binary in it carries a GitHub build attestation: proof that the repository's own
 release workflow built it from source. With the [GitHub CLI](https://cli.github.com/):
 
-    TAG=v0.3.0    # the release you downloaded
+    TAG=v0.3.5    # the release you downloaded
     gh attestation verify botport-<target>.tar.gz --repo hudsonwa/botport \
       --source-ref "refs/tags/$TAG" --signer-workflow hudsonwa/botport/.github/workflows/release.yml
     gh attestation verify "$(command -v botport)" --repo hudsonwa/botport \

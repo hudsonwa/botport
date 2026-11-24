@@ -18,7 +18,7 @@ plugin; its `hermes twin setup` downloads a ready-made, fingerprint-checked botp
   loopback debug port, opened only while needed and closed again by a time limit. It lists bots, sends a message and
   waits for the reply, reads chats, manages routines and files, and checks usage before a paid turn. It never answers
   an approval card for you, deletes only by exact name, and reports a PASS only when a second route confirms it.
-  Tested on Grok Bot 1.1.0; an app update is checked with `botport grok canary`. Reference:
+  Tested on Grok Bot 1.1.0 (1.2.3 passes the canary); an app update is checked with `botport grok canary`. Reference:
   [docs/GROK-ENGINE-INTERFACES.md](docs/GROK-ENGINE-INTERFACES.md).
 
 Each plugin version accepts exactly one botport release. Grok Bot Twin 0.4.x uses botport 0.2.1; the next Grok Bot
@@ -82,9 +82,9 @@ records, when it writes, and when it refuses to overwrite a Hermes-side edit).
 | OpenClaw (formerly Moltbot/Clawdbot) adapter | planned |
 | OpenBot adapter | planned |
 | `g2hd` running as a separate OS user | implemented, opt-in (not yet run in production) |
-| Grok engine turn ledger, weekly budget (`usage_budget_week`, off by default) and `grok routines audit` | 0.3.4 release candidate; tested against a fake Grok transport |
-| `mirror push`: the Mac asks the Mirror bot only when a pair changed (no routine by default) | 0.3.4 release candidate; tested with a fake engine |
-| `botport-explain` read-only Hermes skill, attached to each release with its SHA-256 | 0.3.4 release candidate; first attached on the 0.3.4 release |
+| Grok engine turn ledger, weekly budget (`usage_budget_week`, off by default) and `grok routines audit` | since 0.3.4; tested against a fake Grok transport |
+| `mirror push`: the Mac asks the Mirror bot only when a pair changed (no routine by default) | since 0.3.4; tested with a fake engine |
+| `botport-explain` read-only Hermes skill, attached to each release with its SHA-256 | since 0.3.4 |
 
 OpenClaw and OpenBot are named because they are the platforms the `BotModel` seam is meant for, but neither has any
 code yet, and neither is a small first contribution. Porting a bot *from* a new platform needs an adapter that reads
