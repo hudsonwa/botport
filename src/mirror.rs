@@ -1193,6 +1193,23 @@ fn doctor(a: &Args) -> Res<Out> {
             )),
         },
     ));
+    // a standalone profile's own gateway comes back after a reboot only through a login service
+    let name = profile_name_of(&c);
+    if c.profile_dir != home && gateway::standalone(&c.profile_dir) {
+        if let Some(installed) = gateway::service_installed(&name) {
+            checks.push((
+                "restart",
+                if installed {
+                    Ok("its own gateway is installed as a login service".into())
+                } else {
+                    Err(format!(
+                        "its own gateway (gateway.standalone: true) has no login service, so it stops at the next reboot or Hermes restart — fix: {}",
+                        gateway::hermes_cmd(&name, gateway::INSTALL)
+                    ))
+                },
+            ));
+        }
+    }
     let m = gateway::model(&c.profile_dir);
     checks.push((
         "model",
